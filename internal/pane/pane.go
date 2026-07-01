@@ -20,6 +20,12 @@ import (
 // shutdownPoll is how often Shutdown checks whether a terminated child has exited.
 const shutdownPoll = 50 * time.Millisecond
 
+// reapTimeout bounds the wait for a killed child so a wedged process can never hang quit.
+const reapTimeout = 2 * time.Second
+
+// inboxCap buffers queued keystrokes so the UI loop never blocks on PTY backpressure.
+const inboxCap = 256
+
 // Mirror of vt10x's unexported attribute bits for the pinned version.
 const (
 	attrReverse   = 1 << 0
@@ -73,7 +79,7 @@ type Pane struct {
 	term      vt10x.Terminal
 	hist      *ring
 	logw      io.Writer
-	writeMu   sync.Mutex
+	inbox     chan []byte
 	closeOnce sync.Once
 }
 
@@ -84,7 +90,18 @@ func Start(cmd *exec.Cmd, cols, rows int) (*Pane, error) {
 		return nil, err
 	}
 	term := vt10x.New(vt10x.WithWriter(ptmx), vt10x.WithSize(cols, rows))
-	return &Pane{cmd: cmd, ptmx: ptmx, term: term, hist: newRing(ringCap)}, nil
+	p := &Pane{cmd: cmd, ptmx: ptmx, term: term, hist: newRing(ringCap), inbox: make(chan []byte, inboxCap)}
+	go p.writeLoop()
+	return p, nil
+}
+
+// writeLoop drains queued input to the PTY off the UI thread; a blocking write can never freeze the deck.
+func (p *Pane) writeLoop() {
+	for b := range p.inbox {
+		if _, err := p.ptmx.Write(b); err != nil {
+			return
+		}
+	}
 }
 
 // SetLog tees raw PTY output to w for a persistent, greppable history.
@@ -112,12 +129,15 @@ func (p *Pane) Stream(onFrame func()) error {
 	}
 }
 
-// Input forwards keystrokes to the child; serialized so concurrent injects never interleave.
+// Input queues keystrokes for the child; it never blocks the caller so PTY backpressure cannot freeze the UI loop.
 func (p *Pane) Input(b []byte) error {
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
-	_, err := p.ptmx.Write(b)
-	return err
+	cp := append([]byte(nil), b...) // caller may reuse b
+	select {
+	case p.inbox <- cp:
+	default:
+		go func() { p.inbox <- cp }() // rare: buffer full, hand off so the UI thread stays free
+	}
+	return nil
 }
 
 // Resize updates both the emulator and the PTY window size.
@@ -282,16 +302,26 @@ func colorParams(c vt10x.Color, base, bright int, ext string) []string {
 // Close force-stops the child (SIGKILL), releases the PTY, and closes the log sink; idempotent.
 func (p *Pane) Close() error {
 	p.closeOnce.Do(func() {
+		_ = p.ptmx.Close() // close the master first: unblocks the child's tty I/O and our reader so Wait can return
 		if p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
 		}
-		_ = p.cmd.Wait()
-		_ = p.ptmx.Close()
+		p.reap()
 		if c, ok := p.logw.(io.Closer); ok {
 			_ = c.Close()
 		}
 	})
 	return nil
+}
+
+// reap waits for the killed child, bounded so a wedged process can never hang shutdown.
+func (p *Pane) reap() {
+	done := make(chan struct{})
+	go func() { _ = p.cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(reapTimeout):
+	}
 }
 
 // Terminate asks the child to exit cleanly (SIGTERM) so it can run its own shutdown hooks.

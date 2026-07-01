@@ -9,8 +9,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -115,8 +117,16 @@ func (m *Model) log() *slog.Logger {
 // Run opens the deck for cfg and blocks until the user quits.
 func Run(cfg config.Config) error {
 	m := &Model{cfg: cfg}
-	m.prog = tea.NewProgram(m, tea.WithAltScreen())
-	defer m.closeAll() // also cleans up on SIGINT/SIGTERM, when prog.Run returns
+	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithoutSignalHandler())
+	defer m.closeAll() // also cleans up when prog.Run returns
+	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		m.prog.Kill()
+	}()
 	if _, err := m.prog.Run(); err != nil {
 		return err
 	}
