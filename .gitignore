@@ -3,3 +3,4 @@
 /.choragos/
 *.out
 .env
+.DS_Store
