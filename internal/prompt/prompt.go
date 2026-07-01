@@ -25,7 +25,7 @@ func OrchestratorContext(cfg config.Config) string {
 		if r.Start {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("- **%s**\n", r.Name))
+		fmt.Fprintf(&b, "- **%s**\n", r.Name)
 	}
 	b.WriteString("\n## Delegation protocol\n\n")
 	b.WriteString("Delegate with one command per agent (run via your shell):\n\n")

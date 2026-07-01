@@ -60,7 +60,7 @@ func (s *Server) accept(handle func(Command)) {
 }
 
 func serveConn(conn net.Conn, handle func(Command)) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var cmd Command
 	if err := json.NewDecoder(conn).Decode(&cmd); err != nil {
 		return
@@ -82,7 +82,7 @@ func Send(path string, cmd Command) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := json.NewEncoder(conn).Encode(cmd); err != nil {
 		return err
 	}
