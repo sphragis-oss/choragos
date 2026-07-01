@@ -95,6 +95,22 @@ func TestPaneRendersTruecolor(t *testing.T) {
 	}
 }
 
+func TestShutdownDoesNotHang(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", `trap "" TERM; sleep 60`), 40, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = p.Stream(nil) }()
+
+	done := make(chan struct{})
+	go func() { p.Shutdown(time.Now().Add(200 * time.Millisecond)); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown hung on a child that ignores SIGTERM")
+	}
+}
+
 func TestScrollback(t *testing.T) {
 	p, err := pane.Start(exec.Command("sh", "-c", `for i in $(seq 1 30); do printf 'line%02d\r\n' "$i"; done`), 20, 5)
 	if err != nil {
