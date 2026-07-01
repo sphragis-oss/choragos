@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sphragis-oss/choragos/actions/workflows/test.yml?query=branch%3Amain">
-    <img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/sphragis-oss/choragos/test.yml?branch=main&style=for-the-badge&label=tests">
+  <a href="https://github.com/sphragis-oss/choragos/actions/workflows/ci.yml?query=branch%3Amain">
+    <img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/sphragis-oss/choragos/ci.yml?branch=main&style=for-the-badge&label=tests">
   </a>
   <a href="https://goreportcard.com/report/github.com/sphragis-oss/choragos">
     <img alt="Go Report Card" src="https://goreportcard.com/badge/github.com/sphragis-oss/choragos?style=for-the-badge">
