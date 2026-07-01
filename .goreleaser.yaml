@@ -1,0 +1,63 @@
+version: 2
+project_name: choragos
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: choragos
+    main: ./cmd/choragos
+    binary: choragos
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - id: archive
+    artifacts: archive
+
+# keyless (OIDC) cosign signing; needs cosign on PATH and id-token: write in CI.
+# cosign v2+ emits a single bundle (signature + certificate); verify with --bundle.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    output: true
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+brews:
+  - name: choragos
+    repository:
+      owner: sphragis-oss
+      name: homebrew-sphragis
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/sphragis-oss/choragos
+    description: "Secure multi-agent development orchestrator TUI"
+    license: "Apache-2.0"
+
+release:
+  github:
+    owner: sphragis-oss
+    name: choragos

@@ -1,0 +1,28 @@
+# Demo config: 5 panes running cheap placeholders so you can see the deck
+# without launching real agents. `exec cat` keeps each pane alive on stdin.
+
+[[roles]]
+name = "orchestrator"
+command = "sh"
+args = ["-c", "printf '\\033[1;36morchestrator\\033[0m pane (demo) - type here\\n'; exec cat"]
+start = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+args = ["-c", "printf '\\033[1;32mcoder\\033[0m pane (demo)\\n'; exec cat"]
+
+[[roles]]
+name = "reviewer"
+command = "sh"
+args = ["-c", "printf '\\033[1;35mreviewer\\033[0m pane (demo)\\n'; exec cat"]
+
+[[roles]]
+name = "auditor"
+command = "sh"
+args = ["-c", "printf '\\033[1;33mauditor\\033[0m pane (demo)\\n'; exec cat"]
+
+[[roles]]
+name = "release"
+command = "sh"
+args = ["-c", "printf '\\033[1;34mrelease\\033[0m pane (demo)\\n'; exec cat"]

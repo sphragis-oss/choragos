@@ -1,0 +1,5 @@
+/choragos
+/dist/
+/.choragos/
+*.out
+.env

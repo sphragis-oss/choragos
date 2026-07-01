@@ -1,0 +1,28 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        no-networked-charm:
+          deny:
+            - pkg: github.com/charmbracelet/charm
+              desc: hosted cloud client with a critical advisory; use pure TUI libs only
+            - pkg: github.com/charmbracelet/soft-serve
+              desc: SSH git server with known CVEs; out of scope for choragos
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
