@@ -679,20 +679,38 @@ func TestTaskBoardRecordsAndRenders(t *testing.T) {
 	t.Chdir(t.TempDir())
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "BUILD-7 fix the flake"})
-	m.dispatch(ipc.Command{Cmd: "work-done", Task: "BUILD-7 fixed", Done: true})
-	if len(m.board) != 2 {
-		t.Fatalf("board events = %d, want 2", len(m.board))
+	if len(m.board) != 1 || m.board[0].id != "T1" || !m.board[0].doneAt.IsZero() {
+		t.Fatalf("delegate event: %+v", m.board)
+	}
+	// the injected task file carries the id and the work-done echo instruction
+	body, err := os.ReadFile(filepath.Join(".choragos", "worker-task-coder.md"))
+	if err != nil || !strings.Contains(string(body), "work-done --id T1") {
+		t.Fatalf("task file missing id echo: err=%v", err)
 	}
 	m.Update(key("ctrl+b"))
 	m.Update(key("t"))
 	if !m.boardOn {
 		t.Fatal("prefix+t should open the task board")
 	}
+	if v := m.View(); !strings.Contains(v, "pending") {
+		t.Fatal("unresolved delegation should show pending")
+	}
+	m.Update(key("q"))
+
+	m.dispatch(ipc.Command{Cmd: "work-done", Task: "BUILD-7 fixed", Done: true, ID: "T1"})
+	if len(m.board) != 2 || m.board[0].doneAt.IsZero() {
+		t.Fatalf("work-done did not resolve T1: %+v", m.board)
+	}
+	m.Update(key("ctrl+b"))
+	m.Update(key("t"))
 	v := m.View()
-	for _, want := range []string{"task board", "delegate", "coder", "BUILD-7 fix the flake", "work-done ✓"} {
+	for _, want := range []string{"task board", "T1", "delegate", "coder", "BUILD-7 fix the flake", "work-done ✓", "✓ "} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("board missing %q", want)
 		}
+	}
+	if strings.Contains(v, "pending") {
+		t.Fatal("resolved delegation still shows pending")
 	}
 	m.Update(key("q"))
 	if m.boardOn {

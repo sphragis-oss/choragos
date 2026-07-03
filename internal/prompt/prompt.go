@@ -49,14 +49,21 @@ func WorkerBrief(role config.Role) string {
 }
 
 // WorkerTask is a worker's task prompt: role brief, the task, and the work-done instruction.
-func WorkerTask(role config.Role, task string) string {
+func WorkerTask(role config.Role, task, id string) string {
 	var b strings.Builder
 	if role.Prompt != "" {
 		b.WriteString(role.Prompt)
 		b.WriteString("\n\n")
 	}
 	b.WriteString("## Task\n\n")
+	if id != "" {
+		b.WriteString("Task id: " + id + "\n\n")
+	}
 	b.WriteString(task)
-	b.WriteString("\n\n## When done\n\n```bash\nchoragos work-done --task \"Summary with file paths and outcomes.\"\n```\n")
+	idFlag := ""
+	if id != "" {
+		idFlag = " --id " + id
+	}
+	b.WriteString("\n\n## When done\n\n```bash\nchoragos work-done" + idFlag + " --task \"Summary with file paths and outcomes.\"\n```\n")
 	return b.String()
 }

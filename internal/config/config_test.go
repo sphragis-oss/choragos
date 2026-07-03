@@ -214,6 +214,23 @@ func TestUIDefaultsOn(t *testing.T) {
 	}
 }
 
+func TestExampleConfigsLoad(t *testing.T) {
+	files, err := filepath.Glob("../../examples/*.toml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no example configs found: %v", err)
+	}
+	for _, f := range files {
+		c, err := config.Load(f)
+		if err != nil {
+			t.Errorf("%s does not load: %v", f, err)
+			continue
+		}
+		if len(c.Warnings) > 0 {
+			t.Errorf("%s has unknown keys: %v", f, c.Warnings)
+		}
+	}
+}
+
 func FuzzKeysDefaulted(f *testing.F) {
 	for _, seed := range []string{"", "v", "prefix+v", "PREFIX+MINUS", "ctrl+b", "minus", "shift+tab", "  x  ", "πλήκτρο"} {
 		f.Add(seed)

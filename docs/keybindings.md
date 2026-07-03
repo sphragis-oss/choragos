@@ -36,7 +36,7 @@ forwarded to the PTY.
 | `toggle_sidebar` | `prefix+b` | Show/hide the status-card sidebar; tiles reflow to the full width |
 | `restart_role` | `prefix+R` | Respawn the focused tile's agent (works on live or exited roles) |
 | `broadcast` | `prefix+a` | Toggle sending normal-mode keys to every live pane (`[BCAST]`) |
-| `task_board` | `prefix+t` | Overlay listing delegate/work-done events; any key closes |
+| `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; any key closes |
 | `search` | `prefix+/` | Search the focused tile's scrollback; Enter jumps, `n`/`N` navigate |
 | `help` | `prefix+?` | Keymap overlay; any key closes |
 

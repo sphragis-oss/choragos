@@ -117,6 +117,7 @@ type Model struct {
 	searching  bool   // typing a scrollback search query
 	searchBuf  string // query being typed
 	searchQ    string // committed query; n/N navigate while scrolled
+	taskSeq    int    // task id counter for delegations
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -134,11 +135,13 @@ type Model struct {
 
 // taskEvent is one delegation-protocol event, shown on the task board.
 type taskEvent struct {
-	at   time.Time
-	kind string // delegate | work-done
-	to   string
-	task string
-	done bool
+	at     time.Time
+	kind   string // delegate | work-done
+	id     string
+	to     string
+	task   string
+	done   bool
+	doneAt time.Time // delegate rows: when the matching work-done arrived
 }
 
 // boardCap bounds the in-memory task history.
@@ -148,6 +151,20 @@ func (m *Model) recordTask(ev taskEvent) {
 	m.board = append(m.board, ev)
 	if len(m.board) > boardCap {
 		m.board = m.board[len(m.board)-boardCap:]
+	}
+}
+
+// resolveTask marks the delegation with this id as reported.
+func (m *Model) resolveTask(id string) {
+	if id == "" {
+		return
+	}
+	for i := len(m.board) - 1; i >= 0; i-- {
+		ev := &m.board[i]
+		if ev.kind == "delegate" && ev.id == id && ev.doneAt.IsZero() {
+			ev.doneAt = time.Now()
+			return
+		}
 	}
 }
 
@@ -579,11 +596,13 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	case "delegate":
 		for _, name := range cmd.To {
 			if e, i := m.findRole(name); e != nil && !e.exited {
+				m.taskSeq++
+				id := fmt.Sprintf("T%d", m.taskSeq)
 				file := "worker-task-" + sanitize(name) + ".md"
-				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task),
+				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task, id),
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
-				m.log().Info("delegate", "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
-				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", to: name, task: singleLine(cmd.Task)})
+				m.log().Info("delegate", "id", id, "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
+				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: name, task: singleLine(cmd.Task)})
 				injectLine(e, line)
 				if m.autoFocus && !m.manual {
 					m.focusRole(i)
@@ -595,8 +614,9 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	case "work-done":
 		i := m.startIdx()
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
-			m.log().Info("work-done", "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
-			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
+			m.log().Info("work-done", "id", cmd.ID, "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
+			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
+			m.resolveTask(cmd.ID)
 			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
 			if m.autoFocus && !m.manual {
 				m.focusRole(i)
@@ -906,12 +926,22 @@ func (m *Model) renderBoard(w, h int) string {
 	}
 	for _, ev := range rows {
 		kind := ev.kind
-		if ev.kind == "work-done" && ev.done {
+		status := ""
+		switch {
+		case ev.kind == "delegate" && ev.doneAt.IsZero():
+			status = lipgloss.NewStyle().Foreground(waitingColor).Render(" pending")
+		case ev.kind == "delegate":
+			status = lipgloss.NewStyle().Foreground(workingColor).Render(" ✓ " + ev.doneAt.Sub(ev.at).Round(time.Second).String())
+		case ev.kind == "work-done" && ev.done:
 			kind = "work-done ✓"
 		}
-		line := ev.at.Format("15:04:05") + "  " +
-			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + "  " +
-			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-40))
+		id := ""
+		if ev.id != "" {
+			id = ev.id + " "
+		}
+		line := ev.at.Format("15:04:05") + "  " + id +
+			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + status + "  " +
+			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-50))
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
