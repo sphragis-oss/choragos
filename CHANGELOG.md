@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-03
+
 ### Added
 - `choragos init --template <name>`: embedded team templates (`starter`,
   `claude-team`, `mixed-team`, `review`).
@@ -61,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sphragis-oss/choragos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sphragis-oss/choragos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sphragis-oss/choragos/releases/tag/v0.1.0
