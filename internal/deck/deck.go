@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package deck is the Bubble Tea TUI: status cards (33%) plus an auto-expanding accordion of role panes (67%).
+// Package deck is the Bubble Tea TUI: a toggleable status-card sidebar plus a tiling window manager over the role panes.
 package deck
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/sphragis-oss/choragos/internal/pane"
 	"github.com/sphragis-oss/choragos/internal/prompt"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
+	"github.com/sphragis-oss/choragos/internal/wm"
 )
 
 // contextDir holds the generated role prompts, referenced by the injected one-liners.
@@ -32,6 +33,9 @@ const contextDir = ".choragos"
 const (
 	bootMinWait = 1 * time.Second
 	bootSettle  = 1200 * time.Millisecond
+	// injection is verified on screen; re-typed after bootVerifyAfter, at most bootMaxTries times
+	bootVerifyAfter = 3 * time.Second
+	bootMaxTries    = 2
 )
 
 // injectEnterDelay separates the typed text from its submit; Claude's TUI treats text+Enter in one write as a paste.
@@ -53,11 +57,14 @@ const (
 	workingWindow                    = 2 * time.Second
 )
 
-// frameMsg signals a pane produced new output; idx marks which pane.
-type frameMsg struct{ idx int }
+// resizeStep is the ratio delta per keypress in resize mode.
+const resizeStep = 0.05
 
-// paneClosedMsg signals a role's process exited.
-type paneClosedMsg struct{ idx int }
+// frameMsg signals a pane produced new output; gen guards against a restarted role's stale stream.
+type frameMsg struct{ idx, gen int }
+
+// paneClosedMsg signals a role's process exited; gen guards against a restarted role's stale stream.
+type paneClosedMsg struct{ idx, gen int }
 
 // tickMsg drives the activity clock so working/idle and "Xs ago" stay fresh.
 type tickMsg struct{}
@@ -79,19 +86,39 @@ type entry struct {
 	pane       *pane.Pane
 	exited     bool
 	booted     bool
+	waiting    bool // last observed waiting-for-input state, for bell edge detection
+	gen        int  // bumped on restart; stale stream messages are dropped
 	startedAt  time.Time
 	lastActive time.Time
+	bootLine   string // injected one-liner, kept for on-screen verification
+	bootSentAt time.Time
+	bootTries  int
+	bootOK     bool
 }
 
-// Model drives the two-column orchestration deck.
+// Model drives the orchestration deck: sidebar cards plus the tiled role panes.
 type Model struct {
 	cfg        config.Config
 	prog       *tea.Program
 	panes      []*entry
 	active     int
-	manual     bool // user pressed ctrl+o; pause auto-expand until next real focus steal
+	manual     bool // user drove focus (ctrl+o or any WM action); pause auto-focus
+	tree       *wm.Tree
+	keys       config.Keys
+	prefixed   bool   // prefix armed; next key runs a WM action
+	sidebar    bool   // status-card column visible
+	autoFocus  bool   // activity steals focus ([ui] auto_focus)
+	helpOn     bool   // help overlay visible; any key closes it
+	boardOn    bool   // task board overlay visible; any key closes it
+	broadcast  bool   // normal-mode keys go to every live pane
+	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
+	board      []taskEvent
+	searching  bool   // typing a scrollback search query
+	searchBuf  string // query being typed
+	searchQ    string // committed query; n/N navigate while scrolled
 	server     *ipc.Server
 	socket     string
+	baseURL    string // gateway base URL handed to role env; reused on restart
 	gateway    *sphragis.Supervisor
 	sphragisOn bool // gateway enforcement, toggled live with ctrl+g
 	gatewayUp  bool // last known gateway health (refreshed off the UI thread)
@@ -102,6 +129,25 @@ type Model struct {
 	eventsC    io.Closer
 	w, h       int
 	err        error
+}
+
+// taskEvent is one delegation-protocol event, shown on the task board.
+type taskEvent struct {
+	at   time.Time
+	kind string // delegate | work-done
+	to   string
+	task string
+	done bool
+}
+
+// boardCap bounds the in-memory task history.
+const boardCap = 200
+
+func (m *Model) recordTask(ev taskEvent) {
+	m.board = append(m.board, ev)
+	if len(m.board) > boardCap {
+		m.board = m.board[len(m.board)-boardCap:]
+	}
 }
 
 // discardLog is the fallback so dispatch never nil-panics before the event log is wired.
@@ -117,7 +163,7 @@ func (m *Model) log() *slog.Logger {
 // Run opens the deck for cfg and blocks until the user quits.
 func Run(cfg config.Config) error {
 	m := &Model{cfg: cfg}
-	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithoutSignalHandler())
+	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
 	sigCh := make(chan os.Signal, 1)
@@ -155,37 +201,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.resizePanes()
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlQ:
-			m.closeAll()
-			return m, tea.Quit
-		case tea.KeyCtrlO:
-			if len(m.panes) > 0 {
-				m.setActive((m.active + 1) % len(m.panes))
-				m.manual = true
-			}
-		case tea.KeyCtrlG:
-			m.sphragisOn = !m.sphragisOn
-		case tea.KeyPgUp:
-			m.scrollOff += scrollStep
-		case tea.KeyPgDown:
-			if m.scrollOff -= scrollStep; m.scrollOff < 0 {
-				m.scrollOff = 0
-			}
-		default:
-			if e := m.current(); e != nil && !e.exited {
-				_ = e.pane.Input(keyBytes(msg))
-			}
-		}
+		return m.handleKey(msg)
+	case tea.MouseMsg:
+		m.handleMouse(msg)
 	case frameMsg:
-		if msg.idx >= 0 && msg.idx < len(m.panes) {
+		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].lastActive = time.Now()
-			if !m.manual {
-				m.setActive(msg.idx) // auto-expand whoever is producing output
+			if m.autoFocus && !m.manual {
+				m.focusRole(msg.idx) // auto-focus whoever is producing output
 			}
 		}
 	case paneClosedMsg:
-		if msg.idx >= 0 && msg.idx < len(m.panes) {
+		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].exited = true
 			m.log().Warn("pane exited", "role", m.panes[msg.idx].role.Name)
 		}
@@ -206,12 +233,319 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gatewayUp = msg.up
 	case tickMsg:
 		m.bootPanes()
+		m.checkWaiting()
 		if m.sphragisOn {
 			return m, tea.Batch(tick(), checkHealth(m.cfg.Sphragis.Addr))
 		}
 		return m, tick()
 	}
 	return m, nil
+}
+
+// handleKey routes a key: direct chords first, then resize mode, prefix mode, and PTY forwarding.
+func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlQ:
+		m.closeAll()
+		return m, tea.Quit
+	case tea.KeyCtrlO:
+		if len(m.panes) > 0 {
+			m.manual = true
+			m.focusRole((m.active + 1) % len(m.panes))
+		}
+		return m, nil
+	case tea.KeyCtrlG:
+		m.sphragisOn = !m.sphragisOn
+		return m, nil
+	case tea.KeyPgUp:
+		m.scrollOff += scrollStep
+		return m, nil
+	case tea.KeyPgDown:
+		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
+			m.scrollOff = 0
+		}
+		return m, nil
+	}
+	if m.helpOn || m.boardOn {
+		m.helpOn, m.boardOn = false, false
+		return m, nil
+	}
+	if m.searching {
+		m.searchKey(msg)
+		return m, nil
+	}
+	if m.tree != nil && m.tree.Resizing() {
+		m.resizeKey(msg.String())
+		return m, nil
+	}
+	if m.prefixed {
+		m.prefixed = false
+		m.wmAction(msg.String())
+		return m, nil
+	}
+	if m.tree != nil && msg.String() == m.keys.Prefix {
+		m.prefixed = true
+		return m, nil
+	}
+	if m.scrollOff > 0 && m.searchQ != "" && msg.Type == tea.KeyRunes {
+		switch string(msg.Runes) {
+		case "n":
+			m.searchJump(1)
+			return m, nil
+		case "N":
+			m.searchJump(-1)
+			return m, nil
+		}
+	}
+	if m.broadcast {
+		for _, e := range m.panes {
+			if !e.exited {
+				_ = e.pane.Input(keyBytes(msg))
+			}
+		}
+		return m, nil
+	}
+	if e := m.current(); e != nil && !e.exited {
+		_ = e.pane.Input(keyBytes(msg))
+	}
+	return m, nil
+}
+
+// handleMouse focuses the clicked tile and drives scrollback with the wheel.
+func (m *Model) handleMouse(msg tea.MouseMsg) {
+	if m.tree == nil {
+		return
+	}
+	switch {
+	case msg.Button == tea.MouseButtonWheelUp && msg.Action == tea.MouseActionPress:
+		m.scrollOff += scrollStep
+	case msg.Button == tea.MouseButtonWheelDown && msg.Action == tea.MouseActionPress:
+		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
+			m.scrollOff = 0
+		}
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		leftW, mainW, contentH := m.dims()
+		x := msg.X - leftW
+		if x < 0 || msg.Y >= contentH {
+			return // sidebar and status row are not clickable
+		}
+		for _, t := range m.tree.Layout(mainW, contentH) {
+			if x >= t.X && x < t.X+t.W && msg.Y >= t.Y && msg.Y < t.Y+t.H {
+				if t.Role != m.active {
+					m.manual = true
+					m.focusRole(t.Role)
+				}
+				return
+			}
+		}
+	}
+}
+
+// resizeKey adjusts the focused split's ratio live; any unmapped key exits resize mode.
+func (m *Model) resizeKey(key string) {
+	key, reps := collapseRepeat(key) // key repeat can coalesce into one "hhh" rune msg
+	var vert bool
+	var delta float64
+	switch key {
+	case "h", "left":
+		vert, delta = true, -resizeStep
+	case "l", "right":
+		vert, delta = true, resizeStep
+	case "k", "up":
+		vert, delta = false, -resizeStep
+	case "j", "down":
+		vert, delta = false, resizeStep
+	default:
+		m.tree.SetResizing(false)
+		return
+	}
+	if m.tree.AdjustRatio(vert, delta*float64(reps)) {
+		m.resizePanes()
+	}
+}
+
+// collapseRepeat folds a coalesced run of one rune ("hhh") into the rune and its count.
+func collapseRepeat(key string) (string, int) {
+	r := []rune(key)
+	if len(r) < 2 {
+		return key, 1
+	}
+	for _, c := range r {
+		if c != r[0] {
+			return key, 1
+		}
+	}
+	return string(r[0]), len(r)
+}
+
+// wmAction runs the prefix-mode action bound to key; unmapped keys are a no-op.
+func (m *Model) wmAction(key string) {
+	switch key {
+	case m.keys.SplitVertical:
+		m.split(true)
+	case m.keys.SplitHorizontal:
+		m.split(false)
+	case m.keys.ClosePane:
+		if m.tree.Close() {
+			m.manual = true
+			m.syncFocus()
+		}
+	case m.keys.FocusLeft:
+		m.focusDir(wm.Left)
+	case m.keys.FocusDown:
+		m.focusDir(wm.Down)
+	case m.keys.FocusUp:
+		m.focusDir(wm.Up)
+	case m.keys.FocusRight:
+		m.focusDir(wm.Right)
+	case m.keys.CycleNext:
+		m.manual = true
+		m.tree.CycleNext()
+		m.syncFocus()
+	case m.keys.CyclePrev:
+		m.manual = true
+		m.tree.CyclePrev()
+		m.syncFocus()
+	case m.keys.Zoom:
+		m.manual = true
+		m.tree.ToggleZoom()
+		m.resizePanes()
+	case m.keys.ResizeMode:
+		m.tree.SetResizing(true)
+	case m.keys.ToggleSidebar:
+		m.sidebar = !m.sidebar
+		m.resizePanes()
+	case m.keys.Help:
+		m.helpOn = true
+	case m.keys.RestartRole:
+		m.restartRole()
+	case m.keys.Broadcast:
+		m.broadcast = !m.broadcast
+	case m.keys.TaskBoard:
+		m.boardOn = true
+	case m.keys.Search:
+		m.searching = true
+		m.searchBuf = ""
+	}
+}
+
+// searchKey edits the query; Enter jumps to the nearest match above, Esc cancels.
+func (m *Model) searchKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.searching = false
+		m.searchQ = m.searchBuf
+		m.searchJump(1)
+	case tea.KeyEsc:
+		m.searching = false
+		m.searchBuf = ""
+	case tea.KeyBackspace:
+		if r := []rune(m.searchBuf); len(r) > 0 {
+			m.searchBuf = string(r[:len(r)-1])
+		}
+	case tea.KeySpace:
+		m.searchBuf += " "
+	case tea.KeyRunes:
+		m.searchBuf += string(msg.Runes)
+	}
+}
+
+// searchJump scrolls the focused pane to the nearest match: dir>0 older (up), dir<0 newer (down).
+func (m *Model) searchJump(dir int) {
+	e := m.current()
+	if e == nil || m.searchQ == "" {
+		return
+	}
+	cw, ch := m.focusedTileContent()
+	lines := e.pane.HistoryLines(cw)
+	total := len(lines)
+	if total == 0 || ch < 1 {
+		return
+	}
+	cur := total - m.scrollOff - ch // top row of the current view
+	q := strings.ToLower(m.searchQ)
+	match := -1
+	if dir > 0 {
+		for r := min(cur-1, total-1); r >= 0; r-- {
+			if strings.Contains(strings.ToLower(lines[r]), q) {
+				match = r
+				break
+			}
+		}
+	} else {
+		for r := cur + 1; r < total; r++ {
+			if strings.Contains(strings.ToLower(lines[r]), q) {
+				match = r
+				break
+			}
+		}
+	}
+	if match < 0 {
+		return
+	}
+	if off := total - match - ch; off > 0 {
+		m.scrollOff = off // renderTile clamps to the pane's max offset
+	} else {
+		m.scrollOff = 0
+	}
+}
+
+// split tiles the next hidden role next to the focused tile; no-op when all roles are visible.
+func (m *Model) split(vert bool) {
+	role := m.nextHiddenRole()
+	if role < 0 {
+		return
+	}
+	m.manual = true
+	m.tree.Split(vert, role)
+	m.syncFocus()
+}
+
+// nextHiddenRole picks the first role after the focused one that has no tile.
+func (m *Model) nextHiddenRole() int {
+	vis := make(map[int]bool)
+	for _, r := range m.tree.VisibleRoles() {
+		vis[r] = true
+	}
+	for off := 1; off <= len(m.panes); off++ {
+		i := (m.active + off) % len(m.panes)
+		if !vis[i] {
+			return i
+		}
+	}
+	return -1
+}
+
+// focusDir moves focus to the geometrically adjacent tile.
+func (m *Model) focusDir(d wm.Dir) {
+	m.manual = true
+	_, mainW, contentH := m.dims()
+	if m.tree.FocusDir(d, mainW, contentH) {
+		m.syncFocus()
+	}
+}
+
+// focusRole shows role i: focuses its tile when visible, else retargets the focused tile.
+func (m *Model) focusRole(i int) {
+	if i == m.active || i < 0 || i >= len(m.panes) {
+		return
+	}
+	if m.tree != nil {
+		m.tree.Focus(i)
+		m.syncFocus()
+		return
+	}
+	m.scrollOff, m.maxScroll = 0, 0
+	m.active = i
+}
+
+// syncFocus aligns active with the tree's focused tile and resizes visible panes.
+func (m *Model) syncFocus() {
+	if r := m.tree.FocusedRole(); r != m.active {
+		m.scrollOff, m.maxScroll = 0, 0
+		m.active = r
+	}
+	m.resizePanes()
 }
 
 // checkHealth probes the gateway off the UI thread so View never blocks on I/O.
@@ -241,9 +575,10 @@ func (m *Model) dispatch(cmd ipc.Command) {
 				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task),
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
 				m.log().Info("delegate", "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
+				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", to: name, task: singleLine(cmd.Task)})
 				injectLine(e, line)
-				if !m.manual {
-					m.setActive(i)
+				if m.autoFocus && !m.manual {
+					m.focusRole(i)
 				}
 			} else {
 				m.log().Warn("delegate target unavailable", "to", name)
@@ -253,42 +588,97 @@ func (m *Model) dispatch(cmd ipc.Command) {
 		i := m.startIdx()
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
 			m.log().Info("work-done", "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
+			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
 			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
-			if !m.manual {
-				m.setActive(i)
+			if m.autoFocus && !m.manual {
+				m.focusRole(i)
 			}
 		}
 	}
 }
 
-// bootPanes injects each role's boot prompt once its pane has settled (agent ready).
+// checkWaiting rings the bell once per transition into waiting-for-input.
+func (m *Model) checkWaiting() {
+	for _, e := range m.panes {
+		w := needsInput(e)
+		if w && !e.waiting {
+			m.log().Info("waiting for input", "role", e.role.Name)
+			if m.bellFn != nil {
+				m.bellFn()
+			}
+		}
+		e.waiting = w
+	}
+}
+
+// bootPanes injects each role's boot prompt once its pane settles, then verifies it landed and retries once.
 func (m *Model) bootPanes() {
 	now := time.Now()
 	for _, e := range m.panes {
-		if e.booted || e.exited {
+		if e.exited {
 			continue
 		}
-		if now.Sub(e.startedAt) < bootMinWait || now.Sub(e.lastActive) < bootSettle {
+		if !e.booted {
+			if now.Sub(e.startedAt) < bootMinWait || now.Sub(e.lastActive) < bootSettle {
+				continue
+			}
+			m.log().Info("boot", "role", e.role.Name, "start", e.role.Start)
+			m.injectBoot(e)
+			e.booted = true
+			e.bootSentAt = now
+			e.bootTries = 1
 			continue
 		}
-		m.log().Info("boot", "role", e.role.Name, "start", e.role.Start)
-		m.injectBoot(e)
-		e.booted = true
+		if e.bootOK {
+			continue
+		}
+		if bootLanded(e) {
+			e.bootOK = true
+			continue
+		}
+		if now.Sub(e.bootSentAt) < bootVerifyAfter {
+			continue
+		}
+		if e.bootTries >= bootMaxTries {
+			e.bootOK = true // give up quietly; the agent may have redrawn its screen
+			m.log().Warn("boot injection unverified", "role", e.role.Name)
+			continue
+		}
+		m.log().Warn("boot injection retry", "role", e.role.Name)
+		injectLine(e, e.bootLine)
+		e.bootTries++
+		e.bootSentAt = now
 	}
+}
+
+// bootLanded reports whether the boot one-liner is visible on the pane (wrap-safe join).
+func bootLanded(e *entry) bool {
+	if e.bootLine == "" {
+		return true
+	}
+	snippet := []rune(e.bootLine)
+	if len(snippet) > 24 {
+		snippet = snippet[:24]
+	}
+	var b strings.Builder
+	for _, l := range e.pane.TailLines(40) {
+		b.WriteString(l)
+	}
+	return strings.Contains(b.String(), string(snippet))
 }
 
 func (m *Model) injectBoot(e *entry) {
 	if e.role.Start {
 		file := "orchestrator-context.md"
-		line := writeContext(file, prompt.OrchestratorContext(m.cfg),
+		e.bootLine = writeContext(file, prompt.OrchestratorContext(m.cfg),
 			"Read "+filepath.Join(contextDir, file)+" for your role, available agents, and the delegation protocol. Acknowledge your role and wait for instructions.")
-		injectLine(e, line)
+		injectLine(e, e.bootLine)
 		return
 	}
 	file := sanitize(e.role.Name) + "-brief.md"
-	line := writeContext(file, prompt.WorkerBrief(e.role),
+	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role),
 		"Read "+filepath.Join(contextDir, file)+" for your role, then stay idle until a task is delegated to you.")
-	injectLine(e, line)
+	injectLine(e, e.bootLine)
 }
 
 // writeContext writes content to contextDir/name; on failure it returns a diagnostic to inject instead of pointing the agent at a missing file.
@@ -342,10 +732,10 @@ func singleLine(s string) string {
 var chromeMarkers = []string{"for agents", "for shortcuts", "lazy:full", "release-notes", "auto-update"}
 
 // activityTail keeps the last n content lines, dropping TUI chrome (progress bars, statusline, hints).
-func activityTail(lines []string, n int) []string {
+func activityTail(lines []string, n int, extra []string) []string {
 	var kept []string
 	for _, l := range lines {
-		if !chromeLine(l) {
+		if !chromeLine(l, extra) {
 			kept = append(kept, l)
 		}
 	}
@@ -356,10 +746,15 @@ func activityTail(lines []string, n int) []string {
 }
 
 // chromeLine reports whether a line is agent-TUI chrome rather than meaningful output.
-func chromeLine(s string) bool {
+func chromeLine(s string, extra []string) bool {
 	low := strings.ToLower(s)
 	for _, m := range chromeMarkers {
 		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	for _, m := range extra {
+		if m != "" && strings.Contains(low, strings.ToLower(m)) {
 			return true
 		}
 	}
@@ -428,19 +823,184 @@ func (m *Model) View() string {
 		return "starting deck...\n"
 	}
 	now := time.Now()
-	d := computeLayout(len(m.panes), m.w, m.h)
-	contentH := m.h - 1
+	leftW, mainW, contentH := m.dims()
 
 	st := make([]roleState, len(m.panes))
 	for i, e := range m.panes {
 		st[i] = computeStatus(e, now)
 	}
 
-	left := m.renderCards(d.leftW, contentH, st)
-	right := lipgloss.NewStyle().Width(d.rightW).Height(contentH).MaxHeight(contentH).
-		Render(m.renderAccordion(d, st))
-	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	body := m.tree.Render(mainW, contentH, func(role, w, h int) string {
+		return m.renderTile(role, w, h, st)
+	})
+	if m.boardOn {
+		body = m.renderBoard(mainW, contentH)
+	}
+	if m.helpOn {
+		body = m.renderHelp(mainW, contentH)
+	}
+	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(body)
+	if leftW > 0 {
+		left := m.renderCards(leftW, contentH, st)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, left, main)
+	}
 	return main + "\n" + m.renderStats(st)
+}
+
+// renderHelp draws the keymap overlay in place of the tiled area; any key closes it.
+func (m *Model) renderHelp(w, h int) string {
+	k := m.keys
+	rows := [][2]string{
+		{"ctrl+q", "quit (graceful)"},
+		{"ctrl+g", "toggle sphragis gateway"},
+		{"ctrl+o", "cycle focus across roles"},
+		{"PgUp/PgDn", "scrollback on the focused tile"},
+		{k.Prefix + " " + k.SplitVertical, "split left/right"},
+		{k.Prefix + " " + k.SplitHorizontal, "split top/bottom"},
+		{k.Prefix + " " + k.ClosePane, "close tile (agent keeps running)"},
+		{k.Prefix + " " + k.FocusLeft + "/" + k.FocusDown + "/" + k.FocusUp + "/" + k.FocusRight, "focus left/down/up/right"},
+		{k.Prefix + " " + k.CycleNext + " / " + k.CyclePrev, "cycle tiles next/prev"},
+		{k.Prefix + " " + k.Zoom, "zoom focused tile"},
+		{k.Prefix + " " + k.ResizeMode, "resize mode (h/j/k/l, other key exits)"},
+		{k.Prefix + " " + k.ToggleSidebar, "toggle sidebar"},
+		{k.Prefix + " " + k.RestartRole, "restart focused role"},
+		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
+		{k.Prefix + " " + k.TaskBoard, "task board"},
+		{k.Prefix + " " + k.Search, "search scrollback"},
+		{k.Prefix + " " + k.Help, "this help"},
+	}
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("keybindings") + "\n\n")
+	for _, r := range rows {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(16).Render(r[0]))
+		b.WriteString(" " + r[1] + "\n")
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
+}
+
+// renderBoard draws the delegation-event board in place of the tiled area; any key closes it.
+func (m *Model) renderBoard(w, h int) string {
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("task board") + "\n\n")
+	if len(m.board) == 0 {
+		b.WriteString(lipgloss.NewStyle().Faint(true).Render("no delegations yet"))
+	}
+	rows := m.board
+	if maxRows := h - 6; maxRows > 0 && len(rows) > maxRows {
+		rows = rows[len(rows)-maxRows:]
+	}
+	for _, ev := range rows {
+		kind := ev.kind
+		if ev.kind == "work-done" && ev.done {
+			kind = "work-done ✓"
+		}
+		line := ev.at.Format("15:04:05") + "  " +
+			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + "  " +
+			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-40))
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
+}
+
+// dims returns the sidebar width (0 when hidden), main-area width, and content height.
+func (m *Model) dims() (leftW, mainW, contentH int) {
+	contentH = m.h - 1
+	if contentH < 1 {
+		contentH = 1
+	}
+	mainW = m.w
+	if !m.sidebar {
+		if mainW < 1 {
+			mainW = 1
+		}
+		return 0, mainW, contentH
+	}
+	leftW = m.w / 3
+	if leftW < minSidebar {
+		leftW = minSidebar
+	}
+	if leftW > m.w-1 {
+		leftW = m.w - 1
+	}
+	if leftW < 1 {
+		leftW = 1
+	}
+	mainW = m.w - leftW
+	if mainW < 1 {
+		mainW = 1
+	}
+	return leftW, mainW, contentH
+}
+
+// tileContent maps a tile's outer dims to its pane content area; chrome is border plus header.
+func tileContent(w, h int) (cw, ch int, chrome bool) {
+	if w < 6 || h < 5 {
+		if w < 1 {
+			w = 1
+		}
+		if h < 1 {
+			h = 1
+		}
+		return w, h, false
+	}
+	return w - 2, h - 3, true
+}
+
+// renderTile draws one role pane as a w x h tile: header + live screen (or scrollback) in a status-colored border.
+func (m *Model) renderTile(role, w, h int, st []roleState) string {
+	e := m.panes[role]
+	focused := role == m.active
+	cw, ch, chrome := tileContent(w, h)
+	content := e.pane.Render()
+	scrolled := false
+	if focused && m.scrollOff > 0 {
+		var maxOff int
+		content, maxOff = e.pane.Scrollback(cw, ch, m.scrollOff)
+		m.maxScroll = maxOff
+		if m.scrollOff > maxOff {
+			m.scrollOff = maxOff
+		}
+		scrolled = m.scrollOff > 0
+	}
+	if !chrome {
+		return lipgloss.NewStyle().Width(w).Height(h).MaxWidth(w).MaxHeight(h).Render(content)
+	}
+	border := dimColor
+	switch {
+	case scrolled:
+		border = scrollColor
+	case focused:
+		border = accentColor
+	case st[role].waiting:
+		border = waitingColor
+	}
+	nameStyle := lipgloss.NewStyle().Bold(true)
+	if focused {
+		nameStyle = nameStyle.Foreground(accentColor)
+	}
+	header := lipgloss.NewStyle().MaxWidth(cw).Render(
+		lipgloss.NewStyle().Foreground(st[role].color).Render(st[role].dot) + " " +
+			nameStyle.Render(e.role.Name) + "  " +
+			lipgloss.NewStyle().Faint(true).Render(st[role].label))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(header + "\n" + content)
 }
 
 // renderCards is the left column: one status card per role, with a tail activity preview.
@@ -459,7 +1019,7 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		inner := nameStyle.Render(fmt.Sprintf("%d %s", i+1, e.role.Name)) + "\n" +
 			lipgloss.NewStyle().Foreground(st[i].color).Render(st[i].dot) + " " +
 			lipgloss.NewStyle().Faint(true).Render(st[i].label)
-		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines) {
+		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines, e.role.ChromeMarkers) {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(singleLine(l), width-4))
 		}
 		card := lipgloss.NewStyle().
@@ -471,53 +1031,6 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 	}
 	col := lipgloss.JoinVertical(lipgloss.Left, cards...)
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(col)
-}
-
-// renderAccordion is the right column: collapsed headers plus the expanded pane (live or scrolled back).
-func (m *Model) renderAccordion(d layoutDims, st []roleState) string {
-	var b strings.Builder
-	for i, e := range m.panes {
-		focused := i == m.active
-		b.WriteString(m.paneHeader(i, focused, d.rightW, st[i]))
-		b.WriteByte('\n')
-		if focused && d.paneH > 0 {
-			border := accentColor
-			content := e.pane.Render()
-			if m.scrollOff > 0 {
-				var maxOff int
-				content, maxOff = e.pane.Scrollback(d.paneW, d.paneH, m.scrollOff)
-				m.maxScroll = maxOff
-				if m.scrollOff > maxOff {
-					m.scrollOff = maxOff
-				}
-				border = scrollColor
-			}
-			box := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(border).
-				Width(d.paneW).Height(d.paneH).
-				Render(content)
-			b.WriteString(box)
-			b.WriteByte('\n')
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// paneHeader renders one role's status row in the accordion.
-func (m *Model) paneHeader(i int, focused bool, width int, st roleState) string {
-	e := m.panes[i]
-	caret := "  "
-	nameStyle := lipgloss.NewStyle()
-	if focused {
-		caret = lipgloss.NewStyle().Foreground(accentColor).Render("▸") + " "
-		nameStyle = nameStyle.Bold(true).Foreground(accentColor)
-	}
-	line := caret +
-		lipgloss.NewStyle().Foreground(st.color).Render(st.dot) + " " +
-		nameStyle.Render(e.role.Name) + "  " +
-		lipgloss.NewStyle().Faint(true).Render(st.label)
-	return lipgloss.NewStyle().Width(width).Render(line)
 }
 
 func (m *Model) renderStats(st []roleState) string {
@@ -538,9 +1051,29 @@ func (m *Model) renderStats(st []roleState) string {
 	if m.scrollOff > 0 {
 		scroll = lipgloss.NewStyle().Foreground(scrollColor).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
 	}
-	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · PgUp/PgDn scroll · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
-		active, working, waiting, m.gatewayLabel())
-	return lipgloss.NewStyle().Faint(true).Render(txt) + scroll
+	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · %s wm · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
+		active, working, waiting, m.gatewayLabel(), m.keys.Prefix)
+	return m.modeLabel() + lipgloss.NewStyle().Faint(true).Render(txt) + scroll
+}
+
+// modeLabel is the status-line WM mode indicator: prefix armed, resize mode, zoom, or broadcast.
+func (m *Model) modeLabel() string {
+	var out string
+	if m.broadcast {
+		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[BCAST] ")
+	}
+	if m.searching {
+		out += lipgloss.NewStyle().Foreground(scrollColor).Bold(true).Render("[SEARCH /" + m.searchBuf + "] ")
+	}
+	switch {
+	case m.tree != nil && m.tree.Resizing():
+		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[RESIZE h/j/k/l] ")
+	case m.prefixed:
+		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[PREFIX] ")
+	case m.tree != nil && m.tree.Zoomed():
+		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[ZOOM] ")
+	}
+	return out
 }
 
 func (m *Model) gatewayLabel() string {
@@ -592,15 +1125,20 @@ func needsInput(e *entry) bool {
 	if e.exited || e.pane == nil {
 		return false
 	}
-	return promptInLines(e.pane.TailLines(14))
+	return promptInLines(e.pane.TailLines(14), e.role.InputPrompts)
 }
 
-// promptInLines reports whether any line carries a known blocking-prompt marker.
-func promptInLines(lines []string) bool {
+// promptInLines reports whether any line carries a built-in or role-configured blocking-prompt marker.
+func promptInLines(lines []string, extra []string) bool {
 	for _, l := range lines {
 		low := strings.ToLower(l)
 		for _, marker := range inputPrompts {
 			if strings.Contains(low, marker) {
+				return true
+			}
+		}
+		for _, marker := range extra {
+			if marker != "" && strings.Contains(low, strings.ToLower(marker)) {
 				return true
 			}
 		}
@@ -619,39 +1157,22 @@ func humanizeSince(d time.Duration) string {
 	}
 }
 
-// layoutDims holds the column widths and the focused pane's content size.
-type layoutDims struct{ leftW, rightW, paneW, paneH int }
-
-// computeLayout splits width 33/67 (cards / accordion) and sizes the focused pane to fill the right column.
-func computeLayout(n, width, height int) layoutDims {
-	leftW := width / 3
-	if leftW < minSidebar {
-		leftW = minSidebar
-	}
-	if leftW > width-1 {
-		leftW = width - 1
-	}
-	if leftW < 1 {
-		leftW = 1
-	}
-	rightW := width - leftW
-	if rightW < 1 {
-		rightW = 1
-	}
-	paneW := rightW - 2
-	if paneW < 1 {
-		paneW = 1
-	}
-	paneH := height - n - 3 // status bar + every header row + pane border; may be <= 0 on tiny terminals, box is skipped then
-	return layoutDims{leftW: leftW, rightW: rightW, paneW: paneW, paneH: paneH}
-}
-
+// resizePanes sizes every visible tile's pane; hidden panes keep their last size.
 func (m *Model) resizePanes() {
-	d := computeLayout(len(m.panes), m.w, m.h)
-	for _, e := range m.panes {
-		if !e.exited {
-			_ = e.pane.Resize(d.paneW, d.paneH) // pane clamps non-positive dims
+	if m.tree == nil {
+		return
+	}
+	_, mainW, contentH := m.dims()
+	for _, tile := range m.tree.Layout(mainW, contentH) {
+		if tile.Role < 0 || tile.Role >= len(m.panes) {
+			continue
 		}
+		e := m.panes[tile.Role]
+		if e.exited {
+			continue
+		}
+		cw, ch, _ := tileContent(tile.W, tile.H)
+		_ = e.pane.Resize(cw, ch) // pane clamps non-positive dims
 	}
 }
 
@@ -666,13 +1187,21 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled())
 
 	m.sphragisOn = m.cfg.Sphragis.IsEnabled()
-	baseURL := ""
+	m.keys = m.cfg.Keys.Defaulted()
+	m.autoFocus = m.cfg.UI.IsAutoFocus()
+	m.sidebar = m.cfg.UI.SidebarStart()
+	if m.cfg.UI.IsBell() {
+		m.bellFn = func() { _, _ = os.Stdout.WriteString("\a") }
+	}
+	m.baseURL = ""
 	if m.sphragisOn {
-		baseURL = m.cfg.Sphragis.BaseURL()
+		m.baseURL = m.cfg.Sphragis.BaseURL()
 	}
 
-	d := computeLayout(len(m.cfg.Roles), m.w, m.h)
-	panes, err := startPanes(m.cfg, d.paneW, d.paneH, m.socket, baseURL)
+	// the deck opens as a single tile showing the start role
+	_, mainW, contentH := m.dims()
+	cw, ch, _ := tileContent(mainW, contentH)
+	panes, err := startPanes(m.cfg, cw, ch, m.socket, m.baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -681,10 +1210,7 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	for i, e := range panes {
 		e.startedAt = now
 		e.lastActive = now
-		go func() {
-			_ = e.pane.Stream(func() { m.prog.Send(frameMsg{idx: i}) })
-			m.prog.Send(paneClosedMsg{idx: i})
-		}()
+		m.watchPane(e, i)
 	}
 	for i, e := range panes {
 		if e.role.Start {
@@ -692,10 +1218,67 @@ func (m *Model) startAll() (tea.Cmd, error) {
 			break
 		}
 	}
+	m.tree = wm.New(m.active)
 	if m.sphragisOn {
 		return ensureGateway(m.cfg.Sphragis), nil
 	}
 	return nil, nil
+}
+
+// send forwards a message into the UI loop; nil-safe for tests without a running program.
+func (m *Model) send(msg tea.Msg) {
+	if m.prog != nil {
+		m.prog.Send(msg)
+	}
+}
+
+// watchPane streams a pane's output into the UI loop until it exits; gen drops stale streams after a restart.
+func (m *Model) watchPane(e *entry, idx int) {
+	gen := e.gen
+	p := e.pane
+	go func() {
+		_ = p.Stream(func() { m.send(frameMsg{idx: idx, gen: gen}) })
+		m.send(paneClosedMsg{idx: idx, gen: gen})
+	}()
+}
+
+// restartRole respawns the focused tile's role, killing the old process if still alive.
+func (m *Model) restartRole() {
+	e := m.current()
+	if e == nil {
+		return
+	}
+	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
+	cw, ch := m.focusedTileContent()
+	p, err := startRole(e.role, cw, ch, roleEnv(m.socket, m.baseURL))
+	if err != nil {
+		e.exited = true
+		m.log().Error("restart failed", "role", e.role.Name, "err", err)
+		return
+	}
+	e.pane = p
+	e.gen++
+	e.exited = false
+	e.booted = false
+	e.bootOK = false
+	e.bootTries = 0
+	e.bootLine = ""
+	e.startedAt = time.Now()
+	e.lastActive = time.Now()
+	m.log().Info("role restarted", "role", e.role.Name)
+	m.watchPane(e, m.active)
+}
+
+// focusedTileContent returns the focused tile's pane content dims.
+func (m *Model) focusedTileContent() (int, int) {
+	_, mainW, contentH := m.dims()
+	for _, t := range m.tree.Layout(mainW, contentH) {
+		if t.Focused {
+			cw, ch, _ := tileContent(t.W, t.H)
+			return cw, ch
+		}
+	}
+	return 80, 24
 }
 
 // gatewayBlocked reports whether fail-closed enforcement should refuse dispatch (on, fail-closed, and down).
@@ -703,25 +1286,40 @@ func (m *Model) gatewayBlocked() bool {
 	return m.sphragisOn && m.cfg.Sphragis.IsFailClosed() && !m.gatewayUp
 }
 
-// startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
-func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
+// roleEnv builds the child env wiring the control socket and (when set) the gateway.
+func roleEnv(socket, baseURL string) []string {
 	env := append(os.Environ(), ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
 		env = append(env, "ANTHROPIC_BASE_URL="+baseURL)
 	}
+	return env
+}
+
+// startRole spawns one role's PTY pane with its log sink.
+func startRole(r config.Role, cols, rows int, env []string) (*pane.Pane, error) {
+	cmd := exec.Command(r.Command, roleArgs(r)...)
+	cmd.Env = env
+	p, err := pane.Start(cmd, cols, rows)
+	if err != nil {
+		return nil, fmt.Errorf("start role %q: %w", r.Name, err)
+	}
+	if f := openLog(r.Name); f != nil {
+		p.SetLog(f)
+	}
+	return p, nil
+}
+
+// startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
+func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
+	env := roleEnv(socket, baseURL)
 	var entries []*entry
 	for _, r := range cfg.Roles {
-		cmd := exec.Command(r.Command, roleArgs(r)...)
-		cmd.Env = env
-		p, err := pane.Start(cmd, cols, rows)
+		p, err := startRole(r, cols, rows, env)
 		if err != nil {
 			for _, e := range entries {
 				_ = e.pane.Close()
 			}
-			return nil, fmt.Errorf("start role %q: %w", r.Name, err)
-		}
-		if f := openLog(r.Name); f != nil {
-			p.SetLog(f)
+			return nil, err
 		}
 		entries = append(entries, &entry{role: r, pane: p})
 	}
@@ -767,15 +1365,6 @@ func (m *Model) current() *entry {
 		return nil
 	}
 	return m.panes[m.active]
-}
-
-// setActive focuses pane i, dropping any scrollback since it belonged to the previous pane.
-func (m *Model) setActive(i int) {
-	if i != m.active {
-		m.scrollOff = 0
-		m.maxScroll = 0
-	}
-	m.active = i
 }
 
 func (m *Model) closeAll() {

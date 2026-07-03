@@ -197,6 +197,44 @@ func (p *Pane) Scrollback(cols, height, offset int) (view string, maxOffset int)
 	return renderRows(h, cols, start, end), maxOffset
 }
 
+// HistoryLines replays the captured history and returns its plain-text content rows.
+// Row indices align with Scrollback: for L rows and a height-tall view, offset o shows rows [L-o-height, L-o).
+func (p *Pane) HistoryLines(cols int) []string {
+	if cols < 1 {
+		return nil
+	}
+	h := vt10x.New(vt10x.WithWriter(io.Discard), vt10x.WithSize(cols, scrollbackRows))
+	_, _ = h.Write(p.hist.Snapshot())
+	h.Lock()
+	defer h.Unlock()
+	_, rows := h.Size()
+	top, bot := -1, -1
+	for y := 0; y < rows; y++ {
+		if !rowBlank(h, cols, y) {
+			if top < 0 {
+				top = y
+			}
+			bot = y
+		}
+	}
+	if top < 0 {
+		return nil
+	}
+	var out []string
+	for y := top; y <= bot; y++ {
+		var sb strings.Builder
+		for x := 0; x < cols; x++ {
+			ch := h.Cell(x, y).Char
+			if ch == 0 {
+				ch = ' '
+			}
+			sb.WriteRune(ch)
+		}
+		out = append(out, strings.TrimRight(sb.String(), " "))
+	}
+	return out
+}
+
 // renderRows emits rows [y0,y1) of a terminal as ANSI-colored text; caller holds the lock.
 func renderRows(t vt10x.Terminal, cols, y0, y1 int) string {
 	var b strings.Builder

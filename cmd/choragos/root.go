@@ -37,6 +37,7 @@ func rootCmd() *cobra.Command {
 	root.SetCompletionCommandGroupID(groupOther)
 	root.AddCommand(
 		serveCmd(),
+		initCmd(),
 		delegateCmd(),
 		workDoneCmd(),
 		versionCmd(),
