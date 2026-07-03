@@ -15,6 +15,7 @@ func workDoneCmd() *cobra.Command {
 	var (
 		task string
 		done bool
+		id   string
 	)
 	cmd := &cobra.Command{
 		Use:     "work-done",
@@ -25,7 +26,7 @@ func workDoneCmd() *cobra.Command {
 			if strings.TrimSpace(task) == "" {
 				return fmt.Errorf("--task is required")
 			}
-			if err := ipc.Send(ipc.SocketPath(), ipc.Command{Cmd: "work-done", Task: task, Done: done}); err != nil {
+			if err := ipc.Send(ipc.SocketPath(), ipc.Command{Cmd: "work-done", Task: task, Done: done, ID: id}); err != nil {
 				return fmt.Errorf("work-done failed (is the deck running?): %w", err)
 			}
 			cmd.Println("reported to orchestrator")
@@ -34,5 +35,6 @@ func workDoneCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&task, "task", "", "summary of what was accomplished (files, outcomes)")
 	cmd.Flags().BoolVar(&done, "done", false, "mark the whole assignment complete")
+	cmd.Flags().StringVar(&id, "id", "", "task id from the delegation, for the task board")
 	return cmd
 }

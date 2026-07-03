@@ -546,6 +546,49 @@ func TestZoomAndResizeMode(t *testing.T) {
 	}
 }
 
+func TestRoleEnvIsolation(t *testing.T) {
+	t.Setenv("CHOR_TEST_SECRET", "s3cret")
+	t.Setenv("CHOR_TEST_TOKEN", "tok")
+	t.Setenv("AWS_TEST_KEY", "aws")
+	has := func(env []string, name string) bool {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, name+"=") {
+				return true
+			}
+		}
+		return false
+	}
+	// default: full env inherited
+	env := roleEnv(config.Role{}, "/tmp/s.sock", "")
+	if !has(env, "CHOR_TEST_SECRET") || !has(env, "PATH") || !has(env, "CHORAGOS_SOCK") {
+		t.Fatal("default mode should inherit the full env plus the socket")
+	}
+	// env_deny strips exact names and prefix patterns
+	env = roleEnv(config.Role{EnvDeny: []string{"CHOR_TEST_SECRET", "AWS_*"}}, "/tmp/s.sock", "")
+	if has(env, "CHOR_TEST_SECRET") || has(env, "AWS_TEST_KEY") {
+		t.Fatal("env_deny not applied")
+	}
+	if !has(env, "CHOR_TEST_TOKEN") {
+		t.Fatal("env_deny must not strip unrelated vars")
+	}
+	// env_allow: baseline + allowed only
+	env = roleEnv(config.Role{EnvAllow: []string{"CHOR_TEST_TOKEN"}}, "/tmp/s.sock", "http://gw")
+	if has(env, "CHOR_TEST_SECRET") || has(env, "AWS_TEST_KEY") {
+		t.Fatal("allowlist mode leaked non-allowed vars")
+	}
+	if !has(env, "CHOR_TEST_TOKEN") || !has(env, "PATH") || !has(env, "HOME") {
+		t.Fatal("allowlist mode must keep baseline and allowed vars")
+	}
+	if !has(env, "CHORAGOS_SOCK") || !has(env, "ANTHROPIC_BASE_URL") {
+		t.Fatal("choragos-injected vars must always be present")
+	}
+	// deny wins over allow
+	env = roleEnv(config.Role{EnvAllow: []string{"CHOR_TEST_TOKEN"}, EnvDeny: []string{"CHOR_TEST_TOKEN"}}, "/tmp/s.sock", "")
+	if has(env, "CHOR_TEST_TOKEN") {
+		t.Fatal("env_deny must win over env_allow")
+	}
+}
+
 func TestBootVerifyAndRetry(t *testing.T) {
 	t.Chdir(t.TempDir())
 	// role reads stdin but never echoes: the injection can never be verified on screen
@@ -636,20 +679,38 @@ func TestTaskBoardRecordsAndRenders(t *testing.T) {
 	t.Chdir(t.TempDir())
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "BUILD-7 fix the flake"})
-	m.dispatch(ipc.Command{Cmd: "work-done", Task: "BUILD-7 fixed", Done: true})
-	if len(m.board) != 2 {
-		t.Fatalf("board events = %d, want 2", len(m.board))
+	if len(m.board) != 1 || m.board[0].id != "T1" || !m.board[0].doneAt.IsZero() {
+		t.Fatalf("delegate event: %+v", m.board)
+	}
+	// the injected task file carries the id and the work-done echo instruction
+	body, err := os.ReadFile(filepath.Join(".choragos", "worker-task-coder.md"))
+	if err != nil || !strings.Contains(string(body), "work-done --id T1") {
+		t.Fatalf("task file missing id echo: err=%v", err)
 	}
 	m.Update(key("ctrl+b"))
 	m.Update(key("t"))
 	if !m.boardOn {
 		t.Fatal("prefix+t should open the task board")
 	}
+	if v := m.View(); !strings.Contains(v, "pending") {
+		t.Fatal("unresolved delegation should show pending")
+	}
+	m.Update(key("q"))
+
+	m.dispatch(ipc.Command{Cmd: "work-done", Task: "BUILD-7 fixed", Done: true, ID: "T1"})
+	if len(m.board) != 2 || m.board[0].doneAt.IsZero() {
+		t.Fatalf("work-done did not resolve T1: %+v", m.board)
+	}
+	m.Update(key("ctrl+b"))
+	m.Update(key("t"))
 	v := m.View()
-	for _, want := range []string{"task board", "delegate", "coder", "BUILD-7 fix the flake", "work-done ✓"} {
+	for _, want := range []string{"task board", "T1", "delegate", "coder", "BUILD-7 fix the flake", "work-done ✓", "✓ "} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("board missing %q", want)
 		}
+	}
+	if strings.Contains(v, "pending") {
+		t.Fatal("resolved delegation still shows pending")
 	}
 	m.Update(key("q"))
 	if m.boardOn {
@@ -728,6 +789,31 @@ func TestBroadcastMode(t *testing.T) {
 	if strings.Contains(m.panes[1].pane.Render(), "z") && m.active != 1 {
 		t.Fatal("broadcast off: unfocused pane still received input")
 	}
+}
+
+func FuzzChromeLine(f *testing.F) {
+	for _, seed := range []string{"", "● working", "[████░░] 3%", "for shortcuts", "plain output", "⠋ spinner", strings.Repeat("─", 200)} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(_ *testing.T, s string) {
+		_ = chromeLine(s, nil)
+		_ = chromeLine(s, []string{s})
+	})
+}
+
+func FuzzCollapseRepeat(f *testing.F) {
+	for _, seed := range []string{"", "h", "hhh", "left", "παπ", "\x00\x00"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		key, reps := collapseRepeat(s)
+		if reps < 1 {
+			t.Fatalf("reps = %d for %q", reps, s)
+		}
+		if s != "" && key == "" {
+			t.Fatalf("non-empty input %q collapsed to empty key", s)
+		}
+	})
 }
 
 func TestCollapseRepeat(t *testing.T) {

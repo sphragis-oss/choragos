@@ -26,6 +26,10 @@ type Role struct {
 	// extra markers appended to the built-in status heuristics for this agent's TUI
 	InputPrompts  []string `toml:"input_prompts"`
 	ChromeMarkers []string `toml:"chrome_markers"`
+	// env isolation: when env_allow is set the role gets only baseline vars plus these
+	// (exact names or "PREFIX_*" patterns); env_deny strips matches in either mode
+	EnvAllow []string `toml:"env_allow"`
+	EnvDeny  []string `toml:"env_deny"`
 }
 
 // Config is the full orchestration.
@@ -34,6 +38,8 @@ type Config struct {
 	Sphragis Sphragis `toml:"sphragis"`
 	Keys     Keys     `toml:"keys"`
 	UI       UI       `toml:"ui"`
+	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
+	Warnings []string `toml:"-"`
 }
 
 // Keys maps the prefix chord and the prefix-mode action keys (bubbletea key names).
@@ -200,8 +206,24 @@ func Load(path string) (Config, error) {
 		path = DefaultFile
 	}
 	var c Config
-	if _, err := toml.DecodeFile(path, &c); err != nil {
+	md, err := toml.DecodeFile(path, &c)
+	if err != nil {
 		return Config{}, fmt.Errorf("load config %s: %w", path, err)
+	}
+	var unknown []string
+	for _, k := range md.Undecoded() {
+		ks := k.String()
+		child := false
+		for _, u := range unknown {
+			if strings.HasPrefix(ks, u+".") {
+				child = true // parent table already reported
+				break
+			}
+		}
+		if !child {
+			unknown = append(unknown, ks)
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: unknown key %q (typo?)", path, ks))
+		}
 	}
 	if len(c.Roles) == 0 {
 		return Config{}, fmt.Errorf("config %s defines no roles", path)

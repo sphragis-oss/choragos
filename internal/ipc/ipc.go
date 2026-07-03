@@ -20,6 +20,7 @@ type Command struct {
 	To   []string `json:"to,omitempty"`
 	Task string   `json:"task,omitempty"`
 	Done bool     `json:"done,omitempty"`
+	ID   string   `json:"id,omitempty"` // task id assigned by the deck on delegate, echoed by work-done
 }
 
 // SocketPath resolves the control socket: $CHORAGOS_SOCK, else a per-user runtime/temp path.

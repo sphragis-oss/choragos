@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -116,6 +117,7 @@ type Model struct {
 	searching  bool   // typing a scrollback search query
 	searchBuf  string // query being typed
 	searchQ    string // committed query; n/N navigate while scrolled
+	taskSeq    int    // task id counter for delegations
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -133,11 +135,13 @@ type Model struct {
 
 // taskEvent is one delegation-protocol event, shown on the task board.
 type taskEvent struct {
-	at   time.Time
-	kind string // delegate | work-done
-	to   string
-	task string
-	done bool
+	at     time.Time
+	kind   string // delegate | work-done
+	id     string
+	to     string
+	task   string
+	done   bool
+	doneAt time.Time // delegate rows: when the matching work-done arrived
 }
 
 // boardCap bounds the in-memory task history.
@@ -147,6 +151,20 @@ func (m *Model) recordTask(ev taskEvent) {
 	m.board = append(m.board, ev)
 	if len(m.board) > boardCap {
 		m.board = m.board[len(m.board)-boardCap:]
+	}
+}
+
+// resolveTask marks the delegation with this id as reported.
+func (m *Model) resolveTask(id string) {
+	if id == "" {
+		return
+	}
+	for i := len(m.board) - 1; i >= 0; i-- {
+		ev := &m.board[i]
+		if ev.kind == "delegate" && ev.id == id && ev.doneAt.IsZero() {
+			ev.doneAt = time.Now()
+			return
+		}
 	}
 }
 
@@ -161,8 +179,15 @@ func (m *Model) log() *slog.Logger {
 }
 
 // Run opens the deck for cfg and blocks until the user quits.
-func Run(cfg config.Config) error {
+func Run(cfg config.Config) (err error) {
 	m := &Model{cfg: cfg}
+	// bubbletea restores the terminal before re-panicking; we stop the agents and keep the stack
+	defer func() {
+		if r := recover(); r != nil {
+			m.closeAll()
+			err = fmt.Errorf("choragos crashed: %v (details in %s)", r, writeCrashLog(r))
+		}
+	}()
 	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
@@ -571,11 +596,13 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	case "delegate":
 		for _, name := range cmd.To {
 			if e, i := m.findRole(name); e != nil && !e.exited {
+				m.taskSeq++
+				id := fmt.Sprintf("T%d", m.taskSeq)
 				file := "worker-task-" + sanitize(name) + ".md"
-				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task),
+				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task, id),
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
-				m.log().Info("delegate", "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
-				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", to: name, task: singleLine(cmd.Task)})
+				m.log().Info("delegate", "id", id, "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
+				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: name, task: singleLine(cmd.Task)})
 				injectLine(e, line)
 				if m.autoFocus && !m.manual {
 					m.focusRole(i)
@@ -587,8 +614,9 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	case "work-done":
 		i := m.startIdx()
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
-			m.log().Info("work-done", "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
-			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
+			m.log().Info("work-done", "id", cmd.ID, "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
+			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
+			m.resolveTask(cmd.ID)
 			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
 			if m.autoFocus && !m.manual {
 				m.focusRole(i)
@@ -898,12 +926,22 @@ func (m *Model) renderBoard(w, h int) string {
 	}
 	for _, ev := range rows {
 		kind := ev.kind
-		if ev.kind == "work-done" && ev.done {
+		status := ""
+		switch {
+		case ev.kind == "delegate" && ev.doneAt.IsZero():
+			status = lipgloss.NewStyle().Foreground(waitingColor).Render(" pending")
+		case ev.kind == "delegate":
+			status = lipgloss.NewStyle().Foreground(workingColor).Render(" ✓ " + ev.doneAt.Sub(ev.at).Round(time.Second).String())
+		case ev.kind == "work-done" && ev.done:
 			kind = "work-done ✓"
 		}
-		line := ev.at.Format("15:04:05") + "  " +
-			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + "  " +
-			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-40))
+		id := ""
+		if ev.id != "" {
+			id = ev.id + " "
+		}
+		line := ev.at.Format("15:04:05") + "  " + id +
+			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + status + "  " +
+			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-50))
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
@@ -1185,6 +1223,9 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	}
 	m.server = srv
 	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled())
+	for _, w := range m.cfg.Warnings {
+		m.log().Warn("config", "warning", w)
+	}
 
 	m.sphragisOn = m.cfg.Sphragis.IsEnabled()
 	m.keys = m.cfg.Keys.Defaulted()
@@ -1236,7 +1277,14 @@ func (m *Model) send(msg tea.Msg) {
 func (m *Model) watchPane(e *entry, idx int) {
 	gen := e.gen
 	p := e.pane
+	role := e.role.Name
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.log().Error("pane stream panic", "role", role, "panic", r, "log", writeCrashLog(r))
+				m.send(paneClosedMsg{idx: idx, gen: gen})
+			}
+		}()
 		_ = p.Stream(func() { m.send(frameMsg{idx: idx, gen: gen}) })
 		m.send(paneClosedMsg{idx: idx, gen: gen})
 	}()
@@ -1250,7 +1298,7 @@ func (m *Model) restartRole() {
 	}
 	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
 	cw, ch := m.focusedTileContent()
-	p, err := startRole(e.role, cw, ch, roleEnv(m.socket, m.baseURL))
+	p, err := startRole(e.role, cw, ch, roleEnv(e.role, m.socket, m.baseURL))
 	if err != nil {
 		e.exited = true
 		m.log().Error("restart failed", "role", e.role.Name, "err", err)
@@ -1286,13 +1334,52 @@ func (m *Model) gatewayBlocked() bool {
 	return m.sphragisOn && m.cfg.Sphragis.IsFailClosed() && !m.gatewayUp
 }
 
-// roleEnv builds the child env wiring the control socket and (when set) the gateway.
-func roleEnv(socket, baseURL string) []string {
-	env := append(os.Environ(), ipc.EnvSocket+"="+socket)
+// baselineEnv are the vars an agent needs to run at all, always kept in allowlist mode.
+var baselineEnv = []string{"PATH", "HOME", "TERM", "COLORTERM", "USER", "LOGNAME", "SHELL", "PWD", "TMPDIR", "LANG", "LC_*", "XDG_*"}
+
+// roleEnv builds one role's child env: the full env by default, baseline plus
+// env_allow when set, minus env_deny; choragos's own vars are always appended.
+func roleEnv(r config.Role, socket, baseURL string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || !envAllowed(name, r) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
 		env = append(env, "ANTHROPIC_BASE_URL="+baseURL)
 	}
 	return env
+}
+
+// envAllowed applies env_deny first, then the allowlist (baseline + env_allow) when one is set.
+func envAllowed(name string, r config.Role) bool {
+	if matchEnv(name, r.EnvDeny) {
+		return false
+	}
+	if len(r.EnvAllow) == 0 {
+		return true
+	}
+	return matchEnv(name, baselineEnv) || matchEnv(name, r.EnvAllow)
+}
+
+// matchEnv reports whether name matches any pattern: exact, or a "PREFIX_*" wildcard.
+func matchEnv(name string, patterns []string) bool {
+	for _, p := range patterns {
+		if pre, ok := strings.CutSuffix(p, "*"); ok {
+			if pre != "" && strings.HasPrefix(name, pre) {
+				return true
+			}
+			continue
+		}
+		if name == p {
+			return true
+		}
+	}
+	return false
 }
 
 // startRole spawns one role's PTY pane with its log sink.
@@ -1311,10 +1398,9 @@ func startRole(r config.Role, cols, rows int, env []string) (*pane.Pane, error) 
 
 // startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
 func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
-	env := roleEnv(socket, baseURL)
 	var entries []*entry
 	for _, r := range cfg.Roles {
-		p, err := startRole(r, cols, rows, env)
+		p, err := startRole(r, cols, rows, roleEnv(r, socket, baseURL))
 		if err != nil {
 			for _, e := range entries {
 				_ = e.pane.Close()
@@ -1337,6 +1423,22 @@ func openLog(role string) *os.File {
 		return nil
 	}
 	return f
+}
+
+// writeCrashLog dumps the panic and stack to contextDir/logs; returns where it landed.
+func writeCrashLog(r any) string {
+	dir := filepath.Join(contextDir, "logs")
+	body := fmt.Sprintf("time: %s\npanic: %v\n\n%s", time.Now().Format(time.RFC3339), r, debug.Stack())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(os.Stderr, body)
+		return "stderr"
+	}
+	path := filepath.Join(dir, "crash.log")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, body)
+		return "stderr"
+	}
+	return path
 }
 
 // newEventLog opens the control-plane event log (delegate/work-done/boot/lifecycle); on failure it discards.

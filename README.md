@@ -22,6 +22,9 @@
   <a href="https://github.com/sphragis-oss/choragos/releases">
     <img alt="Latest Release" src="https://img.shields.io/github/v/release/sphragis-oss/choragos?include_prereleases&style=for-the-badge">
   </a>
+  <a href="https://codecov.io/gh/sphragis-oss/choragos">
+    <img alt="Coverage" src="https://img.shields.io/codecov/c/github/sphragis-oss/choragos?style=for-the-badge">
+  </a>
   <a href="LICENSE">
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge">
   </a>
@@ -42,7 +45,7 @@ Choragos is a secure multi-agent development orchestrator. It runs a team of AI 
 - **Owned PTY panes:** Choragos spawns each agent in a pseudo-terminal it owns and parses (`hinshun/vt10x`), so it knows real input readiness instead of polling a status that lies. This removes the boot races that plague multiplexer-driven orchestrators.
 - **Delegate/work-done protocol:** The orchestrator agent hands work to workers via a local UNIX socket with `choragos delegate --to <role> --task "..."`; workers report back with `choragos work-done`.
 - **Sphragis in the data path, fail-closed:** Every worker is launched with its LLM base URL pointed at a local Sphragis gateway. If the gateway is not healthy, delegation is refused.
-- **Least privilege per role:** Each role's process gets only the environment and credentials it needs.
+- **Least privilege per role (opt-in):** By default roles inherit the parent environment. Set `env_allow` on a role to switch it to an allowlist (baseline vars like `PATH`/`HOME`/`TERM` plus the names or `PREFIX_*` patterns you list), or `env_deny` to strip specific variables, so a reviewer never sees your `AWS_*` credentials.
 
 ## Architecture
 
@@ -105,6 +108,14 @@ make build
 Choragos will start the agents, ensure Sphragis is running, and route all traffic automatically.
 
 The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`), zoom (`z`), live resize (`r`), restart a role (`R`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
+
+### Documentation
+
+- [Keybindings](docs/keybindings.md) - the full keymap and window-manager modes
+- [Configuration reference](docs/configuration.md) - every `.choragos.toml` key, including per-role env isolation
+- [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
+- [Long-running sessions](docs/long-running-sessions.md) - detach/attach with tmux or zellij
+- [Verifying releases](SECURITY.md#verifying-releases) - cosign signatures, checksums, provenance
 
 ## Configuration & Roles
 

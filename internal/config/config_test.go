@@ -170,11 +170,77 @@ sidebar = false
 	}
 }
 
+func TestLoadWarnsOnUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[ui]
+auto_focsu = false
+
+[keyz]
+prefix = "ctrl+a"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2 entries", c.Warnings)
+	}
+	joined := strings.Join(c.Warnings, "\n")
+	for _, want := range []string{"auto_focsu", "keyz"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings missing %q: %v", want, c.Warnings)
+		}
+	}
+	// a clean config produces no warnings
+	clean, err := config.Load("")
+	if err != nil || len(clean.Warnings) != 0 {
+		t.Fatalf("clean load: warnings=%v err=%v", clean.Warnings, err)
+	}
+}
+
 func TestUIDefaultsOn(t *testing.T) {
 	c := config.Default()
 	if !c.UI.IsAutoFocus() || !c.UI.SidebarStart() {
 		t.Fatalf("ui should default on: %+v", c.UI)
 	}
+}
+
+func TestExampleConfigsLoad(t *testing.T) {
+	files, err := filepath.Glob("../../examples/*.toml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no example configs found: %v", err)
+	}
+	for _, f := range files {
+		c, err := config.Load(f)
+		if err != nil {
+			t.Errorf("%s does not load: %v", f, err)
+			continue
+		}
+		if len(c.Warnings) > 0 {
+			t.Errorf("%s has unknown keys: %v", f, c.Warnings)
+		}
+	}
+}
+
+func FuzzKeysDefaulted(f *testing.F) {
+	for _, seed := range []string{"", "v", "prefix+v", "PREFIX+MINUS", "ctrl+b", "minus", "shift+tab", "  x  ", "πλήκτρο"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		k := config.Keys{Prefix: s, SplitVertical: s, Zoom: s}.Defaulted()
+		if k.Prefix == "" || k.SplitVertical == "" || k.Zoom == "" {
+			t.Fatalf("Defaulted left an empty binding for input %q: %+v", s, k)
+		}
+	})
 }
 
 func TestLoadNoRolesErrors(t *testing.T) {

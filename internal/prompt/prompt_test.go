@@ -39,12 +39,13 @@ func TestOrchestratorContext(t *testing.T) {
 
 func TestWorkerTask(t *testing.T) {
 	role := config.Role{Name: "coder", Prompt: "You implement changes."}
-	c := prompt.WorkerTask(role, "Add the login endpoint at api/login.go")
+	c := prompt.WorkerTask(role, "Add the login endpoint at api/login.go", "T7")
 	for _, want := range []string{
 		"You implement changes.",
 		"## Task",
+		"Task id: T7",
 		"Add the login endpoint at api/login.go",
-		"choragos work-done",
+		"choragos work-done --id T7",
 	} {
 		if !strings.Contains(c, want) {
 			t.Errorf("worker task missing %q", want)

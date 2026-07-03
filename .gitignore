@@ -1,7 +1,9 @@
 /choragos
 /dist/
 /.choragos/
-/docs/
+/completions/
+/manpages/
+/docs/prd-*.md
 *.out
 .env
 .DS_Store

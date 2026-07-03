@@ -1,0 +1,23 @@
+# All-Claude team: orchestrator plans, coder implements, reviewer reads only.
+# See docs/configuration.md for every key.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate the team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+prompt_template = "Implement the requested change. Run the project's tests before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+prompt_template = "Review the change for correctness and edge cases. Report findings only; do not modify code."
+# the reviewer never needs your cloud credentials
+env_deny = ["AWS_*", "GCP_*", "GITHUB_TOKEN"]
