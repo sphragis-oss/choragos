@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `choragos init --template <name>`: embedded team templates (`starter`,
   `claude-team`, `mixed-team`, `review`).
+- Live token and cost display on the sidebar cards, fed by the gateway's
+  `sphragis_tokens_total` metrics (sphragis >= 0.8): per-role
+  `ANTHROPIC_BASE_URL` carries an `/agent/<role>` suffix for attribution,
+  and an optional `[pricing]` table (USD per million tokens, longest
+  model-prefix match) turns tokens into cost.
 
 ## [0.2.0] - 2026-07-03
 

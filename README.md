@@ -45,6 +45,7 @@ Choragos is a secure multi-agent development orchestrator. It runs a team of AI 
 - **Owned PTY panes:** Choragos spawns each agent in a pseudo-terminal it owns and parses (`hinshun/vt10x`), so it knows real input readiness instead of polling a status that lies. This removes the boot races that plague multiplexer-driven orchestrators.
 - **Delegate/work-done protocol:** The orchestrator agent hands work to workers via a local UNIX socket with `choragos delegate --to <role> --task "..."`; workers report back with `choragos work-done`.
 - **Sphragis in the data path, fail-closed:** Every worker is launched with its LLM base URL pointed at a local Sphragis gateway. If the gateway is not healthy, delegation is refused.
+- **Live token and cost telemetry:** Because every call already flows through the gateway, each role's status card shows live token counts, and dollar cost once you set a `[pricing]` table. No SDK hooks, no vendor lock: the gateway counts what the provider reports.
 - **Least privilege per role (opt-in):** By default roles inherit the parent environment. Set `env_allow` on a role to switch it to an allowlist (baseline vars like `PATH`/`HOME`/`TERM` plus the names or `PREFIX_*` patterns you list), or `env_deny` to strip specific variables, so a reviewer never sees your `AWS_*` credentials.
 
 ## Architecture

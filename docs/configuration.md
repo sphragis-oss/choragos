@@ -50,6 +50,25 @@ env_deny = ["AWS_*", "GITHUB_TOKEN"]
 
 `ctrl+g` toggles enforcement live; `--sphragis=false` disables it for a run.
 
+When the gateway is on, each role's `ANTHROPIC_BASE_URL` carries an
+`/agent/<role>` suffix so the gateway attributes token usage per role
+(sphragis >= 0.8). The sidebar cards then show live token counts, and cost
+when `[pricing]` is set. Counters reset when the gateway restarts.
+
+## `[pricing]`
+
+Optional. One table per model-name prefix (longest prefix wins), in USD per
+million tokens; directions you omit cost 0. With no `[pricing]` the cards
+show token counts only.
+
+```toml
+[pricing."claude-sonnet-5"]
+input = 3.0
+output = 15.0
+cache_read = 0.3
+cache_creation = 3.75
+```
+
 ## `[keys]`
 
 The prefix chord plus one key per action. Values are bubbletea key names

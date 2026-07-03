@@ -122,11 +122,12 @@ type Model struct {
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
 	gateway    *sphragis.Supervisor
-	sphragisOn bool // gateway enforcement, toggled live with ctrl+g
-	gatewayUp  bool // last known gateway health (refreshed off the UI thread)
-	closed     bool // closeAll ran; makes cleanup idempotent
-	scrollOff  int  // focused-pane scrollback offset (0 = live tail)
-	maxScroll  int  // last render's max scrollback offset, for clamping keys
+	sphragisOn bool     // gateway enforcement, toggled live with ctrl+g
+	gatewayUp  bool     // last known gateway health (refreshed off the UI thread)
+	usage      usageMsg // last per-role token snapshot from the gateway metrics
+	closed     bool     // closeAll ran; makes cleanup idempotent
+	scrollOff  int      // focused-pane scrollback offset (0 = live tail)
+	maxScroll  int      // last render's max scrollback offset, for clamping keys
 	events     *slog.Logger
 	eventsC    io.Closer
 	w, h       int
@@ -256,11 +257,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.log().Warn("gateway health changed", "up", msg.up)
 		}
 		m.gatewayUp = msg.up
+	case usageMsg:
+		m.usage = msg
 	case tickMsg:
 		m.bootPanes()
 		m.checkWaiting()
 		if m.sphragisOn {
-			return m, tea.Batch(tick(), checkHealth(m.cfg.Sphragis.Addr))
+			cmds := []tea.Cmd{tick(), checkHealth(m.cfg.Sphragis.Addr)}
+			if m.gatewayUp {
+				cmds = append(cmds, fetchUsage(m.cfg.Sphragis.Addr, m.cfg.Pricing))
+			}
+			return m, tea.Batch(cmds...)
 		}
 		return m, tick()
 	}
@@ -1057,6 +1064,9 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		inner := nameStyle.Render(fmt.Sprintf("%d %s", i+1, e.role.Name)) + "\n" +
 			lipgloss.NewStyle().Foreground(st[i].color).Render(st[i].dot) + " " +
 			lipgloss.NewStyle().Faint(true).Render(st[i].label)
+		if u := m.usage[e.role.Name].usageLabel(); u != "" {
+			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(u, width-4))
+		}
 		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines, e.role.ChromeMarkers) {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(singleLine(l), width-4))
 		}
@@ -1350,7 +1360,7 @@ func roleEnv(r config.Role, socket, baseURL string) []string {
 	}
 	env = append(env, ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
-		env = append(env, "ANTHROPIC_BASE_URL="+baseURL)
+		env = append(env, "ANTHROPIC_BASE_URL="+agentURL(baseURL, r.Name))
 	}
 	return env
 }
