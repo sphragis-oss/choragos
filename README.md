@@ -33,6 +33,10 @@ Choragos is a secure multi-agent development orchestrator. It runs a team of AI 
 
 > The name is the Greek χορηγός (*choragos*), the one who led and funded the chorus. Here it leads a chorus of agents.
 
+<p align="center">
+  <img alt="Choragos deck demo: tiling window manager over agent panes" src="assets/demo.gif" width="900">
+</p>
+
 ## Why Choragos?
 
 - **Owned PTY panes:** Choragos spawns each agent in a pseudo-terminal it owns and parses (`hinshun/vt10x`), so it knows real input readiness instead of polling a status that lies. This removes the boot races that plague multiplexer-driven orchestrators.
