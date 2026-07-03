@@ -1,6 +1,8 @@
 /choragos
 /dist/
 /.choragos/
+/completions/
+/manpages/
 /docs/prd-*.md
 *.out
 .env

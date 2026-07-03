@@ -42,6 +42,7 @@ func rootCmd() *cobra.Command {
 		delegateCmd(),
 		workDoneCmd(),
 		versionCmd(),
+		genManCmd(),
 	)
 	return root
 }

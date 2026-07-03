@@ -78,6 +78,19 @@ auto_focsu = true
 	}
 }
 
+func TestGenManWritesTree(t *testing.T) {
+	dir := t.TempDir()
+	cmd := genManCmd()
+	if err := cmd.RunE(cmd, []string{dir}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"choragos.1", "choragos-serve.1", "choragos-doctor.1"} {
+		if _, err := os.Stat(dir + "/" + want); err != nil {
+			t.Errorf("missing man page %s: %v", want, err)
+		}
+	}
+}
+
 func TestInitWritesLoadableConfig(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cmd := initCmd()

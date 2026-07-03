@@ -4,6 +4,7 @@ project_name: choragos
 before:
   hooks:
     - go mod tidy
+    - ./scripts/gen-cli-assets.sh
 
 builds:
   - id: choragos
@@ -26,6 +27,11 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - completions/*
+      - manpages/*
 
 checksum:
   name_template: checksums.txt
@@ -56,6 +62,11 @@ brews:
     homepage: https://github.com/sphragis-oss/choragos
     description: "Secure multi-agent development orchestrator TUI"
     license: "Apache-2.0"
+    extra_install: |
+      bash_completion.install "completions/choragos.bash" => "choragos"
+      zsh_completion.install "completions/_choragos"
+      fish_completion.install "completions/choragos.fish"
+      man1.install Dir["manpages/*.1"]
 
 release:
   github:
