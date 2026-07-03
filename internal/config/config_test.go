@@ -66,6 +66,36 @@ start = true
 	}
 }
 
+func TestLoadPricing(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[pricing."claude-sonnet-5"]
+input = 3.0
+output = 15.0
+cache_read = 0.3
+cache_creation = 3.75
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := c.Pricing["claude-sonnet-5"]
+	if !ok || p.Input != 3.0 || p.Output != 15.0 || p.CacheRead != 0.3 || p.CacheCreation != 3.75 {
+		t.Fatalf("pricing = %+v (ok=%v)", p, ok)
+	}
+	if len(c.Warnings) != 0 {
+		t.Fatalf("pricing table should not warn: %v", c.Warnings)
+	}
+}
+
 func TestSphragisDefaults(t *testing.T) {
 	c := config.Default()
 	if !c.Sphragis.IsEnabled() || !c.Sphragis.IsFailClosed() {

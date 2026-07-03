@@ -38,8 +38,18 @@ type Config struct {
 	Sphragis Sphragis `toml:"sphragis"`
 	Keys     Keys     `toml:"keys"`
 	UI       UI       `toml:"ui"`
+	// Pricing maps a model-name prefix to USD per million tokens, for the cost display.
+	Pricing map[string]Price `toml:"pricing"`
 	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
 	Warnings []string `toml:"-"`
+}
+
+// Price is a model's USD cost per million tokens, by direction.
+type Price struct {
+	Input         float64 `toml:"input"`
+	Output        float64 `toml:"output"`
+	CacheRead     float64 `toml:"cache_read"`
+	CacheCreation float64 `toml:"cache_creation"`
 }
 
 // Keys maps the prefix chord and the prefix-mode action keys (bubbletea key names).
