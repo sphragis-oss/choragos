@@ -132,7 +132,7 @@ func (m *Model) log() *slog.Logger {
 // Run opens the deck for cfg and blocks until the user quits.
 func Run(cfg config.Config) error {
 	m := &Model{cfg: cfg}
-	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithoutSignalHandler())
+	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
 	sigCh := make(chan os.Signal, 1)
@@ -171,6 +171,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizePanes()
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		m.handleMouse(msg)
 	case frameMsg:
 		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].lastActive = time.Now()
@@ -262,6 +264,36 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		_ = e.pane.Input(keyBytes(msg))
 	}
 	return m, nil
+}
+
+// handleMouse focuses the clicked tile and drives scrollback with the wheel.
+func (m *Model) handleMouse(msg tea.MouseMsg) {
+	if m.tree == nil {
+		return
+	}
+	switch {
+	case msg.Button == tea.MouseButtonWheelUp && msg.Action == tea.MouseActionPress:
+		m.scrollOff += scrollStep
+	case msg.Button == tea.MouseButtonWheelDown && msg.Action == tea.MouseActionPress:
+		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
+			m.scrollOff = 0
+		}
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		leftW, mainW, contentH := m.dims()
+		x := msg.X - leftW
+		if x < 0 || msg.Y >= contentH {
+			return // sidebar and status row are not clickable
+		}
+		for _, t := range m.tree.Layout(mainW, contentH) {
+			if x >= t.X && x < t.X+t.W && msg.Y >= t.Y && msg.Y < t.Y+t.H {
+				if t.Role != m.active {
+					m.manual = true
+					m.focusRole(t.Role)
+				}
+				return
+			}
+		}
+	}
 }
 
 // resizeKey adjusts the focused split's ratio live; any unmapped key exits resize mode.

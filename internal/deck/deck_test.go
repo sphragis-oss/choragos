@@ -570,6 +570,35 @@ func TestRestartRole(t *testing.T) {
 	_ = e.pane.Close()
 }
 
+func TestMouseClickFocusesTile(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.Update(key("ctrl+b"))
+	m.Update(key("v")) // two tiles; focus on coder (right)
+	if m.active != 1 {
+		t.Fatalf("setup: active = %d", m.active)
+	}
+	leftW, _, _ := m.dims()
+	// click inside the left tile (just right of the sidebar)
+	m.Update(tea.MouseMsg{X: leftW + 2, Y: 2, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.active != 0 {
+		t.Fatalf("click should focus the left tile, active = %d", m.active)
+	}
+	// click on the sidebar is inert
+	m.Update(tea.MouseMsg{X: 1, Y: 2, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.active != 0 {
+		t.Fatal("sidebar click must not change focus")
+	}
+	// wheel drives scrollback
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.scrollOff != scrollStep {
+		t.Fatalf("wheel up: scrollOff = %d", m.scrollOff)
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.scrollOff != 0 {
+		t.Fatalf("wheel down: scrollOff = %d", m.scrollOff)
+	}
+}
+
 func TestWaitingBellEdgeTriggered(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator"))
 	rings := 0
