@@ -33,6 +33,9 @@ const contextDir = ".choragos"
 const (
 	bootMinWait = 1 * time.Second
 	bootSettle  = 1200 * time.Millisecond
+	// injection is verified on screen; re-typed after bootVerifyAfter, at most bootMaxTries times
+	bootVerifyAfter = 3 * time.Second
+	bootMaxTries    = 2
 )
 
 // injectEnterDelay separates the typed text from its submit; Claude's TUI treats text+Enter in one write as a paste.
@@ -87,6 +90,10 @@ type entry struct {
 	gen        int  // bumped on restart; stale stream messages are dropped
 	startedAt  time.Time
 	lastActive time.Time
+	bootLine   string // injected one-liner, kept for on-screen verification
+	bootSentAt time.Time
+	bootTries  int
+	bootOK     bool
 }
 
 // Model drives the orchestration deck: sidebar cards plus the tiled role panes.
@@ -498,34 +505,74 @@ func (m *Model) checkWaiting() {
 	}
 }
 
-// bootPanes injects each role's boot prompt once its pane has settled (agent ready).
+// bootPanes injects each role's boot prompt once its pane settles, then verifies it landed and retries once.
 func (m *Model) bootPanes() {
 	now := time.Now()
 	for _, e := range m.panes {
-		if e.booted || e.exited {
+		if e.exited {
 			continue
 		}
-		if now.Sub(e.startedAt) < bootMinWait || now.Sub(e.lastActive) < bootSettle {
+		if !e.booted {
+			if now.Sub(e.startedAt) < bootMinWait || now.Sub(e.lastActive) < bootSettle {
+				continue
+			}
+			m.log().Info("boot", "role", e.role.Name, "start", e.role.Start)
+			m.injectBoot(e)
+			e.booted = true
+			e.bootSentAt = now
+			e.bootTries = 1
 			continue
 		}
-		m.log().Info("boot", "role", e.role.Name, "start", e.role.Start)
-		m.injectBoot(e)
-		e.booted = true
+		if e.bootOK {
+			continue
+		}
+		if bootLanded(e) {
+			e.bootOK = true
+			continue
+		}
+		if now.Sub(e.bootSentAt) < bootVerifyAfter {
+			continue
+		}
+		if e.bootTries >= bootMaxTries {
+			e.bootOK = true // give up quietly; the agent may have redrawn its screen
+			m.log().Warn("boot injection unverified", "role", e.role.Name)
+			continue
+		}
+		m.log().Warn("boot injection retry", "role", e.role.Name)
+		injectLine(e, e.bootLine)
+		e.bootTries++
+		e.bootSentAt = now
 	}
+}
+
+// bootLanded reports whether the boot one-liner is visible on the pane (wrap-safe join).
+func bootLanded(e *entry) bool {
+	if e.bootLine == "" {
+		return true
+	}
+	snippet := []rune(e.bootLine)
+	if len(snippet) > 24 {
+		snippet = snippet[:24]
+	}
+	var b strings.Builder
+	for _, l := range e.pane.TailLines(40) {
+		b.WriteString(l)
+	}
+	return strings.Contains(b.String(), string(snippet))
 }
 
 func (m *Model) injectBoot(e *entry) {
 	if e.role.Start {
 		file := "orchestrator-context.md"
-		line := writeContext(file, prompt.OrchestratorContext(m.cfg),
+		e.bootLine = writeContext(file, prompt.OrchestratorContext(m.cfg),
 			"Read "+filepath.Join(contextDir, file)+" for your role, available agents, and the delegation protocol. Acknowledge your role and wait for instructions.")
-		injectLine(e, line)
+		injectLine(e, e.bootLine)
 		return
 	}
 	file := sanitize(e.role.Name) + "-brief.md"
-	line := writeContext(file, prompt.WorkerBrief(e.role),
+	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role),
 		"Read "+filepath.Join(contextDir, file)+" for your role, then stay idle until a task is delegated to you.")
-	injectLine(e, line)
+	injectLine(e, e.bootLine)
 }
 
 // writeContext writes content to contextDir/name; on failure it returns a diagnostic to inject instead of pointing the agent at a missing file.
@@ -579,10 +626,10 @@ func singleLine(s string) string {
 var chromeMarkers = []string{"for agents", "for shortcuts", "lazy:full", "release-notes", "auto-update"}
 
 // activityTail keeps the last n content lines, dropping TUI chrome (progress bars, statusline, hints).
-func activityTail(lines []string, n int) []string {
+func activityTail(lines []string, n int, extra []string) []string {
 	var kept []string
 	for _, l := range lines {
-		if !chromeLine(l) {
+		if !chromeLine(l, extra) {
 			kept = append(kept, l)
 		}
 	}
@@ -593,10 +640,15 @@ func activityTail(lines []string, n int) []string {
 }
 
 // chromeLine reports whether a line is agent-TUI chrome rather than meaningful output.
-func chromeLine(s string) bool {
+func chromeLine(s string, extra []string) bool {
 	low := strings.ToLower(s)
 	for _, m := range chromeMarkers {
 		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	for _, m := range extra {
+		if m != "" && strings.Contains(low, strings.ToLower(m)) {
 			return true
 		}
 	}
@@ -827,7 +879,7 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		inner := nameStyle.Render(fmt.Sprintf("%d %s", i+1, e.role.Name)) + "\n" +
 			lipgloss.NewStyle().Foreground(st[i].color).Render(st[i].dot) + " " +
 			lipgloss.NewStyle().Faint(true).Render(st[i].label)
-		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines) {
+		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines, e.role.ChromeMarkers) {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(singleLine(l), width-4))
 		}
 		card := lipgloss.NewStyle().
@@ -930,15 +982,20 @@ func needsInput(e *entry) bool {
 	if e.exited || e.pane == nil {
 		return false
 	}
-	return promptInLines(e.pane.TailLines(14))
+	return promptInLines(e.pane.TailLines(14), e.role.InputPrompts)
 }
 
-// promptInLines reports whether any line carries a known blocking-prompt marker.
-func promptInLines(lines []string) bool {
+// promptInLines reports whether any line carries a built-in or role-configured blocking-prompt marker.
+func promptInLines(lines []string, extra []string) bool {
 	for _, l := range lines {
 		low := strings.ToLower(l)
 		for _, marker := range inputPrompts {
 			if strings.Contains(low, marker) {
+				return true
+			}
+		}
+		for _, marker := range extra {
+			if marker != "" && strings.Contains(low, strings.ToLower(marker)) {
 				return true
 			}
 		}
@@ -1060,6 +1117,9 @@ func (m *Model) restartRole() {
 	e.gen++
 	e.exited = false
 	e.booted = false
+	e.bootOK = false
+	e.bootTries = 0
+	e.bootLine = ""
 	e.startedAt = time.Now()
 	e.lastActive = time.Now()
 	m.log().Info("role restarted", "role", e.role.Name)

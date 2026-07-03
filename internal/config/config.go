@@ -23,6 +23,9 @@ type Role struct {
 	Model   string   `toml:"model"`
 	Prompt  string   `toml:"prompt_template"`
 	Start   bool     `toml:"start"`
+	// extra markers appended to the built-in status heuristics for this agent's TUI
+	InputPrompts  []string `toml:"input_prompts"`
+	ChromeMarkers []string `toml:"chrome_markers"`
 }
 
 // Config is the full orchestration.

@@ -118,12 +118,16 @@ func TestPromptInLines(t *testing.T) {
 		{"Overwrite? [y/N]"},
 	}
 	for _, lines := range blocking {
-		if !promptInLines(lines) {
+		if !promptInLines(lines, nil) {
 			t.Errorf("expected blocking prompt in %q", lines)
 		}
 	}
-	if promptInLines([]string{"Thought for 5s", "Read 1 file", "Standing by."}) {
+	if promptInLines([]string{"Thought for 5s", "Read 1 file", "Standing by."}, nil) {
 		t.Error("false positive on ordinary output")
+	}
+	// role-configured extras extend the built-in markers
+	if !promptInLines([]string{"Gemini asks: continue? <enter>"}, []string{"continue? <enter>"}) {
+		t.Error("extra marker not honored")
 	}
 }
 
@@ -154,7 +158,7 @@ func TestActivityTail(t *testing.T) {
 		"← for agents",
 		"Ready for your instructions.",
 	}
-	got := activityTail(lines, 3)
+	got := activityTail(lines, 3, nil)
 	want := []string{"My role is orchestrator.", "Read 1 file", "Ready for your instructions."}
 	if len(got) != len(want) {
 		t.Fatalf("got %d lines %q, want %d", len(got), got, len(want))
@@ -164,8 +168,11 @@ func TestActivityTail(t *testing.T) {
 			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
 		}
 	}
-	if chromeLine("● Delegating the task to coder.") {
+	if chromeLine("● Delegating the task to coder.", nil) {
 		t.Error("a bulleted content line must not be treated as chrome")
+	}
+	if !chromeLine("mytui statusbar v2", []string{"mytui statusbar"}) {
+		t.Error("extra chrome marker not honored")
 	}
 }
 
@@ -536,6 +543,61 @@ func TestZoomAndResizeMode(t *testing.T) {
 	m.Update(key("q"))
 	if m.tree.Resizing() {
 		t.Fatal("unmapped key must exit resize mode")
+	}
+}
+
+func TestBootVerifyAndRetry(t *testing.T) {
+	t.Chdir(t.TempDir())
+	// role reads stdin but never echoes: the injection can never be verified on screen
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "mute", Command: "sh", Args: []string{"-c", "stty -echo 2>/dev/null; cat >/dev/null"}},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = panes[0].pane.Close() }()
+	go func() { _ = panes[0].pane.Stream(nil) }()
+	m := newTestModel(panes)
+	time.Sleep(500 * time.Millisecond) // let stty -echo take effect before injecting
+	past := time.Now().Add(-5 * time.Second)
+	panes[0].startedAt, panes[0].lastActive = past, past
+
+	m.bootPanes() // injects, tries=1
+	e := panes[0]
+	if !e.booted || e.bootTries != 1 || e.bootLine == "" {
+		t.Fatalf("first boot: booted=%v tries=%d", e.booted, e.bootTries)
+	}
+	time.Sleep(100 * time.Millisecond) // let any echo surface before verify
+	m.bootPanes()                      // too early to retry
+	if e.bootTries != 1 {
+		t.Fatalf("retried before bootVerifyAfter: tries=%d", e.bootTries)
+	}
+	e.bootSentAt = past // force the verify window
+	m.bootPanes()       // unverified: retry once
+	if e.bootTries != 2 || e.bootOK {
+		t.Fatalf("expected retry: tries=%d ok=%v", e.bootTries, e.bootOK)
+	}
+	e.bootSentAt = past
+	m.bootPanes() // exhausted: give up quietly
+	if !e.bootOK {
+		t.Fatal("should give up after bootMaxTries")
+	}
+}
+
+func TestBootVerifiedStopsRetries(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	e := m.panes[0]
+	past := time.Now().Add(-5 * time.Second)
+	e.startedAt, e.lastActive = past, past
+	m.bootPanes()
+	if !waitFor(func() bool { return bootLanded(e) }) {
+		t.Fatalf("echoed injection should verify:\n%q", e.pane.Render())
+	}
+	e.bootSentAt = past
+	m.bootPanes()
+	if !e.bootOK || e.bootTries != 1 {
+		t.Fatalf("verified boot must not retry: ok=%v tries=%d", e.bootOK, e.bootTries)
 	}
 }
 
