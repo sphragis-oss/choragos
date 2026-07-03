@@ -1250,7 +1250,7 @@ func (m *Model) restartRole() {
 	}
 	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
 	cw, ch := m.focusedTileContent()
-	p, err := startRole(e.role, cw, ch, roleEnv(m.socket, m.baseURL))
+	p, err := startRole(e.role, cw, ch, roleEnv(e.role, m.socket, m.baseURL))
 	if err != nil {
 		e.exited = true
 		m.log().Error("restart failed", "role", e.role.Name, "err", err)
@@ -1286,13 +1286,52 @@ func (m *Model) gatewayBlocked() bool {
 	return m.sphragisOn && m.cfg.Sphragis.IsFailClosed() && !m.gatewayUp
 }
 
-// roleEnv builds the child env wiring the control socket and (when set) the gateway.
-func roleEnv(socket, baseURL string) []string {
-	env := append(os.Environ(), ipc.EnvSocket+"="+socket)
+// baselineEnv are the vars an agent needs to run at all, always kept in allowlist mode.
+var baselineEnv = []string{"PATH", "HOME", "TERM", "COLORTERM", "USER", "LOGNAME", "SHELL", "PWD", "TMPDIR", "LANG", "LC_*", "XDG_*"}
+
+// roleEnv builds one role's child env: the full env by default, baseline plus
+// env_allow when set, minus env_deny; choragos's own vars are always appended.
+func roleEnv(r config.Role, socket, baseURL string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || !envAllowed(name, r) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
 		env = append(env, "ANTHROPIC_BASE_URL="+baseURL)
 	}
 	return env
+}
+
+// envAllowed applies env_deny first, then the allowlist (baseline + env_allow) when one is set.
+func envAllowed(name string, r config.Role) bool {
+	if matchEnv(name, r.EnvDeny) {
+		return false
+	}
+	if len(r.EnvAllow) == 0 {
+		return true
+	}
+	return matchEnv(name, baselineEnv) || matchEnv(name, r.EnvAllow)
+}
+
+// matchEnv reports whether name matches any pattern: exact, or a "PREFIX_*" wildcard.
+func matchEnv(name string, patterns []string) bool {
+	for _, p := range patterns {
+		if pre, ok := strings.CutSuffix(p, "*"); ok {
+			if pre != "" && strings.HasPrefix(name, pre) {
+				return true
+			}
+			continue
+		}
+		if name == p {
+			return true
+		}
+	}
+	return false
 }
 
 // startRole spawns one role's PTY pane with its log sink.
@@ -1311,10 +1350,9 @@ func startRole(r config.Role, cols, rows int, env []string) (*pane.Pane, error) 
 
 // startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
 func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
-	env := roleEnv(socket, baseURL)
 	var entries []*entry
 	for _, r := range cfg.Roles {
-		p, err := startRole(r, cols, rows, env)
+		p, err := startRole(r, cols, rows, roleEnv(r, socket, baseURL))
 		if err != nil {
 			for _, e := range entries {
 				_ = e.pane.Close()

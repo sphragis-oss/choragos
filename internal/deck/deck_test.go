@@ -546,6 +546,49 @@ func TestZoomAndResizeMode(t *testing.T) {
 	}
 }
 
+func TestRoleEnvIsolation(t *testing.T) {
+	t.Setenv("CHOR_TEST_SECRET", "s3cret")
+	t.Setenv("CHOR_TEST_TOKEN", "tok")
+	t.Setenv("AWS_TEST_KEY", "aws")
+	has := func(env []string, name string) bool {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, name+"=") {
+				return true
+			}
+		}
+		return false
+	}
+	// default: full env inherited
+	env := roleEnv(config.Role{}, "/tmp/s.sock", "")
+	if !has(env, "CHOR_TEST_SECRET") || !has(env, "PATH") || !has(env, "CHORAGOS_SOCK") {
+		t.Fatal("default mode should inherit the full env plus the socket")
+	}
+	// env_deny strips exact names and prefix patterns
+	env = roleEnv(config.Role{EnvDeny: []string{"CHOR_TEST_SECRET", "AWS_*"}}, "/tmp/s.sock", "")
+	if has(env, "CHOR_TEST_SECRET") || has(env, "AWS_TEST_KEY") {
+		t.Fatal("env_deny not applied")
+	}
+	if !has(env, "CHOR_TEST_TOKEN") {
+		t.Fatal("env_deny must not strip unrelated vars")
+	}
+	// env_allow: baseline + allowed only
+	env = roleEnv(config.Role{EnvAllow: []string{"CHOR_TEST_TOKEN"}}, "/tmp/s.sock", "http://gw")
+	if has(env, "CHOR_TEST_SECRET") || has(env, "AWS_TEST_KEY") {
+		t.Fatal("allowlist mode leaked non-allowed vars")
+	}
+	if !has(env, "CHOR_TEST_TOKEN") || !has(env, "PATH") || !has(env, "HOME") {
+		t.Fatal("allowlist mode must keep baseline and allowed vars")
+	}
+	if !has(env, "CHORAGOS_SOCK") || !has(env, "ANTHROPIC_BASE_URL") {
+		t.Fatal("choragos-injected vars must always be present")
+	}
+	// deny wins over allow
+	env = roleEnv(config.Role{EnvAllow: []string{"CHOR_TEST_TOKEN"}, EnvDeny: []string{"CHOR_TEST_TOKEN"}}, "/tmp/s.sock", "")
+	if has(env, "CHOR_TEST_TOKEN") {
+		t.Fatal("env_deny must win over env_allow")
+	}
+}
+
 func TestBootVerifyAndRetry(t *testing.T) {
 	t.Chdir(t.TempDir())
 	// role reads stdin but never echoes: the injection can never be verified on screen

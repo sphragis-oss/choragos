@@ -26,6 +26,10 @@ type Role struct {
 	// extra markers appended to the built-in status heuristics for this agent's TUI
 	InputPrompts  []string `toml:"input_prompts"`
 	ChromeMarkers []string `toml:"chrome_markers"`
+	// env isolation: when env_allow is set the role gets only baseline vars plus these
+	// (exact names or "PREFIX_*" patterns); env_deny strips matches in either mode
+	EnvAllow []string `toml:"env_allow"`
+	EnvDeny  []string `toml:"env_deny"`
 }
 
 // Config is the full orchestration.
