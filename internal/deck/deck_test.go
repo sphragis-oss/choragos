@@ -632,6 +632,31 @@ func TestRestartRole(t *testing.T) {
 	_ = e.pane.Close()
 }
 
+func TestTaskBoardRecordsAndRenders(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "BUILD-7 fix the flake"})
+	m.dispatch(ipc.Command{Cmd: "work-done", Task: "BUILD-7 fixed", Done: true})
+	if len(m.board) != 2 {
+		t.Fatalf("board events = %d, want 2", len(m.board))
+	}
+	m.Update(key("ctrl+b"))
+	m.Update(key("t"))
+	if !m.boardOn {
+		t.Fatal("prefix+t should open the task board")
+	}
+	v := m.View()
+	for _, want := range []string{"task board", "delegate", "coder", "BUILD-7 fix the flake", "work-done ✓"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("board missing %q", want)
+		}
+	}
+	m.Update(key("q"))
+	if m.boardOn {
+		t.Fatal("any key should close the board")
+	}
+}
+
 func TestMouseClickFocusesTile(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.Update(key("ctrl+b"))

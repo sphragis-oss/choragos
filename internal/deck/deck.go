@@ -109,8 +109,10 @@ type Model struct {
 	sidebar    bool   // status-card column visible
 	autoFocus  bool   // activity steals focus ([ui] auto_focus)
 	helpOn     bool   // help overlay visible; any key closes it
+	boardOn    bool   // task board overlay visible; any key closes it
 	broadcast  bool   // normal-mode keys go to every live pane
 	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
+	board      []taskEvent
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -124,6 +126,25 @@ type Model struct {
 	eventsC    io.Closer
 	w, h       int
 	err        error
+}
+
+// taskEvent is one delegation-protocol event, shown on the task board.
+type taskEvent struct {
+	at   time.Time
+	kind string // delegate | work-done
+	to   string
+	task string
+	done bool
+}
+
+// boardCap bounds the in-memory task history.
+const boardCap = 200
+
+func (m *Model) recordTask(ev taskEvent) {
+	m.board = append(m.board, ev)
+	if len(m.board) > boardCap {
+		m.board = m.board[len(m.board)-boardCap:]
+	}
 }
 
 // discardLog is the fallback so dispatch never nil-panics before the event log is wired.
@@ -242,8 +263,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.helpOn {
-		m.helpOn = false
+	if m.helpOn || m.boardOn {
+		m.helpOn, m.boardOn = false, false
 		return m, nil
 	}
 	if m.tree != nil && m.tree.Resizing() {
@@ -383,6 +404,8 @@ func (m *Model) wmAction(key string) {
 		m.restartRole()
 	case m.keys.Broadcast:
 		m.broadcast = !m.broadcast
+	case m.keys.TaskBoard:
+		m.boardOn = true
 	}
 }
 
@@ -471,6 +494,7 @@ func (m *Model) dispatch(cmd ipc.Command) {
 				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task),
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
 				m.log().Info("delegate", "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
+				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", to: name, task: singleLine(cmd.Task)})
 				injectLine(e, line)
 				if m.autoFocus && !m.manual {
 					m.focusRole(i)
@@ -483,6 +507,7 @@ func (m *Model) dispatch(cmd ipc.Command) {
 		i := m.startIdx()
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
 			m.log().Info("work-done", "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
+			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
 			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
 			if m.autoFocus && !m.manual {
 				m.focusRole(i)
@@ -727,6 +752,9 @@ func (m *Model) View() string {
 	body := m.tree.Render(mainW, contentH, func(role, w, h int) string {
 		return m.renderTile(role, w, h, st)
 	})
+	if m.boardOn {
+		body = m.renderBoard(mainW, contentH)
+	}
 	if m.helpOn {
 		body = m.renderHelp(mainW, contentH)
 	}
@@ -765,6 +793,37 @@ func (m *Model) renderHelp(w, h int) string {
 	for _, r := range rows {
 		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(16).Render(r[0]))
 		b.WriteString(" " + r[1] + "\n")
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
+}
+
+// renderBoard draws the delegation-event board in place of the tiled area; any key closes it.
+func (m *Model) renderBoard(w, h int) string {
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("task board") + "\n\n")
+	if len(m.board) == 0 {
+		b.WriteString(lipgloss.NewStyle().Faint(true).Render("no delegations yet"))
+	}
+	rows := m.board
+	if maxRows := h - 6; maxRows > 0 && len(rows) > maxRows {
+		rows = rows[len(rows)-maxRows:]
+	}
+	for _, ev := range rows {
+		kind := ev.kind
+		if ev.kind == "work-done" && ev.done {
+			kind = "work-done ✓"
+		}
+		line := ev.at.Format("15:04:05") + "  " +
+			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + "  " +
+			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-40))
+		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
 	if w < 6 || h < 5 {
