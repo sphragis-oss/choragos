@@ -818,6 +818,53 @@ func TestScrollbackOnFocusedTile(t *testing.T) {
 	}
 }
 
+func TestScrollbackSearch(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "solo"))
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 48})
+	for i := 0; i < 120; i++ {
+		_ = m.panes[0].pane.Input([]byte(fmt.Sprintf("needle-%03d\r", i)))
+	}
+	if !waitFor(func() bool { return strings.Contains(m.panes[0].pane.Render(), "needle-119") }) {
+		t.Fatal("pane never echoed")
+	}
+	m.Update(key("ctrl+b"))
+	m.Update(key("/"))
+	if !m.searching {
+		t.Fatal("prefix+/ should enter search input")
+	}
+	if !strings.Contains(m.View(), "[SEARCH /") {
+		t.Fatal("search indicator missing")
+	}
+	m.Update(key("needle-005"))
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.searching {
+		t.Fatal("enter should commit the query")
+	}
+	if m.scrollOff == 0 {
+		t.Fatal("search should jump into scrollback")
+	}
+	if !strings.Contains(m.View(), "needle-005") {
+		t.Fatal("match not brought into view")
+	}
+	// cat echoes and re-emits every line, so a second occurrence exists further up
+	prev := m.scrollOff
+	m.Update(key("n"))
+	if m.scrollOff <= prev {
+		t.Fatalf("n should move further back: %d <= %d", m.scrollOff, prev)
+	}
+	m.Update(key("N"))
+	if m.scrollOff != prev {
+		t.Fatalf("N should return to the newer match: %d != %d", m.scrollOff, prev)
+	}
+	// esc cancels input mode without committing
+	m.Update(key("ctrl+b"))
+	m.Update(key("/"))
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.searching {
+		t.Fatal("esc should cancel search input")
+	}
+}
+
 func TestAutoFocusModes(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	// activity on a hidden role steals focus when auto_focus is on

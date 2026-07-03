@@ -113,6 +113,9 @@ type Model struct {
 	broadcast  bool   // normal-mode keys go to every live pane
 	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
 	board      []taskEvent
+	searching  bool   // typing a scrollback search query
+	searchBuf  string // query being typed
+	searchQ    string // committed query; n/N navigate while scrolled
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -267,6 +270,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpOn, m.boardOn = false, false
 		return m, nil
 	}
+	if m.searching {
+		m.searchKey(msg)
+		return m, nil
+	}
 	if m.tree != nil && m.tree.Resizing() {
 		m.resizeKey(msg.String())
 		return m, nil
@@ -279,6 +286,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tree != nil && msg.String() == m.keys.Prefix {
 		m.prefixed = true
 		return m, nil
+	}
+	if m.scrollOff > 0 && m.searchQ != "" && msg.Type == tea.KeyRunes {
+		switch string(msg.Runes) {
+		case "n":
+			m.searchJump(1)
+			return m, nil
+		case "N":
+			m.searchJump(-1)
+			return m, nil
+		}
 	}
 	if m.broadcast {
 		for _, e := range m.panes {
@@ -406,6 +423,70 @@ func (m *Model) wmAction(key string) {
 		m.broadcast = !m.broadcast
 	case m.keys.TaskBoard:
 		m.boardOn = true
+	case m.keys.Search:
+		m.searching = true
+		m.searchBuf = ""
+	}
+}
+
+// searchKey edits the query; Enter jumps to the nearest match above, Esc cancels.
+func (m *Model) searchKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.searching = false
+		m.searchQ = m.searchBuf
+		m.searchJump(1)
+	case tea.KeyEsc:
+		m.searching = false
+		m.searchBuf = ""
+	case tea.KeyBackspace:
+		if r := []rune(m.searchBuf); len(r) > 0 {
+			m.searchBuf = string(r[:len(r)-1])
+		}
+	case tea.KeySpace:
+		m.searchBuf += " "
+	case tea.KeyRunes:
+		m.searchBuf += string(msg.Runes)
+	}
+}
+
+// searchJump scrolls the focused pane to the nearest match: dir>0 older (up), dir<0 newer (down).
+func (m *Model) searchJump(dir int) {
+	e := m.current()
+	if e == nil || m.searchQ == "" {
+		return
+	}
+	cw, ch := m.focusedTileContent()
+	lines := e.pane.HistoryLines(cw)
+	total := len(lines)
+	if total == 0 || ch < 1 {
+		return
+	}
+	cur := total - m.scrollOff - ch // top row of the current view
+	q := strings.ToLower(m.searchQ)
+	match := -1
+	if dir > 0 {
+		for r := min(cur-1, total-1); r >= 0; r-- {
+			if strings.Contains(strings.ToLower(lines[r]), q) {
+				match = r
+				break
+			}
+		}
+	} else {
+		for r := cur + 1; r < total; r++ {
+			if strings.Contains(strings.ToLower(lines[r]), q) {
+				match = r
+				break
+			}
+		}
+	}
+	if match < 0 {
+		return
+	}
+	if off := total - match - ch; off > 0 {
+		m.scrollOff = off // renderTile clamps to the pane's max offset
+	} else {
+		m.scrollOff = 0
 	}
 }
 
@@ -980,6 +1061,9 @@ func (m *Model) modeLabel() string {
 	var out string
 	if m.broadcast {
 		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[BCAST] ")
+	}
+	if m.searching {
+		out += lipgloss.NewStyle().Foreground(scrollColor).Bold(true).Render("[SEARCH /" + m.searchBuf + "] ")
 	}
 	switch {
 	case m.tree != nil && m.tree.Resizing():
