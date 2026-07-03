@@ -2,8 +2,9 @@
 
 Choragos loads `.choragos.toml` from the working directory (override with
 `choragos serve --config <path>`). Without a config it runs the built-in
-5-role team. Generate a commented starter with `choragos init`, and check a
-setup with `choragos doctor`.
+5-role team. Generate a commented starter with `choragos init`, pick a team
+template with `choragos init --template <starter|claude-team|mixed-team|review>`,
+and check a setup with `choragos doctor`.
 
 Unknown keys are reported as warnings on startup (and in
 `.choragos/logs/events.log`), so typos never fail silently.

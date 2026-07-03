@@ -1,0 +1,22 @@
+# Read-only review crew: everyone reports findings, nobody edits code.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a read-only review. Split the work into correctness and security aspects, delegate, then merge the findings into one report. Never modify code."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "opus"
+prompt_template = "Review the change for correctness, edge cases, and maintainability. Report findings only; do not modify code."
+
+[[roles]]
+name = "auditor"
+command = "claude"
+model = "sonnet"
+prompt_template = "Audit the change for security issues: injection, secret handling, unsafe defaults, dependency risk. Report findings only; do not modify code."
+# auditors read code, they never need cloud credentials
+env_deny = ["AWS_*", "GCP_*", "GITHUB_TOKEN"]

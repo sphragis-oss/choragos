@@ -120,3 +120,45 @@ func TestInitWritesLoadableConfig(t *testing.T) {
 		t.Fatalf("init --force failed: %v", err)
 	}
 }
+
+func TestInitTemplates(t *testing.T) {
+	names := templateNames()
+	if len(names) < 4 {
+		t.Fatalf("expected at least 4 templates, got %v", names)
+	}
+	// every embedded template must produce a loadable config
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			cmd := initCmd()
+			cmd.SetOut(&strings.Builder{})
+			if err := cmd.Flags().Set("template", name); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.RunE(cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			c, err := config.Load("")
+			if err != nil {
+				t.Fatalf("template %s does not load: %v", name, err)
+			}
+			if len(c.Roles) == 0 {
+				t.Fatalf("template %s has no roles", name)
+			}
+			if len(c.Warnings) != 0 {
+				t.Fatalf("template %s has config warnings: %v", name, c.Warnings)
+			}
+		})
+	}
+	// unknown template errors and names the available ones
+	t.Chdir(t.TempDir())
+	cmd := initCmd()
+	cmd.SetOut(&strings.Builder{})
+	if err := cmd.Flags().Set("template", "nope"); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "starter") {
+		t.Fatalf("unknown template error should list available templates, got: %v", err)
+	}
+}

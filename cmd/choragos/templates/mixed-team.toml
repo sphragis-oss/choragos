@@ -1,0 +1,26 @@
+# Mixed-vendor team: Claude implements, a Gemini CLI reviews.
+# Adjust command/model to the CLIs installed on your machine; commands must
+# be real binaries on PATH (shell aliases do not resolve).
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate the team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+prompt_template = "Implement the requested change. Run the project's tests before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "agy"
+model = "Gemini 3.1 Pro (High)"
+prompt_template = "Review the change for correctness and edge cases. Report findings only; do not modify code."
+# teach the status heuristics this TUI's prompts if they differ from Claude's
+# input_prompts = ["continue? <enter>"]
+# chrome_markers = ["agy statusbar"]
+env_allow = ["GEMINI_API_KEY", "GOOGLE_*"]

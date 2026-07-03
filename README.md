@@ -101,6 +101,9 @@ make build
 # Write a starter .choragos.toml (roles, keybindings, UI options)
 ./choragos init
 
+# Or start from a team template: starter, claude-team, mixed-team, review
+./choragos init --template review
+
 # Start the TUI
 ./choragos serve
 ```
