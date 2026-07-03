@@ -570,6 +570,32 @@ func TestRestartRole(t *testing.T) {
 	_ = e.pane.Close()
 }
 
+func TestBroadcastMode(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.Update(key("ctrl+b"))
+	m.Update(key("a"))
+	if !m.broadcast {
+		t.Fatal("prefix+a should enable broadcast")
+	}
+	m.Update(key("y"))
+	for i, e := range m.panes {
+		p := e.pane
+		if !waitFor(func() bool { return strings.Contains(p.Render(), "y") }) {
+			t.Fatalf("pane %d missed broadcast input", i)
+		}
+	}
+	m.Update(key("ctrl+b"))
+	m.Update(key("a"))
+	if m.broadcast {
+		t.Fatal("prefix+a should toggle broadcast off")
+	}
+	m.Update(key("z"))
+	time.Sleep(150 * time.Millisecond)
+	if strings.Contains(m.panes[1].pane.Render(), "z") && m.active != 1 {
+		t.Fatal("broadcast off: unfocused pane still received input")
+	}
+}
+
 func TestCollapseRepeat(t *testing.T) {
 	cases := []struct {
 		in   string

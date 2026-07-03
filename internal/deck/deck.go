@@ -101,6 +101,7 @@ type Model struct {
 	sidebar    bool // status-card column visible
 	autoFocus  bool // activity steals focus ([ui] auto_focus)
 	helpOn     bool // help overlay visible; any key closes it
+	broadcast  bool // normal-mode keys go to every live pane
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -246,6 +247,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prefixed = true
 		return m, nil
 	}
+	if m.broadcast {
+		for _, e := range m.panes {
+			if !e.exited {
+				_ = e.pane.Input(keyBytes(msg))
+			}
+		}
+		return m, nil
+	}
 	if e := m.current(); e != nil && !e.exited {
 		_ = e.pane.Input(keyBytes(msg))
 	}
@@ -330,6 +339,8 @@ func (m *Model) wmAction(key string) {
 		m.helpOn = true
 	case m.keys.RestartRole:
 		m.restartRole()
+	case m.keys.Broadcast:
+		m.broadcast = !m.broadcast
 	}
 }
 
@@ -804,17 +815,21 @@ func (m *Model) renderStats(st []roleState) string {
 	return m.modeLabel() + lipgloss.NewStyle().Faint(true).Render(txt) + scroll
 }
 
-// modeLabel is the status-line WM mode indicator: prefix armed, resize mode, or zoom.
+// modeLabel is the status-line WM mode indicator: prefix armed, resize mode, zoom, or broadcast.
 func (m *Model) modeLabel() string {
+	var out string
+	if m.broadcast {
+		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[BCAST] ")
+	}
 	switch {
 	case m.tree != nil && m.tree.Resizing():
-		return lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[RESIZE h/j/k/l] ")
+		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[RESIZE h/j/k/l] ")
 	case m.prefixed:
-		return lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[PREFIX] ")
+		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[PREFIX] ")
 	case m.tree != nil && m.tree.Zoomed():
-		return lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[ZOOM] ")
+		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[ZOOM] ")
 	}
-	return ""
+	return out
 }
 
 func (m *Model) gatewayLabel() string {
