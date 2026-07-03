@@ -773,6 +773,31 @@ func TestBroadcastMode(t *testing.T) {
 	}
 }
 
+func FuzzChromeLine(f *testing.F) {
+	for _, seed := range []string{"", "● working", "[████░░] 3%", "for shortcuts", "plain output", "⠋ spinner", strings.Repeat("─", 200)} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(_ *testing.T, s string) {
+		_ = chromeLine(s, nil)
+		_ = chromeLine(s, []string{s})
+	})
+}
+
+func FuzzCollapseRepeat(f *testing.F) {
+	for _, seed := range []string{"", "h", "hhh", "left", "παπ", "\x00\x00"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		key, reps := collapseRepeat(s)
+		if reps < 1 {
+			t.Fatalf("reps = %d for %q", reps, s)
+		}
+		if s != "" && key == "" {
+			t.Fatalf("non-empty input %q collapsed to empty key", s)
+		}
+	})
+}
+
 func TestCollapseRepeat(t *testing.T) {
 	cases := []struct {
 		in   string

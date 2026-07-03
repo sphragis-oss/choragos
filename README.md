@@ -22,6 +22,9 @@
   <a href="https://github.com/sphragis-oss/choragos/releases">
     <img alt="Latest Release" src="https://img.shields.io/github/v/release/sphragis-oss/choragos?include_prereleases&style=for-the-badge">
   </a>
+  <a href="https://codecov.io/gh/sphragis-oss/choragos">
+    <img alt="Coverage" src="https://img.shields.io/codecov/c/github/sphragis-oss/choragos?style=for-the-badge">
+  </a>
   <a href="LICENSE">
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge">
   </a>

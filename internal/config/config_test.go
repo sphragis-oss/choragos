@@ -214,6 +214,18 @@ func TestUIDefaultsOn(t *testing.T) {
 	}
 }
 
+func FuzzKeysDefaulted(f *testing.F) {
+	for _, seed := range []string{"", "v", "prefix+v", "PREFIX+MINUS", "ctrl+b", "minus", "shift+tab", "  x  ", "πλήκτρο"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		k := config.Keys{Prefix: s, SplitVertical: s, Zoom: s}.Defaulted()
+		if k.Prefix == "" || k.SplitVertical == "" || k.Zoom == "" {
+			t.Fatalf("Defaulted left an empty binding for input %q: %+v", s, k)
+		}
+	})
+}
+
 func TestLoadNoRolesErrors(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "empty.toml")
