@@ -539,6 +539,58 @@ func TestZoomAndResizeMode(t *testing.T) {
 	}
 }
 
+func TestCollapseRepeat(t *testing.T) {
+	cases := []struct {
+		in   string
+		key  string
+		reps int
+	}{
+		{"h", "h", 1}, {"hhh", "h", 3}, {"left", "left", 1}, {"jk", "jk", 1},
+	}
+	for _, c := range cases {
+		if k, n := collapseRepeat(c.in); k != c.key || n != c.reps {
+			t.Errorf("collapseRepeat(%q) = %q/%d, want %q/%d", c.in, k, n, c.key, c.reps)
+		}
+	}
+}
+
+func TestResizeModeSurvivesKeyRepeat(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.Update(key("ctrl+b"))
+	m.Update(key("v"))
+	_, mainW, contentH := m.dims()
+	before := m.tree.Layout(mainW, contentH)[0].W
+	m.Update(key("ctrl+b"))
+	m.Update(key("r"))
+	m.Update(key("hhh")) // coalesced key-repeat run
+	if !m.tree.Resizing() {
+		t.Fatal("coalesced repeat must not exit resize mode")
+	}
+	if got := m.tree.Layout(mainW, contentH)[0].W; got >= before {
+		t.Fatalf("repeat run did not resize: %d >= %d", got, before)
+	}
+}
+
+func TestHelpOverlay(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "solo", "coder"))
+	m.Update(key("ctrl+b"))
+	m.Update(key("?"))
+	if !m.helpOn {
+		t.Fatal("prefix+? should open help")
+	}
+	if v := m.View(); !strings.Contains(v, "keybindings") {
+		t.Fatal("help overlay not rendered")
+	}
+	m.Update(key("w"))
+	if m.helpOn {
+		t.Fatal("any key should close help")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if strings.Contains(m.panes[0].pane.Render(), "w") {
+		t.Fatal("help-closing key must not reach the PTY")
+	}
+}
+
 func TestToggleSidebarReflows(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "solo"))
 	_, mainBefore, _ := m.dims()

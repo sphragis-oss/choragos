@@ -99,6 +99,7 @@ type Model struct {
 	prefixed   bool // prefix armed; next key runs a WM action
 	sidebar    bool // status-card column visible
 	autoFocus  bool // activity steals focus ([ui] auto_focus)
+	helpOn     bool // help overlay visible; any key closes it
 	server     *ipc.Server
 	socket     string
 	gateway    *sphragis.Supervisor
@@ -226,6 +227,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.helpOn {
+		m.helpOn = false
+		return m, nil
+	}
 	if m.tree != nil && m.tree.Resizing() {
 		m.resizeKey(msg.String())
 		return m, nil
@@ -247,6 +252,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // resizeKey adjusts the focused split's ratio live; any unmapped key exits resize mode.
 func (m *Model) resizeKey(key string) {
+	key, reps := collapseRepeat(key) // key repeat can coalesce into one "hhh" rune msg
 	var vert bool
 	var delta float64
 	switch key {
@@ -262,9 +268,23 @@ func (m *Model) resizeKey(key string) {
 		m.tree.SetResizing(false)
 		return
 	}
-	if m.tree.AdjustRatio(vert, delta) {
+	if m.tree.AdjustRatio(vert, delta*float64(reps)) {
 		m.resizePanes()
 	}
+}
+
+// collapseRepeat folds a coalesced run of one rune ("hhh") into the rune and its count.
+func collapseRepeat(key string) (string, int) {
+	r := []rune(key)
+	if len(r) < 2 {
+		return key, 1
+	}
+	for _, c := range r {
+		if c != r[0] {
+			return key, 1
+		}
+	}
+	return string(r[0]), len(r)
 }
 
 // wmAction runs the prefix-mode action bound to key; unmapped keys are a no-op.
@@ -304,6 +324,8 @@ func (m *Model) wmAction(key string) {
 	case m.keys.ToggleSidebar:
 		m.sidebar = !m.sidebar
 		m.resizePanes()
+	case m.keys.Help:
+		m.helpOn = true
 	}
 }
 
@@ -586,15 +608,56 @@ func (m *Model) View() string {
 		st[i] = computeStatus(e, now)
 	}
 
-	tiled := m.tree.Render(mainW, contentH, func(role, w, h int) string {
+	body := m.tree.Render(mainW, contentH, func(role, w, h int) string {
 		return m.renderTile(role, w, h, st)
 	})
-	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(tiled)
+	if m.helpOn {
+		body = m.renderHelp(mainW, contentH)
+	}
+	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(body)
 	if leftW > 0 {
 		left := m.renderCards(leftW, contentH, st)
 		main = lipgloss.JoinHorizontal(lipgloss.Top, left, main)
 	}
 	return main + "\n" + m.renderStats(st)
+}
+
+// renderHelp draws the keymap overlay in place of the tiled area; any key closes it.
+func (m *Model) renderHelp(w, h int) string {
+	k := m.keys
+	rows := [][2]string{
+		{"ctrl+q", "quit (graceful)"},
+		{"ctrl+g", "toggle sphragis gateway"},
+		{"ctrl+o", "cycle focus across roles"},
+		{"PgUp/PgDn", "scrollback on the focused tile"},
+		{k.Prefix + " " + k.SplitVertical, "split left/right"},
+		{k.Prefix + " " + k.SplitHorizontal, "split top/bottom"},
+		{k.Prefix + " " + k.ClosePane, "close tile (agent keeps running)"},
+		{k.Prefix + " " + k.FocusLeft + "/" + k.FocusDown + "/" + k.FocusUp + "/" + k.FocusRight, "focus left/down/up/right"},
+		{k.Prefix + " " + k.CycleNext + " / " + k.CyclePrev, "cycle tiles next/prev"},
+		{k.Prefix + " " + k.Zoom, "zoom focused tile"},
+		{k.Prefix + " " + k.ResizeMode, "resize mode (h/j/k/l, other key exits)"},
+		{k.Prefix + " " + k.ToggleSidebar, "toggle sidebar"},
+		{k.Prefix + " " + k.RestartRole, "restart focused role"},
+		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
+		{k.Prefix + " " + k.TaskBoard, "task board"},
+		{k.Prefix + " " + k.Search, "search scrollback"},
+		{k.Prefix + " " + k.Help, "this help"},
+	}
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("keybindings") + "\n\n")
+	for _, r := range rows {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(16).Render(r[0]))
+		b.WriteString(" " + r[1] + "\n")
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
 }
 
 // dims returns the sidebar width (0 when hidden), main-area width, and content height.

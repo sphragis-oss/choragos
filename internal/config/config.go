@@ -48,12 +48,23 @@ type Keys struct {
 	Zoom            string `toml:"zoom"`
 	ResizeMode      string `toml:"resize_mode"`
 	ToggleSidebar   string `toml:"toggle_sidebar"`
+	Help            string `toml:"help"`
+	RestartRole     string `toml:"restart_role"`
+	Broadcast       string `toml:"broadcast"`
+	TaskBoard       string `toml:"task_board"`
+	Search          string `toml:"search"`
 }
 
 // Defaulted fills empty bindings with the herdr default keymap and normalizes herdr syntax.
 func (k Keys) Defaulted() Keys {
 	set := func(p *string, def string) {
-		v := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*p)), "prefix+")
+		v := strings.TrimSpace(*p)
+		if strings.HasPrefix(strings.ToLower(v), "prefix+") {
+			v = v[len("prefix+"):]
+		}
+		if len([]rune(v)) > 1 {
+			v = strings.ToLower(v) // named keys (tab, ctrl+b); single runes keep case
+		}
 		if v == "minus" {
 			v = "-"
 		}
@@ -75,6 +86,11 @@ func (k Keys) Defaulted() Keys {
 	set(&k.Zoom, "z")
 	set(&k.ResizeMode, "r")
 	set(&k.ToggleSidebar, "b")
+	set(&k.Help, "?")
+	set(&k.RestartRole, "R")
+	set(&k.Broadcast, "a")
+	set(&k.TaskBoard, "t")
+	set(&k.Search, "/")
 	return k
 }
 
@@ -82,6 +98,7 @@ func (k Keys) Defaulted() Keys {
 type UI struct {
 	AutoFocus *bool `toml:"auto_focus"`
 	Sidebar   *bool `toml:"sidebar"`
+	Bell      *bool `toml:"bell"`
 }
 
 // IsAutoFocus reports whether pane activity steals focus (default true).
@@ -89,6 +106,9 @@ func (u UI) IsAutoFocus() bool { return u.AutoFocus == nil || *u.AutoFocus }
 
 // SidebarStart reports whether the status-card sidebar starts visible (default true).
 func (u UI) SidebarStart() bool { return u.Sidebar == nil || *u.Sidebar }
+
+// IsBell reports whether a waiting-for-input transition rings the terminal bell (default true).
+func (u UI) IsBell() bool { return u.Bell == nil || *u.Bell }
 
 // Sphragis controls routing agent traffic through the gateway; Enabled/FailClosed are pointers so omitted = on.
 type Sphragis struct {
