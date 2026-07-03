@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package deck is the Bubble Tea TUI: status cards (33%) plus an auto-expanding accordion of role panes (67%).
+// Package deck is the Bubble Tea TUI: a toggleable status-card sidebar plus a tiling window manager over the role panes.
 package deck
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/sphragis-oss/choragos/internal/pane"
 	"github.com/sphragis-oss/choragos/internal/prompt"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
+	"github.com/sphragis-oss/choragos/internal/wm"
 )
 
 // contextDir holds the generated role prompts, referenced by the injected one-liners.
@@ -52,6 +53,9 @@ const (
 	dimColor          lipgloss.Color = "240" // exited/unfocused
 	workingWindow                    = 2 * time.Second
 )
+
+// resizeStep is the ratio delta per keypress in resize mode.
+const resizeStep = 0.05
 
 // frameMsg signals a pane produced new output; idx marks which pane.
 type frameMsg struct{ idx int }
@@ -83,13 +87,18 @@ type entry struct {
 	lastActive time.Time
 }
 
-// Model drives the two-column orchestration deck.
+// Model drives the orchestration deck: sidebar cards plus the tiled role panes.
 type Model struct {
 	cfg        config.Config
 	prog       *tea.Program
 	panes      []*entry
 	active     int
-	manual     bool // user pressed ctrl+o; pause auto-expand until next real focus steal
+	manual     bool // user drove focus (ctrl+o or any WM action); pause auto-focus
+	tree       *wm.Tree
+	keys       config.Keys
+	prefixed   bool // prefix armed; next key runs a WM action
+	sidebar    bool // status-card column visible
+	autoFocus  bool // activity steals focus ([ui] auto_focus)
 	server     *ipc.Server
 	socket     string
 	gateway    *sphragis.Supervisor
@@ -155,33 +164,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.resizePanes()
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlQ:
-			m.closeAll()
-			return m, tea.Quit
-		case tea.KeyCtrlO:
-			if len(m.panes) > 0 {
-				m.setActive((m.active + 1) % len(m.panes))
-				m.manual = true
-			}
-		case tea.KeyCtrlG:
-			m.sphragisOn = !m.sphragisOn
-		case tea.KeyPgUp:
-			m.scrollOff += scrollStep
-		case tea.KeyPgDown:
-			if m.scrollOff -= scrollStep; m.scrollOff < 0 {
-				m.scrollOff = 0
-			}
-		default:
-			if e := m.current(); e != nil && !e.exited {
-				_ = e.pane.Input(keyBytes(msg))
-			}
-		}
+		return m.handleKey(msg)
 	case frameMsg:
 		if msg.idx >= 0 && msg.idx < len(m.panes) {
 			m.panes[msg.idx].lastActive = time.Now()
-			if !m.manual {
-				m.setActive(msg.idx) // auto-expand whoever is producing output
+			if m.autoFocus && !m.manual {
+				m.focusRole(msg.idx) // auto-focus whoever is producing output
 			}
 		}
 	case paneClosedMsg:
@@ -214,6 +202,169 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleKey routes a key: direct chords first, then resize mode, prefix mode, and PTY forwarding.
+func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlQ:
+		m.closeAll()
+		return m, tea.Quit
+	case tea.KeyCtrlO:
+		if len(m.panes) > 0 {
+			m.manual = true
+			m.focusRole((m.active + 1) % len(m.panes))
+		}
+		return m, nil
+	case tea.KeyCtrlG:
+		m.sphragisOn = !m.sphragisOn
+		return m, nil
+	case tea.KeyPgUp:
+		m.scrollOff += scrollStep
+		return m, nil
+	case tea.KeyPgDown:
+		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
+			m.scrollOff = 0
+		}
+		return m, nil
+	}
+	if m.tree != nil && m.tree.Resizing() {
+		m.resizeKey(msg.String())
+		return m, nil
+	}
+	if m.prefixed {
+		m.prefixed = false
+		m.wmAction(msg.String())
+		return m, nil
+	}
+	if m.tree != nil && msg.String() == m.keys.Prefix {
+		m.prefixed = true
+		return m, nil
+	}
+	if e := m.current(); e != nil && !e.exited {
+		_ = e.pane.Input(keyBytes(msg))
+	}
+	return m, nil
+}
+
+// resizeKey adjusts the focused split's ratio live; any unmapped key exits resize mode.
+func (m *Model) resizeKey(key string) {
+	var vert bool
+	var delta float64
+	switch key {
+	case "h", "left":
+		vert, delta = true, -resizeStep
+	case "l", "right":
+		vert, delta = true, resizeStep
+	case "k", "up":
+		vert, delta = false, -resizeStep
+	case "j", "down":
+		vert, delta = false, resizeStep
+	default:
+		m.tree.SetResizing(false)
+		return
+	}
+	if m.tree.AdjustRatio(vert, delta) {
+		m.resizePanes()
+	}
+}
+
+// wmAction runs the prefix-mode action bound to key; unmapped keys are a no-op.
+func (m *Model) wmAction(key string) {
+	switch key {
+	case m.keys.SplitVertical:
+		m.split(true)
+	case m.keys.SplitHorizontal:
+		m.split(false)
+	case m.keys.ClosePane:
+		if m.tree.Close() {
+			m.manual = true
+			m.syncFocus()
+		}
+	case m.keys.FocusLeft:
+		m.focusDir(wm.Left)
+	case m.keys.FocusDown:
+		m.focusDir(wm.Down)
+	case m.keys.FocusUp:
+		m.focusDir(wm.Up)
+	case m.keys.FocusRight:
+		m.focusDir(wm.Right)
+	case m.keys.CycleNext:
+		m.manual = true
+		m.tree.CycleNext()
+		m.syncFocus()
+	case m.keys.CyclePrev:
+		m.manual = true
+		m.tree.CyclePrev()
+		m.syncFocus()
+	case m.keys.Zoom:
+		m.manual = true
+		m.tree.ToggleZoom()
+		m.resizePanes()
+	case m.keys.ResizeMode:
+		m.tree.SetResizing(true)
+	case m.keys.ToggleSidebar:
+		m.sidebar = !m.sidebar
+		m.resizePanes()
+	}
+}
+
+// split tiles the next hidden role next to the focused tile; no-op when all roles are visible.
+func (m *Model) split(vert bool) {
+	role := m.nextHiddenRole()
+	if role < 0 {
+		return
+	}
+	m.manual = true
+	m.tree.Split(vert, role)
+	m.syncFocus()
+}
+
+// nextHiddenRole picks the first role after the focused one that has no tile.
+func (m *Model) nextHiddenRole() int {
+	vis := make(map[int]bool)
+	for _, r := range m.tree.VisibleRoles() {
+		vis[r] = true
+	}
+	for off := 1; off <= len(m.panes); off++ {
+		i := (m.active + off) % len(m.panes)
+		if !vis[i] {
+			return i
+		}
+	}
+	return -1
+}
+
+// focusDir moves focus to the geometrically adjacent tile.
+func (m *Model) focusDir(d wm.Dir) {
+	m.manual = true
+	_, mainW, contentH := m.dims()
+	if m.tree.FocusDir(d, mainW, contentH) {
+		m.syncFocus()
+	}
+}
+
+// focusRole shows role i: focuses its tile when visible, else retargets the focused tile.
+func (m *Model) focusRole(i int) {
+	if i == m.active || i < 0 || i >= len(m.panes) {
+		return
+	}
+	if m.tree != nil {
+		m.tree.Focus(i)
+		m.syncFocus()
+		return
+	}
+	m.scrollOff, m.maxScroll = 0, 0
+	m.active = i
+}
+
+// syncFocus aligns active with the tree's focused tile and resizes visible panes.
+func (m *Model) syncFocus() {
+	if r := m.tree.FocusedRole(); r != m.active {
+		m.scrollOff, m.maxScroll = 0, 0
+		m.active = r
+	}
+	m.resizePanes()
+}
+
 // checkHealth probes the gateway off the UI thread so View never blocks on I/O.
 func checkHealth(addr string) tea.Cmd {
 	return func() tea.Msg { return gatewayHealthMsg{up: sphragis.Healthy(addr)} }
@@ -242,8 +393,8 @@ func (m *Model) dispatch(cmd ipc.Command) {
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
 				m.log().Info("delegate", "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
 				injectLine(e, line)
-				if !m.manual {
-					m.setActive(i)
+				if m.autoFocus && !m.manual {
+					m.focusRole(i)
 				}
 			} else {
 				m.log().Warn("delegate target unavailable", "to", name)
@@ -254,8 +405,8 @@ func (m *Model) dispatch(cmd ipc.Command) {
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
 			m.log().Info("work-done", "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
 			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
-			if !m.manual {
-				m.setActive(i)
+			if m.autoFocus && !m.manual {
+				m.focusRole(i)
 			}
 		}
 	}
@@ -428,19 +579,109 @@ func (m *Model) View() string {
 		return "starting deck...\n"
 	}
 	now := time.Now()
-	d := computeLayout(len(m.panes), m.w, m.h)
-	contentH := m.h - 1
+	leftW, mainW, contentH := m.dims()
 
 	st := make([]roleState, len(m.panes))
 	for i, e := range m.panes {
 		st[i] = computeStatus(e, now)
 	}
 
-	left := m.renderCards(d.leftW, contentH, st)
-	right := lipgloss.NewStyle().Width(d.rightW).Height(contentH).MaxHeight(contentH).
-		Render(m.renderAccordion(d, st))
-	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	tiled := m.tree.Render(mainW, contentH, func(role, w, h int) string {
+		return m.renderTile(role, w, h, st)
+	})
+	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(tiled)
+	if leftW > 0 {
+		left := m.renderCards(leftW, contentH, st)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, left, main)
+	}
 	return main + "\n" + m.renderStats(st)
+}
+
+// dims returns the sidebar width (0 when hidden), main-area width, and content height.
+func (m *Model) dims() (leftW, mainW, contentH int) {
+	contentH = m.h - 1
+	if contentH < 1 {
+		contentH = 1
+	}
+	mainW = m.w
+	if !m.sidebar {
+		if mainW < 1 {
+			mainW = 1
+		}
+		return 0, mainW, contentH
+	}
+	leftW = m.w / 3
+	if leftW < minSidebar {
+		leftW = minSidebar
+	}
+	if leftW > m.w-1 {
+		leftW = m.w - 1
+	}
+	if leftW < 1 {
+		leftW = 1
+	}
+	mainW = m.w - leftW
+	if mainW < 1 {
+		mainW = 1
+	}
+	return leftW, mainW, contentH
+}
+
+// tileContent maps a tile's outer dims to its pane content area; chrome is border plus header.
+func tileContent(w, h int) (cw, ch int, chrome bool) {
+	if w < 6 || h < 5 {
+		if w < 1 {
+			w = 1
+		}
+		if h < 1 {
+			h = 1
+		}
+		return w, h, false
+	}
+	return w - 2, h - 3, true
+}
+
+// renderTile draws one role pane as a w x h tile: header + live screen (or scrollback) in a status-colored border.
+func (m *Model) renderTile(role, w, h int, st []roleState) string {
+	e := m.panes[role]
+	focused := role == m.active
+	cw, ch, chrome := tileContent(w, h)
+	content := e.pane.Render()
+	scrolled := false
+	if focused && m.scrollOff > 0 {
+		var maxOff int
+		content, maxOff = e.pane.Scrollback(cw, ch, m.scrollOff)
+		m.maxScroll = maxOff
+		if m.scrollOff > maxOff {
+			m.scrollOff = maxOff
+		}
+		scrolled = m.scrollOff > 0
+	}
+	if !chrome {
+		return lipgloss.NewStyle().Width(w).Height(h).MaxWidth(w).MaxHeight(h).Render(content)
+	}
+	border := dimColor
+	switch {
+	case scrolled:
+		border = scrollColor
+	case focused:
+		border = accentColor
+	case st[role].waiting:
+		border = waitingColor
+	}
+	nameStyle := lipgloss.NewStyle().Bold(true)
+	if focused {
+		nameStyle = nameStyle.Foreground(accentColor)
+	}
+	header := lipgloss.NewStyle().MaxWidth(cw).Render(
+		lipgloss.NewStyle().Foreground(st[role].color).Render(st[role].dot) + " " +
+			nameStyle.Render(e.role.Name) + "  " +
+			lipgloss.NewStyle().Faint(true).Render(st[role].label))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(header + "\n" + content)
 }
 
 // renderCards is the left column: one status card per role, with a tail activity preview.
@@ -473,53 +714,6 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(col)
 }
 
-// renderAccordion is the right column: collapsed headers plus the expanded pane (live or scrolled back).
-func (m *Model) renderAccordion(d layoutDims, st []roleState) string {
-	var b strings.Builder
-	for i, e := range m.panes {
-		focused := i == m.active
-		b.WriteString(m.paneHeader(i, focused, d.rightW, st[i]))
-		b.WriteByte('\n')
-		if focused && d.paneH > 0 {
-			border := accentColor
-			content := e.pane.Render()
-			if m.scrollOff > 0 {
-				var maxOff int
-				content, maxOff = e.pane.Scrollback(d.paneW, d.paneH, m.scrollOff)
-				m.maxScroll = maxOff
-				if m.scrollOff > maxOff {
-					m.scrollOff = maxOff
-				}
-				border = scrollColor
-			}
-			box := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(border).
-				Width(d.paneW).Height(d.paneH).
-				Render(content)
-			b.WriteString(box)
-			b.WriteByte('\n')
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// paneHeader renders one role's status row in the accordion.
-func (m *Model) paneHeader(i int, focused bool, width int, st roleState) string {
-	e := m.panes[i]
-	caret := "  "
-	nameStyle := lipgloss.NewStyle()
-	if focused {
-		caret = lipgloss.NewStyle().Foreground(accentColor).Render("▸") + " "
-		nameStyle = nameStyle.Bold(true).Foreground(accentColor)
-	}
-	line := caret +
-		lipgloss.NewStyle().Foreground(st.color).Render(st.dot) + " " +
-		nameStyle.Render(e.role.Name) + "  " +
-		lipgloss.NewStyle().Faint(true).Render(st.label)
-	return lipgloss.NewStyle().Width(width).Render(line)
-}
-
 func (m *Model) renderStats(st []roleState) string {
 	active, working, waiting := 0, 0, 0
 	for _, s := range st {
@@ -538,9 +732,22 @@ func (m *Model) renderStats(st []roleState) string {
 	if m.scrollOff > 0 {
 		scroll = lipgloss.NewStyle().Foreground(scrollColor).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
 	}
-	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · PgUp/PgDn scroll · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
-		active, working, waiting, m.gatewayLabel())
-	return lipgloss.NewStyle().Faint(true).Render(txt) + scroll
+	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · %s wm · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
+		active, working, waiting, m.gatewayLabel(), m.keys.Prefix)
+	return m.modeLabel() + lipgloss.NewStyle().Faint(true).Render(txt) + scroll
+}
+
+// modeLabel is the status-line WM mode indicator: prefix armed, resize mode, or zoom.
+func (m *Model) modeLabel() string {
+	switch {
+	case m.tree != nil && m.tree.Resizing():
+		return lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[RESIZE h/j/k/l] ")
+	case m.prefixed:
+		return lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[PREFIX] ")
+	case m.tree != nil && m.tree.Zoomed():
+		return lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[ZOOM] ")
+	}
+	return ""
 }
 
 func (m *Model) gatewayLabel() string {
@@ -619,39 +826,22 @@ func humanizeSince(d time.Duration) string {
 	}
 }
 
-// layoutDims holds the column widths and the focused pane's content size.
-type layoutDims struct{ leftW, rightW, paneW, paneH int }
-
-// computeLayout splits width 33/67 (cards / accordion) and sizes the focused pane to fill the right column.
-func computeLayout(n, width, height int) layoutDims {
-	leftW := width / 3
-	if leftW < minSidebar {
-		leftW = minSidebar
-	}
-	if leftW > width-1 {
-		leftW = width - 1
-	}
-	if leftW < 1 {
-		leftW = 1
-	}
-	rightW := width - leftW
-	if rightW < 1 {
-		rightW = 1
-	}
-	paneW := rightW - 2
-	if paneW < 1 {
-		paneW = 1
-	}
-	paneH := height - n - 3 // status bar + every header row + pane border; may be <= 0 on tiny terminals, box is skipped then
-	return layoutDims{leftW: leftW, rightW: rightW, paneW: paneW, paneH: paneH}
-}
-
+// resizePanes sizes every visible tile's pane; hidden panes keep their last size.
 func (m *Model) resizePanes() {
-	d := computeLayout(len(m.panes), m.w, m.h)
-	for _, e := range m.panes {
-		if !e.exited {
-			_ = e.pane.Resize(d.paneW, d.paneH) // pane clamps non-positive dims
+	if m.tree == nil {
+		return
+	}
+	_, mainW, contentH := m.dims()
+	for _, tile := range m.tree.Layout(mainW, contentH) {
+		if tile.Role < 0 || tile.Role >= len(m.panes) {
+			continue
 		}
+		e := m.panes[tile.Role]
+		if e.exited {
+			continue
+		}
+		cw, ch, _ := tileContent(tile.W, tile.H)
+		_ = e.pane.Resize(cw, ch) // pane clamps non-positive dims
 	}
 }
 
@@ -666,13 +856,18 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled())
 
 	m.sphragisOn = m.cfg.Sphragis.IsEnabled()
+	m.keys = m.cfg.Keys.Defaulted()
+	m.autoFocus = m.cfg.UI.IsAutoFocus()
+	m.sidebar = m.cfg.UI.SidebarStart()
 	baseURL := ""
 	if m.sphragisOn {
 		baseURL = m.cfg.Sphragis.BaseURL()
 	}
 
-	d := computeLayout(len(m.cfg.Roles), m.w, m.h)
-	panes, err := startPanes(m.cfg, d.paneW, d.paneH, m.socket, baseURL)
+	// the deck opens as a single tile showing the start role
+	_, mainW, contentH := m.dims()
+	cw, ch, _ := tileContent(mainW, contentH)
+	panes, err := startPanes(m.cfg, cw, ch, m.socket, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -692,6 +887,7 @@ func (m *Model) startAll() (tea.Cmd, error) {
 			break
 		}
 	}
+	m.tree = wm.New(m.active)
 	if m.sphragisOn {
 		return ensureGateway(m.cfg.Sphragis), nil
 	}
@@ -767,15 +963,6 @@ func (m *Model) current() *entry {
 		return nil
 	}
 	return m.panes[m.active]
-}
-
-// setActive focuses pane i, dropping any scrollback since it belonged to the previous pane.
-func (m *Model) setActive(i int) {
-	if i != m.active {
-		m.scrollOff = 0
-		m.maxScroll = 0
-	}
-	m.active = i
 }
 
 func (m *Model) closeAll() {

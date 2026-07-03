@@ -122,6 +122,60 @@ func TestCheckCommands(t *testing.T) {
 	}
 }
 
+func TestKeysDefaultsMatchHerdr(t *testing.T) {
+	k := config.Default().Keys
+	want := config.Keys{
+		Prefix: "ctrl+b", SplitVertical: "v", SplitHorizontal: "-", ClosePane: "x",
+		FocusLeft: "h", FocusDown: "j", FocusUp: "k", FocusRight: "l",
+		CycleNext: "tab", CyclePrev: "shift+tab", Zoom: "z", ResizeMode: "r", ToggleSidebar: "b",
+	}
+	if k != want {
+		t.Fatalf("default keys = %+v, want %+v", k, want)
+	}
+}
+
+func TestKeysAndUIFromTOML(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[keys]
+prefix = "ctrl+a"
+split_vertical = "prefix+s"
+split_horizontal = "prefix+minus"
+
+[ui]
+auto_focus = false
+sidebar = false
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Keys.Prefix != "ctrl+a" || c.Keys.SplitVertical != "s" || c.Keys.SplitHorizontal != "-" {
+		t.Fatalf("keys override: %+v", c.Keys)
+	}
+	if c.Keys.Zoom != "z" || c.Keys.CyclePrev != "shift+tab" {
+		t.Fatalf("omitted keys should default: %+v", c.Keys)
+	}
+	if c.UI.IsAutoFocus() || c.UI.SidebarStart() {
+		t.Fatalf("ui overrides ignored: %+v", c.UI)
+	}
+}
+
+func TestUIDefaultsOn(t *testing.T) {
+	c := config.Default()
+	if !c.UI.IsAutoFocus() || !c.UI.SidebarStart() {
+		t.Fatalf("ui should default on: %+v", c.UI)
+	}
+}
+
 func TestLoadNoRolesErrors(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "empty.toml")

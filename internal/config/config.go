@@ -29,7 +29,66 @@ type Role struct {
 type Config struct {
 	Roles    []Role   `toml:"roles"`
 	Sphragis Sphragis `toml:"sphragis"`
+	Keys     Keys     `toml:"keys"`
+	UI       UI       `toml:"ui"`
 }
+
+// Keys maps the prefix chord and the prefix-mode action keys (bubbletea key names).
+type Keys struct {
+	Prefix          string `toml:"prefix"`
+	SplitVertical   string `toml:"split_vertical"`
+	SplitHorizontal string `toml:"split_horizontal"`
+	ClosePane       string `toml:"close_pane"`
+	FocusLeft       string `toml:"focus_pane_left"`
+	FocusDown       string `toml:"focus_pane_down"`
+	FocusUp         string `toml:"focus_pane_up"`
+	FocusRight      string `toml:"focus_pane_right"`
+	CycleNext       string `toml:"cycle_pane_next"`
+	CyclePrev       string `toml:"cycle_pane_previous"`
+	Zoom            string `toml:"zoom"`
+	ResizeMode      string `toml:"resize_mode"`
+	ToggleSidebar   string `toml:"toggle_sidebar"`
+}
+
+// Defaulted fills empty bindings with the herdr default keymap and normalizes herdr syntax.
+func (k Keys) Defaulted() Keys {
+	set := func(p *string, def string) {
+		v := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*p)), "prefix+")
+		if v == "minus" {
+			v = "-"
+		}
+		if v == "" {
+			v = def
+		}
+		*p = v
+	}
+	set(&k.Prefix, "ctrl+b")
+	set(&k.SplitVertical, "v")
+	set(&k.SplitHorizontal, "-")
+	set(&k.ClosePane, "x")
+	set(&k.FocusLeft, "h")
+	set(&k.FocusDown, "j")
+	set(&k.FocusUp, "k")
+	set(&k.FocusRight, "l")
+	set(&k.CycleNext, "tab")
+	set(&k.CyclePrev, "shift+tab")
+	set(&k.Zoom, "z")
+	set(&k.ResizeMode, "r")
+	set(&k.ToggleSidebar, "b")
+	return k
+}
+
+// UI tunes deck behavior; pointers so omitted = default true.
+type UI struct {
+	AutoFocus *bool `toml:"auto_focus"`
+	Sidebar   *bool `toml:"sidebar"`
+}
+
+// IsAutoFocus reports whether pane activity steals focus (default true).
+func (u UI) IsAutoFocus() bool { return u.AutoFocus == nil || *u.AutoFocus }
+
+// SidebarStart reports whether the status-card sidebar starts visible (default true).
+func (u UI) SidebarStart() bool { return u.Sidebar == nil || *u.Sidebar }
 
 // Sphragis controls routing agent traffic through the gateway; Enabled/FailClosed are pointers so omitted = on.
 type Sphragis struct {
@@ -105,6 +164,7 @@ func Default() Config {
 		},
 	}}
 	c.Sphragis.applyDefaults()
+	c.Keys = c.Keys.Defaulted()
 	return c
 }
 
@@ -124,5 +184,6 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config %s defines no roles", path)
 	}
 	c.Sphragis.applyDefaults()
+	c.Keys = c.Keys.Defaulted()
 	return c, nil
 }
