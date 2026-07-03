@@ -1,0 +1,47 @@
+# Choragos orchestration config. See docs/keybindings.md for the full keymap.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate the team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+prompt_template = "Implement the requested change. Run the project's tests before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+prompt_template = "Review the change for correctness and edge cases. Report findings only; do not modify code."
+# extra status heuristics for non-Claude agent TUIs:
+# input_prompts = ["continue? <enter>"]
+# chrome_markers = ["my statusbar"]
+
+# [sphragis]
+# enabled = true        # route agent LLM traffic through the gateway
+# fail_closed = true    # refuse delegation when the gateway is down
+# addr = "127.0.0.1:8787"
+
+# [keys]                # tmux-style prefix bindings (herdr defaults)
+# prefix = "ctrl+b"
+# split_vertical = "v"
+# split_horizontal = "-"
+# close_pane = "x"
+# zoom = "z"
+# resize_mode = "r"
+# toggle_sidebar = "b"
+# restart_role = "R"
+# broadcast = "a"
+# task_board = "t"
+# search = "/"
+# help = "?"
+
+# [ui]
+# auto_focus = true     # focus whichever agent produces output
+# sidebar = true        # start with the status-card sidebar visible
+# bell = true           # terminal bell when an agent blocks on input
