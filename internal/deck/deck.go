@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -161,8 +162,15 @@ func (m *Model) log() *slog.Logger {
 }
 
 // Run opens the deck for cfg and blocks until the user quits.
-func Run(cfg config.Config) error {
+func Run(cfg config.Config) (err error) {
 	m := &Model{cfg: cfg}
+	// bubbletea restores the terminal before re-panicking; we stop the agents and keep the stack
+	defer func() {
+		if r := recover(); r != nil {
+			m.closeAll()
+			err = fmt.Errorf("choragos crashed: %v (details in %s)", r, writeCrashLog(r))
+		}
+	}()
 	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
@@ -1239,7 +1247,14 @@ func (m *Model) send(msg tea.Msg) {
 func (m *Model) watchPane(e *entry, idx int) {
 	gen := e.gen
 	p := e.pane
+	role := e.role.Name
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.log().Error("pane stream panic", "role", role, "panic", r, "log", writeCrashLog(r))
+				m.send(paneClosedMsg{idx: idx, gen: gen})
+			}
+		}()
 		_ = p.Stream(func() { m.send(frameMsg{idx: idx, gen: gen}) })
 		m.send(paneClosedMsg{idx: idx, gen: gen})
 	}()
@@ -1378,6 +1393,22 @@ func openLog(role string) *os.File {
 		return nil
 	}
 	return f
+}
+
+// writeCrashLog dumps the panic and stack to contextDir/logs; returns where it landed.
+func writeCrashLog(r any) string {
+	dir := filepath.Join(contextDir, "logs")
+	body := fmt.Sprintf("time: %s\npanic: %v\n\n%s", time.Now().Format(time.RFC3339), r, debug.Stack())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(os.Stderr, body)
+		return "stderr"
+	}
+	path := filepath.Join(dir, "crash.log")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, body)
+		return "stderr"
+	}
+	return path
 }
 
 // newEventLog opens the control-plane event log (delegate/work-done/boot/lifecycle); on failure it discards.

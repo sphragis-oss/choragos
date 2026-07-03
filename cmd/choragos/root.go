@@ -38,6 +38,7 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(
 		serveCmd(),
 		initCmd(),
+		doctorCmd(),
 		delegateCmd(),
 		workDoneCmd(),
 		versionCmd(),
