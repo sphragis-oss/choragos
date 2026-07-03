@@ -170,6 +170,43 @@ sidebar = false
 	}
 }
 
+func TestLoadWarnsOnUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[ui]
+auto_focsu = false
+
+[keyz]
+prefix = "ctrl+a"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2 entries", c.Warnings)
+	}
+	joined := strings.Join(c.Warnings, "\n")
+	for _, want := range []string{"auto_focsu", "keyz"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings missing %q: %v", want, c.Warnings)
+		}
+	}
+	// a clean config produces no warnings
+	clean, err := config.Load("")
+	if err != nil || len(clean.Warnings) != 0 {
+		t.Fatalf("clean load: warnings=%v err=%v", clean.Warnings, err)
+	}
+}
+
 func TestUIDefaultsOn(t *testing.T) {
 	c := config.Default()
 	if !c.UI.IsAutoFocus() || !c.UI.SidebarStart() {

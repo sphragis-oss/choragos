@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/sphragis-oss/choragos/internal/config"
@@ -23,6 +25,9 @@ func serveCmd() *cobra.Command {
 			cfg, err := config.Load(cfgPath)
 			if err != nil {
 				return err
+			}
+			for _, w := range cfg.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
 			}
 			if err := cfg.CheckCommands(); err != nil {
 				return err

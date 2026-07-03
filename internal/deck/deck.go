@@ -1185,6 +1185,9 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	}
 	m.server = srv
 	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled())
+	for _, w := range m.cfg.Warnings {
+		m.log().Warn("config", "warning", w)
+	}
 
 	m.sphragisOn = m.cfg.Sphragis.IsEnabled()
 	m.keys = m.cfg.Keys.Defaulted()
