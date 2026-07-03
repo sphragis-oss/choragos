@@ -1,7 +1,7 @@
 /choragos
 /dist/
 /.choragos/
-/docs/
+/docs/prd-*.md
 *.out
 .env
 .DS_Store

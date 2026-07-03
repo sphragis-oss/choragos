@@ -106,6 +106,14 @@ Choragos will start the agents, ensure Sphragis is running, and route all traffi
 
 The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`), zoom (`z`), live resize (`r`), restart a role (`R`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
 
+### Documentation
+
+- [Keybindings](docs/keybindings.md) - the full keymap and window-manager modes
+- [Configuration reference](docs/configuration.md) - every `.choragos.toml` key, including per-role env isolation
+- [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
+- [Long-running sessions](docs/long-running-sessions.md) - detach/attach with tmux or zellij
+- [Verifying releases](SECURITY.md#verifying-releases) - cosign signatures, checksums, provenance
+
 ## Configuration & Roles
 
 The team is completely configurable via `.choragos.toml`. The default team looks like this:
