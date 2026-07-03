@@ -1,4 +1,9 @@
-# Choragos
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-wordmark-dark.svg">
+    <img alt="Choragos" src="assets/logo-wordmark-light.svg" width="360">
+  </picture>
+</p>
 
 <p align="center">
   <strong>

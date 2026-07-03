@@ -1,6 +1,7 @@
 /choragos
 /dist/
 /.choragos/
+/docs/
 *.out
 .env
 .DS_Store
