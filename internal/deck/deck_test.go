@@ -539,6 +539,37 @@ func TestZoomAndResizeMode(t *testing.T) {
 	}
 }
 
+func TestRestartRole(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	old := m.panes[0].pane
+	m.panes[0].exited = true
+	m.panes[0].booted = true
+	m.Update(key("ctrl+b"))
+	m.Update(key("R"))
+	e := m.panes[0]
+	if e.pane == old {
+		t.Fatal("restart should spawn a fresh pane")
+	}
+	if e.exited || e.booted || e.gen != 1 {
+		t.Fatalf("restart state: exited=%v booted=%v gen=%d", e.exited, e.booted, e.gen)
+	}
+	// watchPane (called by restartRole) already streams the new pane
+	_ = e.pane.Input([]byte("reborn"))
+	if !waitFor(func() bool { return strings.Contains(e.pane.Render(), "reborn") }) {
+		t.Fatal("restarted pane not echoing")
+	}
+	// a stale close message from the old stream must be dropped
+	m.Update(paneClosedMsg{idx: 0, gen: 0})
+	if e.exited {
+		t.Fatal("stale paneClosedMsg marked the new pane exited")
+	}
+	m.Update(paneClosedMsg{idx: 0, gen: 1})
+	if !e.exited {
+		t.Fatal("current-gen paneClosedMsg should mark exited")
+	}
+	_ = e.pane.Close()
+}
+
 func TestCollapseRepeat(t *testing.T) {
 	cases := []struct {
 		in   string

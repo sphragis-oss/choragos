@@ -57,11 +57,11 @@ const (
 // resizeStep is the ratio delta per keypress in resize mode.
 const resizeStep = 0.05
 
-// frameMsg signals a pane produced new output; idx marks which pane.
-type frameMsg struct{ idx int }
+// frameMsg signals a pane produced new output; gen guards against a restarted role's stale stream.
+type frameMsg struct{ idx, gen int }
 
-// paneClosedMsg signals a role's process exited.
-type paneClosedMsg struct{ idx int }
+// paneClosedMsg signals a role's process exited; gen guards against a restarted role's stale stream.
+type paneClosedMsg struct{ idx, gen int }
 
 // tickMsg drives the activity clock so working/idle and "Xs ago" stay fresh.
 type tickMsg struct{}
@@ -83,6 +83,7 @@ type entry struct {
 	pane       *pane.Pane
 	exited     bool
 	booted     bool
+	gen        int // bumped on restart; stale stream messages are dropped
 	startedAt  time.Time
 	lastActive time.Time
 }
@@ -102,6 +103,7 @@ type Model struct {
 	helpOn     bool // help overlay visible; any key closes it
 	server     *ipc.Server
 	socket     string
+	baseURL    string // gateway base URL handed to role env; reused on restart
 	gateway    *sphragis.Supervisor
 	sphragisOn bool // gateway enforcement, toggled live with ctrl+g
 	gatewayUp  bool // last known gateway health (refreshed off the UI thread)
@@ -167,14 +169,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case frameMsg:
-		if msg.idx >= 0 && msg.idx < len(m.panes) {
+		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].lastActive = time.Now()
 			if m.autoFocus && !m.manual {
 				m.focusRole(msg.idx) // auto-focus whoever is producing output
 			}
 		}
 	case paneClosedMsg:
-		if msg.idx >= 0 && msg.idx < len(m.panes) {
+		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].exited = true
 			m.log().Warn("pane exited", "role", m.panes[msg.idx].role.Name)
 		}
@@ -326,6 +328,8 @@ func (m *Model) wmAction(key string) {
 		m.resizePanes()
 	case m.keys.Help:
 		m.helpOn = true
+	case m.keys.RestartRole:
+		m.restartRole()
 	}
 }
 
@@ -922,15 +926,15 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	m.keys = m.cfg.Keys.Defaulted()
 	m.autoFocus = m.cfg.UI.IsAutoFocus()
 	m.sidebar = m.cfg.UI.SidebarStart()
-	baseURL := ""
+	m.baseURL = ""
 	if m.sphragisOn {
-		baseURL = m.cfg.Sphragis.BaseURL()
+		m.baseURL = m.cfg.Sphragis.BaseURL()
 	}
 
 	// the deck opens as a single tile showing the start role
 	_, mainW, contentH := m.dims()
 	cw, ch, _ := tileContent(mainW, contentH)
-	panes, err := startPanes(m.cfg, cw, ch, m.socket, baseURL)
+	panes, err := startPanes(m.cfg, cw, ch, m.socket, m.baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -939,10 +943,7 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	for i, e := range panes {
 		e.startedAt = now
 		e.lastActive = now
-		go func() {
-			_ = e.pane.Stream(func() { m.prog.Send(frameMsg{idx: i}) })
-			m.prog.Send(paneClosedMsg{idx: i})
-		}()
+		m.watchPane(e, i)
 	}
 	for i, e := range panes {
 		if e.role.Start {
@@ -957,30 +958,98 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	return nil, nil
 }
 
+// send forwards a message into the UI loop; nil-safe for tests without a running program.
+func (m *Model) send(msg tea.Msg) {
+	if m.prog != nil {
+		m.prog.Send(msg)
+	}
+}
+
+// watchPane streams a pane's output into the UI loop until it exits; gen drops stale streams after a restart.
+func (m *Model) watchPane(e *entry, idx int) {
+	gen := e.gen
+	p := e.pane
+	go func() {
+		_ = p.Stream(func() { m.send(frameMsg{idx: idx, gen: gen}) })
+		m.send(paneClosedMsg{idx: idx, gen: gen})
+	}()
+}
+
+// restartRole respawns the focused tile's role, killing the old process if still alive.
+func (m *Model) restartRole() {
+	e := m.current()
+	if e == nil {
+		return
+	}
+	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
+	cw, ch := m.focusedTileContent()
+	p, err := startRole(e.role, cw, ch, roleEnv(m.socket, m.baseURL))
+	if err != nil {
+		e.exited = true
+		m.log().Error("restart failed", "role", e.role.Name, "err", err)
+		return
+	}
+	e.pane = p
+	e.gen++
+	e.exited = false
+	e.booted = false
+	e.startedAt = time.Now()
+	e.lastActive = time.Now()
+	m.log().Info("role restarted", "role", e.role.Name)
+	m.watchPane(e, m.active)
+}
+
+// focusedTileContent returns the focused tile's pane content dims.
+func (m *Model) focusedTileContent() (int, int) {
+	_, mainW, contentH := m.dims()
+	for _, t := range m.tree.Layout(mainW, contentH) {
+		if t.Focused {
+			cw, ch, _ := tileContent(t.W, t.H)
+			return cw, ch
+		}
+	}
+	return 80, 24
+}
+
 // gatewayBlocked reports whether fail-closed enforcement should refuse dispatch (on, fail-closed, and down).
 func (m *Model) gatewayBlocked() bool {
 	return m.sphragisOn && m.cfg.Sphragis.IsFailClosed() && !m.gatewayUp
 }
 
-// startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
-func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
+// roleEnv builds the child env wiring the control socket and (when set) the gateway.
+func roleEnv(socket, baseURL string) []string {
 	env := append(os.Environ(), ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
 		env = append(env, "ANTHROPIC_BASE_URL="+baseURL)
 	}
+	return env
+}
+
+// startRole spawns one role's PTY pane with its log sink.
+func startRole(r config.Role, cols, rows int, env []string) (*pane.Pane, error) {
+	cmd := exec.Command(r.Command, roleArgs(r)...)
+	cmd.Env = env
+	p, err := pane.Start(cmd, cols, rows)
+	if err != nil {
+		return nil, fmt.Errorf("start role %q: %w", r.Name, err)
+	}
+	if f := openLog(r.Name); f != nil {
+		p.SetLog(f)
+	}
+	return p, nil
+}
+
+// startPanes spawns one PTY pane per role, wiring the control socket and (when on) the gateway via env.
+func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*entry, error) {
+	env := roleEnv(socket, baseURL)
 	var entries []*entry
 	for _, r := range cfg.Roles {
-		cmd := exec.Command(r.Command, roleArgs(r)...)
-		cmd.Env = env
-		p, err := pane.Start(cmd, cols, rows)
+		p, err := startRole(r, cols, rows, env)
 		if err != nil {
 			for _, e := range entries {
 				_ = e.pane.Close()
 			}
-			return nil, fmt.Errorf("start role %q: %w", r.Name, err)
-		}
-		if f := openLog(r.Name); f != nil {
-			p.SetLog(f)
+			return nil, err
 		}
 		entries = append(entries, &entry{role: r, pane: p})
 	}
