@@ -570,6 +570,24 @@ func TestRestartRole(t *testing.T) {
 	_ = e.pane.Close()
 }
 
+func TestWaitingBellEdgeTriggered(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	rings := 0
+	m.bellFn = func() { rings++ }
+	_ = m.panes[0].pane.Input([]byte("Do you want to proceed? (y/n)\r"))
+	if !waitFor(func() bool { return needsInput(m.panes[0]) }) {
+		t.Fatal("pane never showed the blocking prompt")
+	}
+	m.checkWaiting()
+	m.checkWaiting() // still waiting: no second ring
+	if rings != 1 {
+		t.Fatalf("rings = %d, want exactly 1", rings)
+	}
+	if !m.panes[0].waiting {
+		t.Fatal("waiting state not recorded")
+	}
+}
+
 func TestBroadcastMode(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.Update(key("ctrl+b"))

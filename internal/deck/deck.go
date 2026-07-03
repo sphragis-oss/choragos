@@ -83,7 +83,8 @@ type entry struct {
 	pane       *pane.Pane
 	exited     bool
 	booted     bool
-	gen        int // bumped on restart; stale stream messages are dropped
+	waiting    bool // last observed waiting-for-input state, for bell edge detection
+	gen        int  // bumped on restart; stale stream messages are dropped
 	startedAt  time.Time
 	lastActive time.Time
 }
@@ -97,11 +98,12 @@ type Model struct {
 	manual     bool // user drove focus (ctrl+o or any WM action); pause auto-focus
 	tree       *wm.Tree
 	keys       config.Keys
-	prefixed   bool // prefix armed; next key runs a WM action
-	sidebar    bool // status-card column visible
-	autoFocus  bool // activity steals focus ([ui] auto_focus)
-	helpOn     bool // help overlay visible; any key closes it
-	broadcast  bool // normal-mode keys go to every live pane
+	prefixed   bool   // prefix armed; next key runs a WM action
+	sidebar    bool   // status-card column visible
+	autoFocus  bool   // activity steals focus ([ui] auto_focus)
+	helpOn     bool   // help overlay visible; any key closes it
+	broadcast  bool   // normal-mode keys go to every live pane
+	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -198,6 +200,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gatewayUp = msg.up
 	case tickMsg:
 		m.bootPanes()
+		m.checkWaiting()
 		if m.sphragisOn {
 			return m, tea.Batch(tick(), checkHealth(m.cfg.Sphragis.Addr))
 		}
@@ -446,6 +449,20 @@ func (m *Model) dispatch(cmd ipc.Command) {
 				m.focusRole(i)
 			}
 		}
+	}
+}
+
+// checkWaiting rings the bell once per transition into waiting-for-input.
+func (m *Model) checkWaiting() {
+	for _, e := range m.panes {
+		w := needsInput(e)
+		if w && !e.waiting {
+			m.log().Info("waiting for input", "role", e.role.Name)
+			if m.bellFn != nil {
+				m.bellFn()
+			}
+		}
+		e.waiting = w
 	}
 }
 
@@ -941,6 +958,9 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	m.keys = m.cfg.Keys.Defaulted()
 	m.autoFocus = m.cfg.UI.IsAutoFocus()
 	m.sidebar = m.cfg.UI.SidebarStart()
+	if m.cfg.UI.IsBell() {
+		m.bellFn = func() { _, _ = os.Stdout.WriteString("\a") }
+	}
 	m.baseURL = ""
 	if m.sphragisOn {
 		m.baseURL = m.cfg.Sphragis.BaseURL()
