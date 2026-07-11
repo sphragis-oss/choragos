@@ -176,6 +176,7 @@ type taskEvent struct {
 	id     string
 	to     string
 	task   string
+	file   string // brief or report path attached to the event, if any
 	done   bool
 	doneAt time.Time // delegate rows: when the matching work-done arrived
 }
@@ -640,11 +641,19 @@ func (m *Model) dispatch(cmd ipc.Command) {
 			if e, i := m.findRole(name); e != nil && !e.exited {
 				m.taskSeq++
 				id := fmt.Sprintf("T%d", m.taskSeq)
+				task := cmd.Task
+				if cmd.Brief != "" {
+					task = strings.TrimSpace("Read " + cmd.Brief + " for the full brief.\n\n" + cmd.Task)
+				}
+				label := singleLine(cmd.Task)
+				if label == "" {
+					label = "brief: " + filepath.Base(cmd.Brief)
+				}
 				file := "worker-task-" + sanitize(name) + ".md"
-				line := writeContext(file, prompt.WorkerTask(e.role, cmd.Task, id),
+				line := writeContext(file, prompt.WorkerTask(e.role, task, id),
 					"Read "+filepath.Join(contextDir, file)+" for your task.")
-				m.log().Info("delegate", "id", id, "from", "orchestrator", "to", name, "task", singleLine(cmd.Task))
-				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: name, task: singleLine(cmd.Task)})
+				m.log().Info("delegate", "id", id, "from", "orchestrator", "to", name, "task", label, "brief", cmd.Brief)
+				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: name, task: label, file: cmd.Brief})
 				injectLine(e, line)
 				if m.autoFocus && !m.manual {
 					m.focusRole(i)
@@ -656,10 +665,18 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	case "work-done":
 		i := m.startIdx()
 		if i >= 0 && i < len(m.panes) && !m.panes[i].exited {
-			m.log().Info("work-done", "id", cmd.ID, "to", m.panes[i].role.Name, "done", cmd.Done, "task", singleLine(cmd.Task))
-			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: m.panes[i].role.Name, task: singleLine(cmd.Task), done: cmd.Done})
+			summary := singleLine(cmd.Task)
+			if summary == "" {
+				summary = "see report"
+			}
+			line := "A worker reports: " + summary
+			if cmd.Report != "" {
+				line += " Full report: read " + cmd.Report
+			}
+			m.log().Info("work-done", "id", cmd.ID, "to", m.panes[i].role.Name, "done", cmd.Done, "task", summary, "report", cmd.Report)
+			m.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: m.panes[i].role.Name, task: summary, file: cmd.Report, done: cmd.Done})
 			m.resolveTask(cmd.ID)
-			injectLine(m.panes[i], "A worker reports: "+singleLine(cmd.Task))
+			injectLine(m.panes[i], line)
 			if m.autoFocus && !m.manual {
 				m.focusRole(i)
 			}
@@ -983,9 +1000,13 @@ func (m *Model) renderBoard(w, h int) string {
 		if ev.id != "" {
 			id = ev.id + " "
 		}
+		task := ev.task
+		if ev.file != "" {
+			task += "  [" + filepath.Base(ev.file) + "]"
+		}
 		line := ev.at.Format("15:04:05") + "  " + id +
 			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + status + "  " +
-			lipgloss.NewStyle().Faint(true).Render(truncate(ev.task, w-50))
+			lipgloss.NewStyle().Faint(true).Render(truncate(task, w-50))
 		b.WriteString(line + "\n")
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))

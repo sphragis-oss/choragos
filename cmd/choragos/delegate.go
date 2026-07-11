@@ -13,8 +13,9 @@ import (
 
 func delegateCmd() *cobra.Command {
 	var (
-		to   []string
-		task string
+		to    []string
+		task  string
+		brief string
 	)
 	cmd := &cobra.Command{
 		Use:     "delegate",
@@ -25,10 +26,17 @@ func delegateCmd() *cobra.Command {
 			if len(to) == 0 {
 				return fmt.Errorf("--to is required")
 			}
-			if strings.TrimSpace(task) == "" {
-				return fmt.Errorf("--task is required")
+			if strings.TrimSpace(task) == "" && brief == "" {
+				return fmt.Errorf("--task or --brief is required")
 			}
-			if err := ipc.Send(ipc.SocketPath(), ipc.Command{Cmd: "delegate", To: to, Task: task}); err != nil {
+			if brief != "" {
+				abs, err := absFileArg(brief)
+				if err != nil {
+					return fmt.Errorf("--brief: %w", err)
+				}
+				brief = abs
+			}
+			if err := ipc.Send(ipc.SocketPath(), ipc.Command{Cmd: "delegate", To: to, Task: task, Brief: brief}); err != nil {
 				return fmt.Errorf("delegate failed (is the deck running?): %w", err)
 			}
 			cmd.Printf("delegated to %s\n", strings.Join(to, ", "))
@@ -37,5 +45,6 @@ func delegateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&to, "to", nil, "target role(s); repeat for parallel delegation")
 	cmd.Flags().StringVar(&task, "task", "", "full task with context, file paths, and constraints")
+	cmd.Flags().StringVar(&brief, "brief", "", "path to a brief file holding the full task; workers are pointed at it")
 	return cmd
 }
