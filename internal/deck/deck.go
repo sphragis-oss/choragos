@@ -225,7 +225,11 @@ func Run(cfg config.Config) (err error) {
 			err = fmt.Errorf("choragos crashed: %v (details in %s)", r, writeCrashLog(r))
 		}
 	}()
-	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithoutSignalHandler()}
+	if cfg.UI.IsMouse() {
+		opts = append(opts, tea.WithMouseCellMotion()) // [ui] mouse=false restores terminal-native selection
+	}
+	m.prog = tea.NewProgram(m, opts...)
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
 	sigCh := make(chan os.Signal, 1)

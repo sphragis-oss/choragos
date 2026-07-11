@@ -118,6 +118,7 @@ type UI struct {
 	AutoFocus *bool `toml:"auto_focus"`
 	Sidebar   *bool `toml:"sidebar"`
 	Bell      *bool `toml:"bell"`
+	Mouse     *bool `toml:"mouse"`
 }
 
 // IsAutoFocus reports whether pane activity steals focus (default true).
@@ -128,6 +129,9 @@ func (u UI) SidebarStart() bool { return u.Sidebar == nil || *u.Sidebar }
 
 // IsBell reports whether a waiting-for-input transition rings the terminal bell (default true).
 func (u UI) IsBell() bool { return u.Bell == nil || *u.Bell }
+
+// IsMouse reports whether the deck captures the mouse (default true); off restores terminal-native selection.
+func (u UI) IsMouse() bool { return u.Mouse == nil || *u.Mouse }
 
 // Sphragis controls routing agent traffic through the gateway; Enabled/FailClosed are pointers so omitted = on.
 type Sphragis struct {
