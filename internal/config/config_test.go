@@ -181,6 +181,7 @@ split_horizontal = "prefix+minus"
 [ui]
 auto_focus = false
 sidebar = false
+mouse = false
 `
 	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -195,8 +196,11 @@ sidebar = false
 	if c.Keys.Zoom != "z" || c.Keys.CyclePrev != "shift+tab" {
 		t.Fatalf("omitted keys should default: %+v", c.Keys)
 	}
-	if c.UI.IsAutoFocus() || c.UI.SidebarStart() {
+	if c.UI.IsAutoFocus() || c.UI.SidebarStart() || c.UI.IsMouse() {
 		t.Fatalf("ui overrides ignored: %+v", c.UI)
+	}
+	if !(config.UI{}).IsMouse() {
+		t.Fatal("mouse must default to enabled")
 	}
 }
 

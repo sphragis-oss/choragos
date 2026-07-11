@@ -215,6 +215,15 @@ func (m *Model) log() *slog.Logger {
 	return m.events
 }
 
+// programOptions builds the Bubble Tea options; [ui] mouse=false skips capture to restore terminal-native selection.
+func programOptions(cfg config.Config) []tea.ProgramOption {
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithoutSignalHandler()}
+	if cfg.UI.IsMouse() {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	return opts
+}
+
 // Run opens the deck for cfg and blocks until the user quits.
 func Run(cfg config.Config) (err error) {
 	m := &Model{cfg: cfg}
@@ -225,7 +234,7 @@ func Run(cfg config.Config) (err error) {
 			err = fmt.Errorf("choragos crashed: %v (details in %s)", r, writeCrashLog(r))
 		}
 	}()
-	m.prog = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
+	m.prog = tea.NewProgram(m, programOptions(cfg)...)
 	defer m.closeAll() // also cleans up when prog.Run returns
 	// Escape hatch: even a wedged update loop exits cleanly on SIGINT/SIGTERM; Kill restores the terminal without the loop.
 	sigCh := make(chan os.Signal, 1)
