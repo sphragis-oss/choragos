@@ -46,6 +46,16 @@ const (
 // defaultColor is vt10x's threshold: values >= 1<<24 are default/special colors.
 const defaultColor = 1 << 24
 
+// SGR parameter bases: standard / bright color offsets and extended-color introducers.
+const (
+	sgrFgBase   = 30
+	sgrBgBase   = 40
+	sgrFgBright = 90
+	sgrBgBright = 100
+	sgrFgExt    = "38"
+	sgrBgExt    = "48"
+)
+
 // Scrollback keeps a capped raw-byte history replayed into a tall emulator on demand.
 const (
 	ringCap        = 256 * 1024
@@ -54,29 +64,48 @@ const (
 
 // ring is a capped raw-byte history of a pane's PTY output.
 type ring struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
+	mu   sync.Mutex
+	buf  []byte
+	head int
+	full bool
 }
 
-func newRing(max int) *ring { return &ring{max: max} }
+func newRing(max int) *ring { return &ring{buf: make([]byte, max)} }
 
 func (r *ring) Write(p []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.buf = append(r.buf, p...)
-	if len(r.buf) > r.max {
-		trimmed := make([]byte, r.max)
-		copy(trimmed, r.buf[len(r.buf)-r.max:])
-		r.buf = trimmed
+	max := len(r.buf)
+	if len(p) >= max {
+		// If input exceeds capacity, just keep the tail
+		copy(r.buf, p[len(p)-max:])
+		r.head = 0
+		r.full = true
+		return
+	}
+	n := copy(r.buf[r.head:], p)
+	if n < len(p) {
+		// Wrap around
+		copy(r.buf, p[n:])
+		r.full = true
+	}
+	r.head = (r.head + len(p)) % max
+	if r.head == 0 && len(p) > 0 {
+		r.full = true // landed exactly on the boundary: the buffer is full, not empty
 	}
 }
 
 func (r *ring) Snapshot() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if !r.full {
+		out := make([]byte, r.head)
+		copy(out, r.buf[:r.head])
+		return out
+	}
 	out := make([]byte, len(r.buf))
-	copy(out, r.buf)
+	copy(out, r.buf[r.head:])
+	copy(out[len(r.buf)-r.head:], r.buf[:r.head])
 	return out
 }
 
@@ -364,8 +393,8 @@ func sgr(g vt10x.Glyph) string {
 	if g.Mode&attrReverse != 0 {
 		params = append(params, "7")
 	}
-	params = append(params, colorParams(g.FG, 30, 90, "38")...)
-	params = append(params, colorParams(g.BG, 40, 100, "48")...)
+	params = append(params, colorParams(g.FG, sgrFgBase, sgrFgBright, sgrFgExt)...)
+	params = append(params, colorParams(g.BG, sgrBgBase, sgrBgBright, sgrBgExt)...)
 	return "\x1b[" + strings.Join(params, ";") + "m"
 }
 
