@@ -168,6 +168,34 @@ func TestPaneInput(t *testing.T) {
 	}
 }
 
+func TestSeqAdvancesOnOutputAndResize(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", "printf 'seq-test'"), 40, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if p.Seq() != 0 {
+		t.Fatalf("fresh pane Seq = %d, want 0", p.Seq())
+	}
+	done := make(chan struct{})
+	go func() { _ = p.Stream(nil); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not finish")
+	}
+	after := p.Seq()
+	if after == 0 {
+		t.Fatal("output must advance Seq")
+	}
+	if err := p.Resize(30, 4); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	if p.Seq() <= after {
+		t.Fatal("resize must advance Seq")
+	}
+}
+
 func TestCloseDoesNotLeakGoroutines(t *testing.T) {
 	before := runtime.NumGoroutine()
 	for i := 0; i < 5; i++ {
