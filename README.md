@@ -117,6 +117,8 @@ The deck is a tiling window manager over the role panes, driven tmux-style behin
 
 - [Keybindings](docs/keybindings.md) - the full keymap and window-manager modes
 - [Configuration reference](docs/configuration.md) - every `.choragos.toml` key, including per-role env isolation
+- [Building your own team](docs/teams.md) - roles, per-role models, briefs, and a worked pipeline example
+- [Control protocol](docs/protocol.md) - the delegate/work-done wire contract for integrators
 - [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
 - [Long-running sessions](docs/long-running-sessions.md) - detach/attach with tmux or zellij
 - [Verifying releases](SECURITY.md#verifying-releases) - cosign signatures, checksums, provenance
