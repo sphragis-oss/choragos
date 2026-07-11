@@ -80,12 +80,23 @@ func (r *ring) Snapshot() []byte {
 	return out
 }
 
+// histCache holds the replayed-history terminal, rebuilt only when the ring or width changes.
+type histCache struct {
+	mu   sync.Mutex
+	term vt10x.Terminal
+	seq  uint64
+	cols int
+	top  int
+	bot  int // inclusive last content row; -1 when the history is blank
+}
+
 // Pane is one agent process bound to a PTY and a virtual-terminal emulator.
 type Pane struct {
 	cmd       *exec.Cmd
 	ptmx      *os.File
 	term      vt10x.Terminal
 	hist      *ring
+	hcache    histCache
 	logw      io.Writer
 	inbox     chan []byte
 	done      chan struct{}
@@ -183,29 +194,50 @@ func (p *Pane) Render() string {
 	return renderRows(p.term, cols, 0, rows)
 }
 
-// Scrollback replays captured history into a tall emulator and returns a height-tall window
-// offset rows above the live bottom, plus the maximum offset the history allows.
-func (p *Pane) Scrollback(cols, height, offset int) (view string, maxOffset int) {
-	if cols < 1 || height < 1 {
-		return "", 0
+// histTerminal returns the replayed-history terminal and its content bounds, re-parsing the
+// ring only when it changed or the width differs; moving the scroll window is then free.
+func (p *Pane) histTerminal(cols int) (vt10x.Terminal, int, int) {
+	c := &p.hcache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s := p.seq.Load(); c.term == nil || c.seq != s || c.cols != cols {
+		h := vt10x.New(vt10x.WithWriter(io.Discard), vt10x.WithSize(cols, scrollbackRows))
+		_, _ = h.Write(p.hist.Snapshot())
+		h.Lock()
+		top, bot := contentBounds(h, cols)
+		h.Unlock()
+		c.term, c.seq, c.cols, c.top, c.bot = h, s, cols, top, bot
 	}
-	h := vt10x.New(vt10x.WithWriter(io.Discard), vt10x.WithSize(cols, scrollbackRows))
-	_, _ = h.Write(p.hist.Snapshot())
-	h.Lock()
-	defer h.Unlock()
-	_, rows := h.Size()
-	top, bot := -1, -1
+	return c.term, c.top, c.bot
+}
+
+// contentBounds returns the first and last non-blank rows, or -1s; caller holds the lock.
+func contentBounds(t vt10x.Terminal, cols int) (top, bot int) {
+	top, bot = -1, -1
+	_, rows := t.Size()
 	for y := 0; y < rows; y++ {
-		if !rowBlank(h, cols, y) {
+		if !rowBlank(t, cols, y) {
 			if top < 0 {
 				top = y
 			}
 			bot = y
 		}
 	}
+	return top, bot
+}
+
+// Scrollback windows the replayed history: a height-tall view offset rows above the live
+// bottom, plus the maximum offset the history allows.
+func (p *Pane) Scrollback(cols, height, offset int) (view string, maxOffset int) {
+	if cols < 1 || height < 1 {
+		return "", 0
+	}
+	h, top, bot := p.histTerminal(cols)
 	if top < 0 {
 		return "", 0
 	}
+	h.Lock()
+	defer h.Unlock()
 	botRow := bot + 1 // exclusive end of real content; anchors the live bottom
 	maxOffset = (botRow - top) - height
 	if maxOffset < 0 {
@@ -231,23 +263,12 @@ func (p *Pane) HistoryLines(cols int) []string {
 	if cols < 1 {
 		return nil
 	}
-	h := vt10x.New(vt10x.WithWriter(io.Discard), vt10x.WithSize(cols, scrollbackRows))
-	_, _ = h.Write(p.hist.Snapshot())
-	h.Lock()
-	defer h.Unlock()
-	_, rows := h.Size()
-	top, bot := -1, -1
-	for y := 0; y < rows; y++ {
-		if !rowBlank(h, cols, y) {
-			if top < 0 {
-				top = y
-			}
-			bot = y
-		}
-	}
+	h, top, bot := p.histTerminal(cols)
 	if top < 0 {
 		return nil
 	}
+	h.Lock()
+	defer h.Unlock()
 	var out []string
 	for y := top; y <= bot; y++ {
 		var sb strings.Builder
