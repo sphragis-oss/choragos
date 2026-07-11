@@ -49,6 +49,7 @@ const gracefulTimeout = 5 * time.Second
 const (
 	minSidebar                       = 24
 	cardActivityLines                = 3     // tail rows previewed per status card
+	cardTailRows                     = 40    // rows scanned for card previews and prompt probes
 	scrollStep                       = 5     // rows moved per PgUp/PgDn
 	accentColor       lipgloss.Color = "45"  // focused: cyan
 	workingColor      lipgloss.Color = "42"  // working: green
@@ -96,6 +97,39 @@ type entry struct {
 	bootSentAt time.Time
 	bootTries  int
 	bootOK     bool
+	// screen caches keyed by the pane's write sequence, so idle panes cost nothing per frame
+	renderSeq   uint64
+	renderPane  *pane.Pane
+	cacheRender string
+	tailSeq     uint64
+	tailPane    *pane.Pane
+	cacheTail   []string
+}
+
+// renderCached returns the pane's live screen, re-rendering only after the screen changed.
+func (e *entry) renderCached() string {
+	if s := e.pane.Seq(); e.renderPane != e.pane || e.renderSeq != s || e.cacheRender == "" {
+		e.cacheRender = e.pane.Render()
+		e.renderPane, e.renderSeq = e.pane, s
+	}
+	return e.cacheRender
+}
+
+// tailCached returns the pane's recent non-blank rows, re-scanning only after the screen changed.
+func (e *entry) tailCached() []string {
+	if s := e.pane.Seq(); e.tailPane != e.pane || e.tailSeq != s {
+		e.cacheTail = e.pane.TailLines(cardTailRows)
+		e.tailPane, e.tailSeq = e.pane, s
+	}
+	return e.cacheTail
+}
+
+// lastN returns the up-to-n most recent entries of lines.
+func lastN(lines []string, n int) []string {
+	if len(lines) > n {
+		return lines[len(lines)-n:]
+	}
+	return lines
 }
 
 // Model drives the orchestration deck: sidebar cards plus the tiled role panes.
@@ -697,7 +731,7 @@ func bootLanded(e *entry) bool {
 		snippet = snippet[:24]
 	}
 	var b strings.Builder
-	for _, l := range e.pane.TailLines(40) {
+	for _, l := range e.tailCached() {
 		b.WriteString(l)
 	}
 	return strings.Contains(b.String(), string(snippet))
@@ -1013,7 +1047,7 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 	e := m.panes[role]
 	focused := role == m.active
 	cw, ch, chrome := tileContent(w, h)
-	content := e.pane.Render()
+	var content string
 	scrolled := false
 	if focused && m.scrollOff > 0 {
 		var maxOff int
@@ -1023,6 +1057,8 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 			m.scrollOff = maxOff
 		}
 		scrolled = m.scrollOff > 0
+	} else {
+		content = e.renderCached() // idle panes serve the cache; no per-frame grid walk
 	}
 	if !chrome {
 		return lipgloss.NewStyle().Width(w).Height(h).MaxWidth(w).MaxHeight(h).Render(content)
@@ -1070,7 +1106,7 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		if u := m.usage[e.role.Name].usageLabel(); u != "" {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(u, width-4))
 		}
-		for _, l := range activityTail(e.pane.TailLines(40), cardActivityLines, e.role.ChromeMarkers) {
+		for _, l := range activityTail(e.tailCached(), cardActivityLines, e.role.ChromeMarkers) {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(singleLine(l), width-4))
 		}
 		card := lipgloss.NewStyle().
@@ -1176,7 +1212,7 @@ func needsInput(e *entry) bool {
 	if e.exited || e.pane == nil {
 		return false
 	}
-	return promptInLines(e.pane.TailLines(14), e.role.InputPrompts)
+	return promptInLines(lastN(e.tailCached(), 14), e.role.InputPrompts)
 }
 
 // promptInLines reports whether any line carries a built-in or role-configured blocking-prompt marker.
@@ -1223,7 +1259,7 @@ func (m *Model) resizePanes() {
 			continue
 		}
 		cw, ch, _ := tileContent(tile.W, tile.H)
-		_ = e.pane.Resize(cw, ch) // pane clamps non-positive dims
+		_ = e.pane.Resize(cw, ch) // pane clamps non-positive dims; bumps Seq for the caches
 	}
 }
 

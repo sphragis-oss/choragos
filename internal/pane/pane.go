@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -89,7 +90,11 @@ type Pane struct {
 	inbox     chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
+	seq       atomic.Uint64 // bumped on every content-affecting change; render-cache key
 }
+
+// Seq returns a counter that advances whenever the screen may have changed (output or resize).
+func (p *Pane) Seq() uint64 { return p.seq.Load() }
 
 // Start launches cmd in a PTY sized cols x rows.
 func Start(cmd *exec.Cmd, cols, rows int) (*Pane, error) {
@@ -129,6 +134,7 @@ func (p *Pane) Stream(onFrame func()) error {
 			chunk := buf[:n]
 			_, _ = p.term.Write(chunk)
 			p.hist.Write(chunk)
+			p.seq.Add(1)
 			if p.logw != nil {
 				_, _ = p.logw.Write(chunk)
 			}
@@ -165,6 +171,7 @@ func (p *Pane) Input(b []byte) error {
 func (p *Pane) Resize(cols, rows int) error {
 	cols, rows = clampDim(cols), clampDim(rows)
 	p.term.Resize(cols, rows)
+	p.seq.Add(1) // reflow changes the rendered screen without new output
 	return pty.Setsize(p.ptmx, winsize(cols, rows))
 }
 
