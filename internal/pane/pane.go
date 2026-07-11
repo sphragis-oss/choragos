@@ -4,6 +4,7 @@
 package pane
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +17,12 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 )
+
+// ErrPaneClosed reports input sent to a pane after Close.
+var ErrPaneClosed = errors.New("pane closed")
+
+// ErrInputDropped reports input dropped because the child stopped draining its PTY.
+var ErrInputDropped = errors.New("input dropped: inbox full")
 
 // shutdownPoll is how often Shutdown checks whether a terminated child has exited.
 const shutdownPoll = 50 * time.Millisecond
@@ -80,6 +87,7 @@ type Pane struct {
 	hist      *ring
 	logw      io.Writer
 	inbox     chan []byte
+	done      chan struct{}
 	closeOnce sync.Once
 }
 
@@ -90,15 +98,20 @@ func Start(cmd *exec.Cmd, cols, rows int) (*Pane, error) {
 		return nil, err
 	}
 	term := vt10x.New(vt10x.WithWriter(ptmx), vt10x.WithSize(cols, rows))
-	p := &Pane{cmd: cmd, ptmx: ptmx, term: term, hist: newRing(ringCap), inbox: make(chan []byte, inboxCap)}
+	p := &Pane{cmd: cmd, ptmx: ptmx, term: term, hist: newRing(ringCap), inbox: make(chan []byte, inboxCap), done: make(chan struct{})}
 	go p.writeLoop()
 	return p, nil
 }
 
 // writeLoop drains queued input to the PTY off the UI thread; a blocking write can never freeze the deck.
 func (p *Pane) writeLoop() {
-	for b := range p.inbox {
-		if _, err := p.ptmx.Write(b); err != nil {
+	for {
+		select {
+		case b := <-p.inbox:
+			if _, err := p.ptmx.Write(b); err != nil {
+				return
+			}
+		case <-p.done:
 			return
 		}
 	}
@@ -130,14 +143,22 @@ func (p *Pane) Stream(onFrame func()) error {
 }
 
 // Input queues keystrokes for the child; it never blocks the caller so PTY backpressure cannot freeze the UI loop.
+// A full inbox means the child stopped draining its PTY; the input is dropped rather than queued forever.
 func (p *Pane) Input(b []byte) error {
+	select {
+	case <-p.done:
+		return ErrPaneClosed
+	default:
+	}
 	cp := append([]byte(nil), b...) // caller may reuse b
 	select {
 	case p.inbox <- cp:
+		return nil
+	case <-p.done:
+		return ErrPaneClosed
 	default:
-		go func() { p.inbox <- cp }() // rare: buffer full, hand off so the UI thread stays free
+		return ErrInputDropped
 	}
-	return nil
 }
 
 // Resize updates both the emulator and the PTY window size.
@@ -340,6 +361,7 @@ func colorParams(c vt10x.Color, base, bright int, ext string) []string {
 // Close force-stops the child (SIGKILL), releases the PTY, and closes the log sink; idempotent.
 func (p *Pane) Close() error {
 	p.closeOnce.Do(func() {
+		close(p.done)      // release writeLoop and refuse further input
 		_ = p.ptmx.Close() // close the master first: unblocks the child's tty I/O and our reader so Wait can return
 		if p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()

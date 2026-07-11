@@ -4,6 +4,7 @@
 package deck
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -731,8 +732,10 @@ func writeContext(name, content, oneLiner string) string {
 // injectLine types one line into a pane, then submits Enter separately so Claude's TUI does not swallow it as a paste.
 func injectLine(e *entry, line string) {
 	if err := e.pane.Input([]byte(line)); err != nil {
-		e.exited = true
-		return
+		if errors.Is(err, pane.ErrPaneClosed) {
+			e.exited = true
+		}
+		return // dropped input: the child is wedged, do not follow with a bare Enter
 	}
 	p := e.pane
 	go func() {
