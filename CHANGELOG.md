@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-11
+
+### Added
+- Brief-file delegation: `choragos delegate --brief <path>` hands a worker a
+  task file (objective, acceptance criteria, references); `--task` becomes an
+  optional short label. `choragos work-done --report <path>` points the
+  orchestrator at a full report. The CLI validates and absolutizes both
+  paths, the task board shows the attached file per entry, and the built-in
+  prompts teach both flags.
+- `[ui] mouse = false`: disable mouse capture entirely and restore
+  terminal-native text selection; tile focus and wheel scrollback fall back
+  to the keyboard bindings.
+- `docs/protocol.md`: the delegate/work-done wire contract for integrators
+  (socket resolution, exchange semantics, full command schema).
+- `docs/teams.md`: the custom-team guide (role anatomy, per-role model
+  selection as cost control, briefs, credential isolation, a worked
+  pipeline example).
+
+### Changed
+- Deck renders and status-card tails are cached per pane behind a
+  screen-change sequence (`Pane.Seq()`): idle panes cost nothing per frame
+  instead of a full grid walk on every message.
+- Scrollback replay is cached per (sequence, width): scrolling re-windows
+  the parsed history for free instead of re-parsing up to 256KB of ANSI per
+  frame.
+- The pane history ring is a true circular buffer: one allocation per pane
+  at start instead of steady GC churn on every write once full.
+
+### Fixed
+- Pane input lifecycle no longer leaks goroutines: a full inbox drops input
+  with a typed error instead of spawning blocked goroutines, and closed
+  panes release their writer (accumulated across role restarts).
+- IPC exchanges carry deadlines on both sides, so a silent client cannot
+  park deck goroutines and a wedged deck cannot hang the
+  `delegate`/`work-done` CLI.
+- An exact-boundary fill of the new circular buffer no longer reports an
+  empty history.
+- CI resolves the newest Go patch release (`check-latest`), so stdlib
+  security fixes land without manual workflow bumps.
+
 ## [0.3.0] - 2026-07-03
 
 ### Added
@@ -63,7 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sphragis-oss/choragos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sphragis-oss/choragos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sphragis-oss/choragos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sphragis-oss/choragos/releases/tag/v0.1.0
