@@ -4,6 +4,7 @@ package pane_test
 
 import (
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -165,4 +166,26 @@ func TestPaneInput(t *testing.T) {
 	if !strings.Contains(p.Render(), "got:world") {
 		t.Fatalf("input not delivered:\n%q", p.Render())
 	}
+}
+
+func TestCloseDoesNotLeakGoroutines(t *testing.T) {
+	before := runtime.NumGoroutine()
+	for i := 0; i < 5; i++ {
+		p, err := pane.Start(exec.Command("cat"), 20, 5)
+		if err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		if err := p.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+	}
+	// poll: reap goroutines need a moment to observe the killed children
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= before+1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("goroutines leaked: before=%d after=%d", before, runtime.NumGoroutine())
 }

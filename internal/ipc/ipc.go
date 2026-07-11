@@ -9,7 +9,20 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"time"
 )
+
+// ioTimeoutNs overrides the IPC exchange bound in nanoseconds; zero means the default. Tests shrink it.
+var ioTimeoutNs atomic.Int64
+
+// ioTimeout bounds a whole IPC exchange so a silent or wedged peer can never park a goroutine or hang the CLI.
+func ioTimeout() time.Duration {
+	if d := ioTimeoutNs.Load(); d > 0 {
+		return time.Duration(d)
+	}
+	return 5 * time.Second
+}
 
 // EnvSocket is the env var pointing a worker CLI at its deck's control socket.
 const EnvSocket = "CHORAGOS_SOCK"
@@ -62,6 +75,7 @@ func (s *Server) accept(handle func(Command)) {
 
 func serveConn(conn net.Conn, handle func(Command)) {
 	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(ioTimeout()))
 	var cmd Command
 	if err := json.NewDecoder(conn).Decode(&cmd); err != nil {
 		return
@@ -84,6 +98,7 @@ func Send(path string, cmd Command) error {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(ioTimeout()))
 	if err := json.NewEncoder(conn).Encode(cmd); err != nil {
 		return err
 	}
