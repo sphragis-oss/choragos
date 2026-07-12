@@ -12,12 +12,15 @@ prompt_template = "You coordinate the team. Plan and delegate only; never implem
 name = "coder"
 command = "claude"
 model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
 prompt_template = "Implement the requested change. Run the project's tests before reporting done."
 
 [[roles]]
 name = "reviewer"
 command = "claude"
 model = "sonnet"
+args = ["--strict-mcp-config"]
 prompt_template = "Review the change for correctness and edge cases. Report findings only; do not modify code."
 # the reviewer never needs your cloud credentials
 env_deny = ["AWS_*", "GCP_*", "GITHUB_TOKEN"]

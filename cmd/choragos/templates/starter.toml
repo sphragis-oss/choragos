@@ -11,12 +11,15 @@ prompt_template = "You coordinate the team. Plan and delegate only; never implem
 name = "coder"
 command = "claude"
 model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
 prompt_template = "Implement the requested change. Run the project's tests before reporting done."
 
 [[roles]]
 name = "reviewer"
 command = "claude"
 model = "sonnet"
+args = ["--strict-mcp-config"]
 prompt_template = "Review the change for correctness and edge cases. Report findings only; do not modify code."
 # extra status heuristics for non-Claude agent TUIs:
 # input_prompts = ["continue? <enter>"]
@@ -42,6 +45,6 @@ prompt_template = "Review the change for correctness and edge cases. Report find
 # help = "?"
 
 # [ui]
-# auto_focus = true     # focus whichever agent produces output
+# auto_focus = true     # focus the agent that gets a delegation or blocks on input
 # sidebar = true        # start with the status-card sidebar visible
 # bell = true           # terminal bell when an agent blocks on input
