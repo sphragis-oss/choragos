@@ -143,7 +143,7 @@ type Model struct {
 	keys       config.Keys
 	prefixed   bool   // prefix armed; next key runs a WM action
 	sidebar    bool   // status-card column visible
-	autoFocus  bool   // activity steals focus ([ui] auto_focus)
+	autoFocus  bool   // delegations and input prompts steal focus ([ui] auto_focus)
 	helpOn     bool   // help overlay visible; any key closes it
 	boardOn    bool   // task board overlay visible; any key closes it
 	broadcast  bool   // normal-mode keys go to every live pane
@@ -278,9 +278,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frameMsg:
 		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].lastActive = time.Now()
-			if m.autoFocus && !m.manual {
-				m.focusRole(msg.idx) // auto-focus whoever is producing output
-			}
 		}
 	case paneClosedMsg:
 		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
@@ -695,12 +692,15 @@ func (m *Model) dispatch(cmd ipc.Command) {
 
 // checkWaiting rings the bell once per transition into waiting-for-input.
 func (m *Model) checkWaiting() {
-	for _, e := range m.panes {
+	for i, e := range m.panes {
 		w := needsInput(e)
 		if w && !e.waiting {
 			m.log().Info("waiting for input", "role", e.role.Name)
 			if m.bellFn != nil {
 				m.bellFn()
+			}
+			if m.autoFocus && !m.manual {
+				m.focusRole(i) // surface whoever blocks on input
 			}
 		}
 		e.waiting = w

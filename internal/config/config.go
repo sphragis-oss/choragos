@@ -121,7 +121,7 @@ type UI struct {
 	Mouse     *bool `toml:"mouse"`
 }
 
-// IsAutoFocus reports whether pane activity steals focus (default true).
+// IsAutoFocus reports whether delegations and input prompts steal focus (default true).
 func (u UI) IsAutoFocus() bool { return u.AutoFocus == nil || *u.AutoFocus }
 
 // SidebarStart reports whether the status-card sidebar starts visible (default true).

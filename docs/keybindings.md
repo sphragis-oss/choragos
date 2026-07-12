@@ -78,7 +78,7 @@ search = "/"
 help = "?"
 
 [ui]
-auto_focus = true # focus the tile of whichever agent produces output
+auto_focus = true # focus the agent that gets a delegation or blocks on input
 sidebar = true    # start with the status-card sidebar visible
 bell = true       # terminal bell when an agent blocks on input
 ```
@@ -109,10 +109,12 @@ input_prompts = ["continue? <enter>"]
 chrome_markers = ["agy statusbar"]
 ```
 
-With `auto_focus = true` (the default) the deck focuses whichever agent emits
-output or receives a delegation, retargeting the focused tile when that role
-is hidden. Set it to `false` for a fully user-controlled layout. Any manual
-focus action (`ctrl+o` or a WM action) pauses auto-focus for the session.
+With `auto_focus = true` (the default) the deck focuses the agent that
+receives a delegation, reports back, or blocks waiting for input,
+retargeting the focused tile when that role is hidden. Raw output never
+steals focus. Set it to `false` for a fully user-controlled layout. Any
+manual focus action (`ctrl+o` or a WM action) pauses auto-focus for the
+session.
 
 On terminals too small to tile, the deck degrades to the focused tile only,
 dropping borders when even that does not fit.
