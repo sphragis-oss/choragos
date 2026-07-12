@@ -30,6 +30,7 @@ func newTestModel(panes []*entry) *Model {
 }
 
 func TestStartPanesSpawnsAllRoles(t *testing.T) {
+	t.Chdir(t.TempDir()) // isolate the per-role .choragos/logs
 	cfg := config.Config{Roles: []config.Role{
 		{Name: "a", Command: "sh", Args: []string{"-c", "printf role-alpha"}},
 		{Name: "b", Command: "sh", Args: []string{"-c", "printf role-beta"}},

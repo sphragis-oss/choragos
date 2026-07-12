@@ -217,3 +217,32 @@ func TestCloseDoesNotLeakGoroutines(t *testing.T) {
 	}
 	t.Fatalf("goroutines leaked: before=%d after=%d", before, runtime.NumGoroutine())
 }
+
+func TestCloseWritesPlainTranscript(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", `printf '\033[1;31malpha\033[0m line\nbeta line\n'`), 40, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log strings.Builder
+	p.SetLog(&log)
+
+	done := make(chan struct{})
+	go func() {
+		_ = p.Stream(nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not finish")
+	}
+	_ = p.Close()
+
+	got := log.String()
+	if !strings.Contains(got, "alpha line") || !strings.Contains(got, "beta line") {
+		t.Fatalf("transcript missing content:\n%q", got)
+	}
+	if strings.Contains(got, "\x1b") {
+		t.Fatalf("transcript contains escape sequences:\n%q", got)
+	}
+}

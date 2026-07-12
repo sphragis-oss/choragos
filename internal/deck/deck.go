@@ -1301,7 +1301,8 @@ func (m *Model) startAll() (tea.Cmd, error) {
 		return nil, fmt.Errorf("ipc serve: %w", err)
 	}
 	m.server = srv
-	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled())
+	wd, _ := os.Getwd()
+	m.log().Info("deck starting", "roles", len(m.cfg.Roles), "sphragis", m.cfg.Sphragis.IsEnabled(), "dir", wd)
 	for _, w := range m.cfg.Warnings {
 		m.log().Warn("config", "warning", w)
 	}
@@ -1491,16 +1492,19 @@ func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*e
 	return entries, nil
 }
 
-// openLog opens a per-role output log under contextDir/logs; logging is best-effort so failures are silent.
+// openLog opens a per-role transcript log under contextDir/logs; logging is best-effort so failures are silent.
+// Append mode with a session header, so a role restart does not truncate the previous session's transcript.
 func openLog(role string) *os.File {
 	dir := filepath.Join(contextDir, "logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil
 	}
-	f, err := os.Create(filepath.Join(dir, sanitize(role)+".log"))
+	f, err := os.OpenFile(filepath.Join(dir, sanitize(role)+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil
 	}
+	wd, _ := os.Getwd()
+	fmt.Fprintf(f, "--- choragos transcript · role=%s · dir=%s · started=%s ---\n", role, wd, time.Now().Format(time.RFC3339))
 	return f
 }
 
