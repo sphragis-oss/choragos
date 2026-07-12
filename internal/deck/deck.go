@@ -150,10 +150,11 @@ type Model struct {
 	broadcast  bool   // normal-mode keys go to every live pane
 	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
 	board      []taskEvent
-	searching  bool   // typing a scrollback search query
-	searchBuf  string // query being typed
-	searchQ    string // committed query; n/N navigate while scrolled
-	taskSeq    int    // task id counter for delegations
+	gates      []pendingGate // delegations awaiting user approval, oldest first
+	searching  bool          // typing a scrollback search query
+	searchBuf  string        // query being typed
+	searchQ    string        // committed query; n/N navigate while scrolled
+	taskSeq    int           // task id counter for delegations
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -168,6 +169,13 @@ type Model struct {
 	eventsC    io.Closer
 	w, h       int
 	err        error
+}
+
+// pendingGate is a delegation held for user approval before it reaches the worker.
+type pendingGate struct {
+	cmd ipc.Command
+	to  string
+	at  time.Time
 }
 
 // taskEvent is one delegation-protocol event, shown on the task board.
@@ -344,6 +352,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.helpOn || m.boardOn {
 		m.helpOn, m.boardOn = false, false
+		return m, nil
+	}
+	if len(m.gates) > 0 {
+		m.gateKey(msg) // modal: the pipeline is paused until the user decides
 		return m, nil
 	}
 	if m.searching {
@@ -646,29 +658,20 @@ func (m *Model) dispatch(cmd ipc.Command) {
 	switch cmd.Cmd {
 	case "delegate":
 		for _, name := range cmd.To {
-			if e, i := m.findRole(name); e != nil && !e.exited {
-				m.taskSeq++
-				id := fmt.Sprintf("T%d", m.taskSeq)
-				task := cmd.Task
-				if cmd.Brief != "" {
-					task = strings.TrimSpace("Read " + cmd.Brief + " for the full brief.\n\n" + cmd.Task)
-				}
-				label := singleLine(cmd.Task)
-				if label == "" {
-					label = "brief: " + filepath.Base(cmd.Brief)
-				}
-				file := "worker-task-" + sanitize(name) + ".md"
-				line := writeContext(file, prompt.WorkerTask(e.role, task, id),
-					"Read "+filepath.Join(contextDir, file)+" for your task.")
-				m.log().Info("delegate", "id", id, "from", "orchestrator", "to", name, "task", label, "brief", cmd.Brief)
-				m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: name, task: label, file: cmd.Brief})
-				injectLine(e, line)
-				if m.autoFocus && !m.manual {
-					m.focusRole(i)
-				}
-			} else {
+			e, i := m.findRole(name)
+			if e == nil || e.exited {
 				m.log().Warn("delegate target unavailable", "to", name)
+				continue
 			}
+			if e.role.Approve {
+				m.gates = append(m.gates, pendingGate{cmd: cmd, to: name, at: time.Now()})
+				m.log().Info("delegate gated", "to", name, "task", singleLine(cmd.Task), "brief", cmd.Brief)
+				if m.bellFn != nil {
+					m.bellFn()
+				}
+				continue
+			}
+			m.deliverDelegate(e, i, cmd)
 		}
 	case "work-done":
 		i := m.startIdx()
@@ -688,6 +691,53 @@ func (m *Model) dispatch(cmd ipc.Command) {
 			if m.autoFocus && !m.manual {
 				m.focusRole(i)
 			}
+		}
+	}
+}
+
+// deliverDelegate hands an (approved) delegation to a worker: task file, board entry, PTY injection.
+func (m *Model) deliverDelegate(e *entry, i int, cmd ipc.Command) {
+	m.taskSeq++
+	id := fmt.Sprintf("T%d", m.taskSeq)
+	task := cmd.Task
+	if cmd.Brief != "" {
+		task = strings.TrimSpace("Read " + cmd.Brief + " for the full brief.\n\n" + cmd.Task)
+	}
+	label := singleLine(cmd.Task)
+	if label == "" {
+		label = "brief: " + filepath.Base(cmd.Brief)
+	}
+	file := "worker-task-" + sanitize(e.role.Name) + ".md"
+	line := writeContext(file, prompt.WorkerTask(e.role, task, id),
+		"Read "+filepath.Join(contextDir, file)+" for your task.")
+	m.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
+	m.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
+	injectLine(e, line)
+	if m.autoFocus && !m.manual {
+		m.focusRole(i)
+	}
+}
+
+// gateKey resolves the oldest pending gate: y approves and injects, n rejects back to the orchestrator.
+func (m *Model) gateKey(msg tea.KeyMsg) {
+	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
+		return
+	}
+	g := m.gates[0]
+	switch string(msg.Runes) {
+	case "y", "Y":
+		m.gates = m.gates[1:]
+		if e, i := m.findRole(g.to); e != nil && !e.exited {
+			m.log().Info("delegate approved", "to", g.to, "waited", time.Since(g.at).Round(time.Second))
+			m.deliverDelegate(e, i, g.cmd)
+		} else {
+			m.log().Warn("delegate target unavailable", "to", g.to)
+		}
+	case "n", "N":
+		m.gates = m.gates[1:]
+		m.log().Warn("delegate rejected", "to", g.to, "task", singleLine(g.cmd.Task), "brief", g.cmd.Brief)
+		if i := m.startIdx(); i >= 0 && i < len(m.panes) && !m.panes[i].exited {
+			injectLine(m.panes[i], "[choragos] The user rejected your delegation to "+g.to+". Revise the plan or the brief and delegate again if still needed.")
 		}
 	}
 }
@@ -939,6 +989,9 @@ func (m *Model) View() string {
 	if m.helpOn {
 		body = m.renderHelp(mainW, contentH)
 	}
+	if len(m.gates) > 0 {
+		body = m.renderGate(mainW, contentH) // approval outranks the other overlays
+	}
 	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(body)
 	if leftW > 0 {
 		left := m.renderCards(leftW, contentH, st)
@@ -981,6 +1034,38 @@ func (m *Model) renderHelp(w, h int) string {
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
+}
+
+// renderGate draws the approval prompt for the oldest pending delegation; y approves, n rejects.
+func (m *Model) renderGate(w, h int) string {
+	g := m.gates[0]
+	label := singleLine(g.cmd.Task)
+	if label == "" && g.cmd.Brief != "" {
+		label = "brief: " + filepath.Base(g.cmd.Brief)
+	}
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(waitingColor).Render("delegation awaiting approval") + "\n\n")
+	row := func(k, v string) {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(10).Render(k) + " " + v + "\n")
+	}
+	row("to", g.to)
+	row("task", truncate(label, w-14))
+	if g.cmd.Brief != "" {
+		row("brief", truncate(g.cmd.Brief, w-14))
+	}
+	row("queued", g.at.Format("15:04:05"))
+	if n := len(m.gates) - 1; n > 0 {
+		b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf("+%d more waiting behind this one", n)) + "\n")
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("[y] approve   [n] reject") + "\n")
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render("to amend it, edit the brief file first, then approve"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(waitingColor).
 		Width(w - 2).Height(h - 2).MaxHeight(h).
 		Render(b.String())
 }
@@ -1170,9 +1255,13 @@ func (m *Model) renderStats(st []roleState) string {
 	if m.scrollOff > 0 {
 		scroll = lipgloss.NewStyle().Foreground(scrollColor).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
 	}
+	gated := ""
+	if len(m.gates) > 0 {
+		gated = lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render(fmt.Sprintf(" · %d awaiting approval", len(m.gates)))
+	}
 	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · %s wm · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
 		active, working, waiting, m.gatewayLabel(), m.keys.Prefix)
-	return m.modeLabel() + lipgloss.NewStyle().Faint(true).Render(txt) + scroll
+	return m.modeLabel() + lipgloss.NewStyle().Faint(true).Render(txt) + gated + scroll
 }
 
 // modeLabel is the status-line WM mode indicator: prefix armed, resize mode, zoom, or broadcast.
