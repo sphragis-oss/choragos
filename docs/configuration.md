@@ -104,7 +104,7 @@ See [keybindings.md](keybindings.md) for what each action does.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `auto_focus` | bool | `true` | Focus the tile of whichever agent produces output or receives a delegation; any manual focus action pauses it |
+| `auto_focus` | bool | `true` | Focus the agent that receives a delegation, reports back, or blocks waiting for input (never on raw output); any manual focus action pauses it |
 | `sidebar` | bool | `true` | Start with the status-card sidebar visible |
 | `bell` | bool | `true` | Ring the terminal bell when an agent transitions to waiting-for-input |
 | `mouse` | bool | `true` | Capture the mouse for tile focus and wheel scrollback; set `false` to restore terminal-native text selection (no Shift+drag needed) |

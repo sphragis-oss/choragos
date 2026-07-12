@@ -966,14 +966,27 @@ func TestScrollbackSearch(t *testing.T) {
 
 func TestAutoFocusModes(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
-	// activity on a hidden role steals focus when auto_focus is on
+	// raw output never steals focus (real agents redraw spinners constantly)
 	m.Update(frameMsg{idx: 1})
+	if m.active != 0 {
+		t.Fatalf("frame stole focus: active = %d, want 0", m.active)
+	}
+	// a hidden role blocking on input steals focus when auto_focus is on
+	_ = m.panes[1].pane.Input([]byte("Do you want to proceed? (y/n)\r"))
+	if !waitFor(func() bool { return needsInput(m.panes[1]) }) {
+		t.Fatal("pane never showed the blocking prompt")
+	}
+	m.checkWaiting()
 	if m.active != 1 || m.tree.FocusedRole() != 1 {
 		t.Fatalf("auto-focus on: active=%d focused=%d, want 1/1", m.active, m.tree.FocusedRole())
 	}
-	// off: activity never steals focus
+	// off: an input prompt never steals focus
 	m.autoFocus = false
-	m.Update(frameMsg{idx: 0})
+	_ = m.panes[0].pane.Input([]byte("Do you want to proceed? (y/n)\r"))
+	if !waitFor(func() bool { return needsInput(m.panes[0]) }) {
+		t.Fatal("pane never showed the blocking prompt")
+	}
+	m.checkWaiting()
 	if m.active != 1 {
 		t.Fatalf("auto-focus off: active = %d, want 1", m.active)
 	}
