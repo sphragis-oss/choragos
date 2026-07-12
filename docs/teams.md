@@ -51,6 +51,32 @@ judgment quality gates the outcome, cheap ones everywhere else.
 With `[pricing]` set, the sidebar cards show live cost per role, so the
 matrix is measurable, not aspirational.
 
+## Context hygiene: keep roles lean
+
+Every role is a full agent CLI session that inherits your personal
+configuration, and with several roles the leak is multiplicative: every
+turn of every role carries the whole prefix. A fresh idle claude role can
+start at ~40% context before any task arrives. Run `/context` inside a
+pane to see the breakdown; a reported real-world case:
+
+| Source | Tokens | Lever |
+|--------|--------|-------|
+| Claude Code system prompt + built-in tools | ~44k | none: the baseline every session pays |
+| Personal MCP servers (39 tools) | ~25k | `args = ["--strict-mcp-config"]` |
+| Global CLAUDE.md + memory imports | ~10k | prune your global config; run the deck from a clean directory |
+| Custom agents + skills | ~3k | `--disable-slash-commands` for skills |
+| The choragos boot brief | ~1.5k | already minimal |
+
+The templates ship workers with `--strict-mcp-config` (with no
+`--mcp-config` it loads no MCP servers at all): a delegated worker rarely
+needs your personal MCP servers, and the flag alone cuts the reported case
+from ~42% to ~30%. Delete it from a role that genuinely needs them; the
+orchestrator keeps them by default.
+
+`claude --bare` trims further (no auto-memory, no CLAUDE.md discovery, no
+hooks) but authenticates strictly via `ANTHROPIC_API_KEY`, so it does not
+work with subscription OAuth logins.
+
 ## Long tasks travel as files
 
 Keep `--task` for one-liners. For real work, write a brief file (objective,
