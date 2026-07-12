@@ -1085,3 +1085,88 @@ func TestNoRestartOnCleanExitOrWithoutOptIn(t *testing.T) {
 		}
 	}
 }
+
+func TestApprovalGateFlow(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "orchestrator", Command: "cat", Start: true},
+		{Name: "coder", Command: "cat", Approve: true},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, e := range panes {
+			_ = e.pane.Close()
+		}
+	}()
+	for _, e := range panes {
+		go func(p *pane.Pane) { _ = p.Stream(nil) }(e.pane)
+	}
+	m := newTestModel(panes)
+
+	// gated: nothing reaches the worker, the gate is queued and visible
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-1 risky change"})
+	if len(m.gates) != 1 || len(m.board) != 0 {
+		t.Fatalf("gates=%d board=%d, want 1/0", len(m.gates), len(m.board))
+	}
+	time.Sleep(150 * time.Millisecond)
+	if strings.Contains(panes[1].pane.Render(), "worker-task-coder.md") {
+		t.Fatal("gated delegation reached the worker before approval")
+	}
+	if got := m.renderGate(60, 20); !strings.Contains(got, "coder") || !strings.Contains(got, "GATED-1") {
+		t.Fatalf("gate overlay missing details:\n%q", got)
+	}
+
+	// approve: the delegation is injected and recorded
+	m.Update(key("y"))
+	if len(m.gates) != 0 || len(m.board) != 1 {
+		t.Fatalf("after approve: gates=%d board=%d, want 0/1", len(m.gates), len(m.board))
+	}
+	if !waitFor(func() bool { return strings.Contains(panes[1].pane.Render(), "worker-task-coder.md") }) {
+		t.Fatalf("approved delegation not injected:\n%q", panes[1].pane.Render())
+	}
+
+	// reject: the orchestrator hears about it, the worker does not
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-2 other change"})
+	m.Update(key("x")) // unknown key: gate stays
+	if len(m.gates) != 1 {
+		t.Fatalf("unknown key resolved the gate: gates=%d", len(m.gates))
+	}
+	m.Update(key("n"))
+	if len(m.gates) != 0 {
+		t.Fatalf("after reject: gates=%d, want 0", len(m.gates))
+	}
+	// the 40-col pane wraps the line, so match a fragment that fits one row
+	if !waitFor(func() bool { return strings.Contains(panes[0].pane.Render(), "The user rejected") }) {
+		t.Fatalf("rejection not injected into orchestrator:\n%q", panes[0].pane.Render())
+	}
+	if strings.Contains(panes[1].pane.Render(), "GATED-2") {
+		t.Fatal("rejected delegation reached the worker")
+	}
+}
+
+func TestDelegateWithoutApproveIsImmediate(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "orchestrator", Command: "cat", Start: true},
+		{Name: "coder", Command: "cat"},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, e := range panes {
+			_ = e.pane.Close()
+		}
+	}()
+	go func(p *pane.Pane) { _ = p.Stream(nil) }(panes[1].pane)
+	m := newTestModel(panes)
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "FAST-1"})
+	if len(m.gates) != 0 {
+		t.Fatalf("ungated delegate queued: gates=%d", len(m.gates))
+	}
+	if !waitFor(func() bool { return strings.Contains(panes[1].pane.Render(), "worker-task-coder.md") }) {
+		t.Fatal("ungated delegation not injected")
+	}
+}

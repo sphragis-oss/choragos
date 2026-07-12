@@ -57,11 +57,15 @@ Unknown fields are ignored; new fields are always additive.
 
 1. Refuses the command outright if the sphragis gateway is enforced and
    down (fail-closed): logged as `dispatch refused` in the event log.
-2. Assigns a task id (`T1`, `T2`, ...) per target role.
-3. Writes `.choragos/worker-task-<role>.md`: the role's `prompt_template`,
+2. If the target role has `approve = true`, holds the delegation in the
+   deck's approval overlay (logged as `delegate gated`) until the user
+   presses `y` (proceed with the steps below) or `n` (inject a rejection
+   notice into the orchestrator instead).
+3. Assigns a task id (`T1`, `T2`, ...) per target role.
+4. Writes `.choragos/worker-task-<role>.md`: the role's `prompt_template`,
    the task id, the task text (pointing at `brief` when given), and the
    `work-done` instructions.
-4. Types `Read .choragos/worker-task-<role>.md for your task.` into the
+5. Types `Read .choragos/worker-task-<role>.md for your task.` into the
    role's PTY, then a separate Enter. Full prompts travel as files because
    multi-line pastes do not submit reliably in agent TUIs.
 

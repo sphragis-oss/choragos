@@ -33,6 +33,8 @@ type Role struct {
 	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
 	Restart        string `toml:"restart"`
 	RestartRetries int    `toml:"restart_retries"`
+	// human gate: delegations to this role pause in the deck until the user approves
+	Approve bool `toml:"approve"`
 }
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.

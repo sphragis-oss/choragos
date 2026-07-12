@@ -95,6 +95,28 @@ choragos work-done --id T7 --report /abs/path/report-T7.md --task "done, 3 files
 Content moves through files, control through the socket: the orchestrator's
 context stays small, and every task leaves an auditable artifact.
 
+## Approval gates: a human between plan and execution
+
+Set `approve = true` on a role and every delegation to it pauses in the
+deck: an overlay shows the target, task, and brief path, the bell rings,
+and nothing reaches the worker until you press `y`. Pressing `n` rejects
+and tells the orchestrator to revise its plan.
+
+```toml
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+approve = true
+```
+
+Because briefs are files, amending is free: read the brief the overlay
+points at, edit it in another terminal, then approve; the worker reads the
+corrected file. Gates queue in arrival order, the status line counts them,
+and approvals and rejections land in `events.log`. Use it on the roles
+whose mistakes are expensive (implementation, release), and leave
+read-only reporters ungated.
+
 ## Isolate credentials per role
 
 A reviewer does not need your cloud keys:
