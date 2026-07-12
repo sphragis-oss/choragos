@@ -30,6 +30,20 @@ type Role struct {
 	// (exact names or "PREFIX_*" patterns); env_deny strips matches in either mode
 	EnvAllow []string `toml:"env_allow"`
 	EnvDeny  []string `toml:"env_deny"`
+	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
+	Restart        string `toml:"restart"`
+	RestartRetries int    `toml:"restart_retries"`
+}
+
+// RestartOnFailure reports whether the role respawns when its process exits non-zero.
+func (r Role) RestartOnFailure() bool { return r.Restart == "on-failure" }
+
+// RestartCap returns the auto-restart limit (default 3), so a broken command cannot crash-loop.
+func (r Role) RestartCap() int {
+	if r.RestartRetries > 0 {
+		return r.RestartRetries
+	}
+	return 3
 }
 
 // Config is the full orchestration.
@@ -241,6 +255,11 @@ func Load(path string) (Config, error) {
 	}
 	if len(c.Roles) == 0 {
 		return Config{}, fmt.Errorf("config %s defines no roles", path)
+	}
+	for _, r := range c.Roles {
+		if r.Restart != "" && !r.RestartOnFailure() {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
+		}
 	}
 	c.Sphragis.applyDefaults()
 	c.Keys = c.Keys.Defaulted()

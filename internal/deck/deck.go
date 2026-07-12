@@ -97,6 +97,7 @@ type entry struct {
 	bootSentAt time.Time
 	bootTries  int
 	bootOK     bool
+	restarts   int // auto-restarts consumed; reset by a manual restart
 	// screen caches keyed by the pane's write sequence, so idle panes cost nothing per frame
 	renderSeq   uint64
 	renderPane  *pane.Pane
@@ -283,6 +284,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.idx >= 0 && msg.idx < len(m.panes) && m.panes[msg.idx].gen == msg.gen {
 			m.panes[msg.idx].exited = true
 			m.log().Warn("pane exited", "role", m.panes[msg.idx].role.Name)
+			m.autoRestart(m.panes[msg.idx], msg.idx)
 		}
 	case ipcMsg:
 		m.dispatch(msg.cmd)
@@ -1377,8 +1379,33 @@ func (m *Model) restartRole() {
 		return
 	}
 	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
+	e.restarts = 0     // the user intervened; reset the auto-restart budget
 	cw, ch := m.focusedTileContent()
-	p, err := startRole(e.role, cw, ch, roleEnv(e.role, m.socket, m.baseURL))
+	m.respawn(e, m.active, cw, ch)
+}
+
+// autoRestart respawns a role that exited non-zero when its config asks for it, capped so a broken command cannot crash-loop.
+func (m *Model) autoRestart(e *entry, idx int) {
+	if m.closed || !e.role.RestartOnFailure() {
+		return
+	}
+	_ = e.pane.Close() // reap the child to capture its exit status
+	if e.pane.ExitCode() == 0 {
+		return // clean exit is respected
+	}
+	if e.restarts >= e.role.RestartCap() {
+		m.log().Warn("auto-restart cap reached", "role", e.role.Name, "restarts", e.restarts)
+		return
+	}
+	e.restarts++
+	m.log().Warn("auto-restart", "role", e.role.Name, "attempt", e.restarts, "exit", e.pane.ExitCode())
+	cw, ch := e.pane.Size() // respawn at the pane's current size; resizePanes syncs visible tiles anyway
+	m.respawn(e, idx, cw, ch)
+}
+
+// respawn replaces an entry's pane with a fresh process at cols x rows, resetting boot state; gen drops the old stream.
+func (m *Model) respawn(e *entry, idx, cols, rows int) {
+	p, err := startRole(e.role, cols, rows, roleEnv(e.role, m.socket, m.baseURL))
 	if err != nil {
 		e.exited = true
 		m.log().Error("restart failed", "role", e.role.Name, "err", err)
@@ -1394,7 +1421,7 @@ func (m *Model) restartRole() {
 	e.startedAt = time.Now()
 	e.lastActive = time.Now()
 	m.log().Info("role restarted", "role", e.role.Name)
-	m.watchPane(e, m.active)
+	m.watchPane(e, idx)
 }
 
 // focusedTileContent returns the focused tile's pane content dims.
