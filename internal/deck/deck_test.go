@@ -1018,3 +1018,70 @@ func waitStream(t *testing.T, p *pane.Pane) {
 		t.Fatal("stream did not finish")
 	}
 }
+
+func TestAutoRestartOnFailure(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "worker", Command: "sh", Args: []string{"-c", "exit 7"}, Restart: "on-failure", RestartRetries: 2},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(panes)
+	e := panes[0]
+	defer func() { _ = e.pane.Close() }()
+
+	waitExit := func() {
+		done := make(chan struct{})
+		p := e.pane
+		go func() { _ = p.Stream(nil); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("child did not exit")
+		}
+	}
+
+	waitExit()
+	first := e.pane
+	m.Update(paneClosedMsg{idx: 0, gen: 0})
+	if e.pane == first || e.exited || e.restarts != 1 {
+		t.Fatalf("first failure: respawned=%v exited=%v restarts=%d", e.pane != first, e.exited, e.restarts)
+	}
+	waitExit()
+	m.Update(paneClosedMsg{idx: 0, gen: e.gen})
+	if e.exited || e.restarts != 2 {
+		t.Fatalf("second failure: exited=%v restarts=%d, want running/2", e.exited, e.restarts)
+	}
+	waitExit()
+	m.Update(paneClosedMsg{idx: 0, gen: e.gen})
+	if !e.exited || e.restarts != 2 {
+		t.Fatalf("cap: exited=%v restarts=%d, want exited/2", e.exited, e.restarts)
+	}
+}
+
+func TestNoRestartOnCleanExitOrWithoutOptIn(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "clean", Command: "sh", Args: []string{"-c", "exit 0"}, Restart: "on-failure"},
+		{Name: "default", Command: "sh", Args: []string{"-c", "exit 7"}},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(panes)
+	for i, e := range panes {
+		done := make(chan struct{})
+		p := e.pane
+		go func() { _ = p.Stream(nil); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("child did not exit")
+		}
+		m.Update(paneClosedMsg{idx: i, gen: 0})
+		if !e.exited || e.restarts != 0 {
+			t.Fatalf("pane %d: exited=%v restarts=%d, want exited/0", i, e.exited, e.restarts)
+		}
+	}
+}

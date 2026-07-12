@@ -287,3 +287,35 @@ func TestLoadNoRolesErrors(t *testing.T) {
 		t.Fatal("want error for config with no roles")
 	}
 }
+
+func TestRestartOptions(t *testing.T) {
+	r := config.Role{}
+	if r.RestartOnFailure() || r.RestartCap() != 3 {
+		t.Fatalf("defaults: on-failure=%v cap=%d, want false/3", r.RestartOnFailure(), r.RestartCap())
+	}
+	r = config.Role{Restart: "on-failure", RestartRetries: 5}
+	if !r.RestartOnFailure() || r.RestartCap() != 5 {
+		t.Fatalf("configured: on-failure=%v cap=%d, want true/5", r.RestartOnFailure(), r.RestartCap())
+	}
+}
+
+func TestLoadWarnsUnknownRestartMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.toml")
+	body := "[[roles]]\nname = \"a\"\ncommand = \"cat\"\nrestart = \"always\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range c.Warnings {
+		if strings.Contains(w, "unknown restart mode") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected restart-mode warning, got %v", c.Warnings)
+	}
+}

@@ -131,6 +131,7 @@ type Pane struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	seq       atomic.Uint64 // bumped on every content-affecting change; render-cache key
+	exitCode  atomic.Int32  // child exit status once reaped; -1 until then and for signal deaths
 }
 
 // Seq returns a counter that advances whenever the screen may have changed (output or resize).
@@ -144,8 +145,19 @@ func Start(cmd *exec.Cmd, cols, rows int) (*Pane, error) {
 	}
 	term := vt10x.New(vt10x.WithWriter(ptmx), vt10x.WithSize(cols, rows))
 	p := &Pane{cmd: cmd, ptmx: ptmx, term: term, hist: newRing(ringCap), inbox: make(chan []byte, inboxCap), done: make(chan struct{})}
+	p.exitCode.Store(-1)
 	go p.writeLoop()
 	return p, nil
+}
+
+// ExitCode returns the child's exit status: -1 until the pane is closed and reaped, or when it died by signal.
+func (p *Pane) ExitCode() int { return int(p.exitCode.Load()) }
+
+// Size returns the emulator dimensions.
+func (p *Pane) Size() (cols, rows int) {
+	p.term.Lock()
+	defer p.term.Unlock()
+	return p.term.Size()
 }
 
 // writeLoop drains queued input to the PTY off the UI thread; a blocking write can never freeze the deck.
@@ -448,6 +460,9 @@ func (p *Pane) reap() {
 	go func() { _ = p.cmd.Wait(); close(done) }()
 	select {
 	case <-done:
+		if st := p.cmd.ProcessState; st != nil {
+			p.exitCode.Store(int32(st.ExitCode()))
+		}
 	case <-time.After(reapTimeout):
 	}
 }

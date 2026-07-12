@@ -246,3 +246,27 @@ func TestCloseWritesPlainTranscript(t *testing.T) {
 		t.Fatalf("transcript contains escape sequences:\n%q", got)
 	}
 }
+
+func TestExitCodeCaptured(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", "exit 3"), 40, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ExitCode() != -1 {
+		t.Fatalf("exit code before reap = %d, want -1", p.ExitCode())
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = p.Stream(nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not finish")
+	}
+	_ = p.Close()
+	if p.ExitCode() != 3 {
+		t.Fatalf("exit code = %d, want 3", p.ExitCode())
+	}
+}

@@ -25,6 +25,8 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `chrome_markers` | array | `[]` | Extra markers for TUI chrome lines to drop from the sidebar activity preview |
 | `env_allow` | array | `[]` | Switch the role to an env allowlist: baseline vars (`PATH`, `HOME`, `TERM`, `SHELL`, `LANG`, `LC_*`, `XDG_*`, ...) plus these names or `PREFIX_*` patterns |
 | `env_deny` | array | `[]` | Strip matching vars (exact or `PREFIX_*`) in either mode; wins over `env_allow` |
+| `restart` | string | `""` | `"on-failure"` respawns the role in place when its process exits non-zero (or dies by signal); clean exits and deck shutdown are respected |
+| `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
 
 Environment isolation example: a reviewer that never sees cloud credentials.
 
