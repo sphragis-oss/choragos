@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-12
+
+### Added
+- Human approval gates: set `approve = true` on a role and every
+  delegation to it pauses in the deck. A modal overlay shows the target,
+  task, and brief path; `y` injects it through the normal delivery path,
+  `n` rejects and tells the orchestrator to revise. Gates queue in
+  arrival order, the status line counts them, and briefs being files
+  means you can edit the brief and then approve. Approvals and
+  rejections land in events.log.
+- Role supervision: `restart = "on-failure"` respawns a role in place
+  when its process exits non-zero or dies by signal, capped by
+  `restart_retries` (default 3) so a broken command cannot crash-loop.
+  Clean exits and deck shutdown are respected, a manual `prefix+R`
+  resets the budget, and every attempt is logged.
+
 ## [0.4.2] - 2026-07-12
 
 ### Added
@@ -129,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sphragis-oss/choragos/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/sphragis-oss/choragos/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/sphragis-oss/choragos/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/sphragis-oss/choragos/compare/v0.3.0...v0.4.0
