@@ -7,9 +7,9 @@ gateway, and prints one OK/WARN/FAIL line per check.
 ## The deck starts but a role shows "exited" immediately
 
 The role's command failed to start or crashed. Check
-`.choragos/logs/<role>.log` for the process output. Shell aliases do not
-resolve; set `command` to the real binary. Restart the role in place with
-`prefix+R`.
+`.choragos/logs/<role>.log`: the transcript of what the pane showed is
+written there when it closes. Shell aliases do not resolve; set `command`
+to the real binary. Restart the role in place with `prefix+R`.
 
 ## `delegate failed (is the deck running?)`
 

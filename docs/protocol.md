@@ -75,7 +75,9 @@ matching delegation resolved on the task board (prefix key, then `t`).
 
 - `.choragos/logs/events.log`: every delegate, work-done, boot injection,
   gateway refusal, and pane exit, as structured slog lines.
-- `.choragos/logs/<role>.log`: each role's raw PTY output.
+- `.choragos/logs/<role>.log`: each role's plain-text transcript (the
+  rendered scrollback, written when the pane closes), one session per
+  header line with the working directory and start time.
 - The task board overlay shows the live delegation history with brief and
   report filenames per entry.
 

@@ -162,7 +162,7 @@ func (p *Pane) writeLoop() {
 	}
 }
 
-// SetLog tees raw PTY output to w for a persistent, greppable history.
+// SetLog sets the sink that receives the plain-text transcript when the pane closes.
 func (p *Pane) SetLog(w io.Writer) { p.logw = w }
 
 // Stream copies PTY output into the emulator until read error, calling onFrame per chunk; blocks.
@@ -175,9 +175,6 @@ func (p *Pane) Stream(onFrame func()) error {
 			_, _ = p.term.Write(chunk)
 			p.hist.Write(chunk)
 			p.seq.Add(1)
-			if p.logw != nil {
-				_, _ = p.logw.Write(chunk)
-			}
 			if onFrame != nil {
 				onFrame()
 			}
@@ -415,7 +412,7 @@ func colorParams(c vt10x.Color, base, bright int, ext string) []string {
 	}
 }
 
-// Close force-stops the child (SIGKILL), releases the PTY, and closes the log sink; idempotent.
+// Close force-stops the child (SIGKILL), releases the PTY, writes the transcript, and closes the log sink; idempotent.
 func (p *Pane) Close() error {
 	p.closeOnce.Do(func() {
 		close(p.done)      // release writeLoop and refuse further input
@@ -424,11 +421,25 @@ func (p *Pane) Close() error {
 			_ = p.cmd.Process.Kill()
 		}
 		p.reap()
+		p.writeTranscript()
 		if c, ok := p.logw.(io.Closer); ok {
 			_ = c.Close()
 		}
 	})
 	return nil
+}
+
+// writeTranscript renders the captured history as plain text into the log sink: what the user saw, not the wire bytes.
+func (p *Pane) writeTranscript() {
+	if p.logw == nil {
+		return
+	}
+	p.term.Lock()
+	cols, _ := p.term.Size()
+	p.term.Unlock()
+	for _, l := range p.HistoryLines(cols) {
+		_, _ = io.WriteString(p.logw, l+"\n")
+	}
 }
 
 // reap waits for the killed child, bounded so a wedged process can never hang shutdown.
