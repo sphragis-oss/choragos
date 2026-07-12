@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-12
+
+### Fixed
+- Auto-focus no longer fires on every output frame: agent CLIs redraw
+  spinners continuously, so the visible tile retargeted several times per
+  second until a manual focus action paused auto-focus for the session.
+  Focus now follows the workflow only: delegations, work-done reports, and
+  a pane transitioning into waiting-for-input.
+
 ## [0.4.0] - 2026-07-11
 
 ### Added
@@ -103,7 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/sphragis-oss/choragos/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/sphragis-oss/choragos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sphragis-oss/choragos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sphragis-oss/choragos/compare/v0.1.0...v0.2.0
