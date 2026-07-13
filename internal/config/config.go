@@ -51,10 +51,11 @@ func (r Role) RestartCap() int {
 
 // Config is the full orchestration.
 type Config struct {
-	Roles    []Role   `toml:"roles"`
-	Sphragis Sphragis `toml:"sphragis"`
-	Keys     Keys     `toml:"keys"`
-	UI       UI       `toml:"ui"`
+	Roles       []Role      `toml:"roles"`
+	Sphragis    Sphragis    `toml:"sphragis"`
+	Keys        Keys        `toml:"keys"`
+	UI          UI          `toml:"ui"`
+	Checkpoints Checkpoints `toml:"checkpoints"`
 	// Pricing maps a model-name prefix to USD per million tokens, for the cost display.
 	Pricing map[string]Price `toml:"pricing"`
 	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
@@ -169,6 +170,23 @@ func (u UI) IsBell() bool { return u.Bell == nil || *u.Bell }
 
 // IsMouse reports whether the deck captures the mouse (default true); off restores terminal-native selection.
 func (u UI) IsMouse() bool { return u.Mouse == nil || *u.Mouse }
+
+// Checkpoints controls per-delegation workspace snapshots (git repositories only).
+type Checkpoints struct {
+	Enabled *bool `toml:"enabled"`
+	Keep    int   `toml:"keep"`
+}
+
+// IsEnabled reports whether delegations snapshot the workspace (default true).
+func (c Checkpoints) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// KeepCount returns how many checkpoints to retain (default 20).
+func (c Checkpoints) KeepCount() int {
+	if c.Keep > 0 {
+		return c.Keep
+	}
+	return 20
+}
 
 // Sphragis controls routing agent traffic through the gateway; Enabled/FailClosed are pointers so omitted = on.
 type Sphragis struct {
