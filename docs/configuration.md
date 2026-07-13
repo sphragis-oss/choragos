@@ -27,7 +27,7 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `env_deny` | array | `[]` | Strip matching vars (exact or `PREFIX_*`) in either mode; wins over `env_allow` |
 | `restart` | string | `""` | `"on-failure"` respawns the role in place when its process exits non-zero (or dies by signal); clean exits and deck shutdown are respected |
 | `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
-| `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); a rejection is reported back to the orchestrator |
+| `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); `e` opens the attached brief in `$VISUAL`/`$EDITOR`, and a rejection is reported back to the orchestrator |
 
 Environment isolation example: a reviewer that never sees cloud credentials.
 

@@ -84,6 +84,9 @@ type gatewayReadyMsg struct {
 // gatewayHealthMsg carries a periodic gateway health probe result.
 type gatewayHealthMsg struct{ up bool }
 
+// editorDoneMsg reports the editor spawned from the approval overlay exiting.
+type editorDoneMsg struct{ err error }
+
 type entry struct {
 	role       config.Role
 	pane       *pane.Pane
@@ -309,6 +312,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.log().Warn("gateway health changed", "up", msg.up)
 		}
 		m.gatewayUp = msg.up
+	case editorDoneMsg:
+		if msg.err != nil {
+			m.log().Error("gate brief edit failed", "err", msg.err)
+		}
 	case usageMsg:
 		m.usage = msg
 	case tickMsg:
@@ -355,8 +362,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if len(m.gates) > 0 {
-		m.gateKey(msg) // modal: the pipeline is paused until the user decides
-		return m, nil
+		return m, m.gateKey(msg) // modal: the pipeline is paused until the user decides
 	}
 	if m.searching {
 		m.searchKey(msg)
@@ -718,10 +724,10 @@ func (m *Model) deliverDelegate(e *entry, i int, cmd ipc.Command) {
 	}
 }
 
-// gateKey resolves the oldest pending gate: y approves and injects, n rejects back to the orchestrator.
-func (m *Model) gateKey(msg tea.KeyMsg) {
+// gateKey resolves the oldest pending gate: y approves and injects, n rejects back to the orchestrator, e edits the brief.
+func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
-		return
+		return nil
 	}
 	g := m.gates[0]
 	switch string(msg.Runes) {
@@ -739,8 +745,31 @@ func (m *Model) gateKey(msg tea.KeyMsg) {
 		if i := m.startIdx(); i >= 0 && i < len(m.panes) && !m.panes[i].exited {
 			injectLine(m.panes[i], "[choragos] The user rejected your delegation to "+g.to+". Revise the plan or the brief and delegate again if still needed.")
 		}
+	case "e", "E":
+		if g.cmd.Brief == "" {
+			return nil // nothing to edit; the gate stays
+		}
+		m.log().Info("gate brief edit", "to", g.to, "brief", g.cmd.Brief)
+		return editBrief(g.cmd.Brief)
 	}
+	return nil
 }
+
+// editBrief suspends the deck and opens the gated brief in $VISUAL/$EDITOR (fallback vi); the gate stays pending.
+func editBrief(path string) tea.Cmd {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	c := exec.Command("sh", "-c", editor+" "+shellQuote(path))
+	return tea.ExecProcess(c, func(err error) tea.Msg { return editorDoneMsg{err: err} })
+}
+
+// shellQuote single-quotes s for sh -c.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // checkWaiting rings the bell once per transition into waiting-for-input.
 func (m *Model) checkWaiting() {
@@ -1059,8 +1088,13 @@ func (m *Model) renderGate(w, h int) string {
 	if n := len(m.gates) - 1; n > 0 {
 		b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf("+%d more waiting behind this one", n)) + "\n")
 	}
-	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("[y] approve   [n] reject") + "\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("to amend it, edit the brief file first, then approve"))
+	keys, hint := "[y] approve   [n] reject", "to amend it, edit the brief file first, then approve"
+	if g.cmd.Brief != "" {
+		keys = "[y] approve   [e] edit brief   [n] reject"
+		hint = "e opens the brief in your $EDITOR; the gate stays until y or n"
+	}
+	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render(keys) + "\n")
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render(hint))
 	if w < 6 || h < 5 {
 		return truncate(b.String(), w*h)
 	}
