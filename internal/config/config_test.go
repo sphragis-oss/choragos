@@ -252,6 +252,41 @@ prefix = "ctrl+a"
 	}
 }
 
+func TestLoadValidatesTheme(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[ui.theme]
+accent = "#ff00ff"
+waiting = "256"
+dim = "chartreuse"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2 entries", c.Warnings)
+	}
+	joined := strings.Join(c.Warnings, "\n")
+	for _, want := range []string{`waiting: invalid color "256"`, `dim: invalid color "chartreuse"`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings missing %q: %v", want, c.Warnings)
+		}
+	}
+	// valid values survive, invalid ones fall back to empty (deck default)
+	if c.UI.Theme.Accent != "#ff00ff" || c.UI.Theme.Waiting != "" || c.UI.Theme.Dim != "" {
+		t.Fatalf("theme = %+v", c.UI.Theme)
+	}
+}
+
 func TestUIDefaultsOn(t *testing.T) {
 	c := config.Default()
 	if !c.UI.IsAutoFocus() || !c.UI.SidebarStart() {

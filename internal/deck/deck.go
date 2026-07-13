@@ -23,18 +23,36 @@ import (
 )
 
 const (
-	minSidebar                       = 24
-	cardActivityLines                = 3     // tail rows previewed per status card
-	cardTailRows                     = 40    // rows scanned for card previews and prompt probes
-	scrollStep                       = 5     // rows moved per PgUp/PgDn
-	accentColor       lipgloss.Color = "45"  // focused: cyan
-	workingColor      lipgloss.Color = "42"  // working: green
-	waitingColor      lipgloss.Color = "214" // blocked on user input: orange
-	scrollColor       lipgloss.Color = "213" // scrollback active: magenta
-	idleColor         lipgloss.Color = "244" // idle: grey
-	dimColor          lipgloss.Color = "240" // exited/unfocused
-	workingWindow                    = 2 * time.Second
+	minSidebar        = 24
+	cardActivityLines = 3  // tail rows previewed per status card
+	cardTailRows      = 40 // rows scanned for card previews and prompt probes
+	scrollStep        = 5  // rows moved per PgUp/PgDn
+	workingWindow     = 2 * time.Second
 )
+
+// deckTheme holds the resolved status colors: [ui.theme] overrides over the classic palette.
+type deckTheme struct {
+	accent  lipgloss.Color // focused: cyan
+	working lipgloss.Color // working: green
+	waiting lipgloss.Color // blocked on user input: orange
+	scroll  lipgloss.Color // scrollback active: magenta
+	idle    lipgloss.Color // idle: grey
+	dim     lipgloss.Color // exited/unfocused
+}
+
+// themeFrom applies non-empty [ui.theme] values over the defaults; Load already validated them.
+func themeFrom(t config.Theme) deckTheme {
+	th := deckTheme{accent: "45", working: "42", waiting: "214", scroll: "213", idle: "244", dim: "240"}
+	for _, o := range []struct {
+		dst *lipgloss.Color
+		v   string
+	}{{&th.accent, t.Accent}, {&th.working, t.Working}, {&th.waiting, t.Waiting}, {&th.scroll, t.Scroll}, {&th.idle, t.Idle}, {&th.dim, t.Dim}} {
+		if o.v != "" {
+			*o.dst = lipgloss.Color(o.v)
+		}
+	}
+	return th
+}
 
 // resizeStep is the ratio delta per keypress in resize mode.
 const resizeStep = 0.05
@@ -75,6 +93,7 @@ type Model struct {
 	usage     usageMsg  // last per-role token snapshot from the gateway metrics
 	scrollOff int       // focused-pane scrollback offset (0 = live tail)
 	maxScroll int       // last render's max scrollback offset, for clamping keys
+	th        deckTheme // resolved status colors ([ui.theme] over the defaults)
 	remote    *wireConn // attached to a detached session; core actions go over the wire
 	w, h      int
 	err       error
@@ -82,6 +101,7 @@ type Model struct {
 
 // wireSession points the core's UI callbacks at this Model.
 func (m *Model) wireSession() {
+	m.th = themeFrom(m.cfg.UI.Theme)
 	m.focusFn = func(i int) {
 		if m.autoFocus && !m.manual {
 			m.focusRole(i)
@@ -719,7 +739,7 @@ func (m *Model) View() string {
 
 	st := make([]roleState, len(m.panes))
 	for i, e := range m.panes {
-		st[i] = computeStatus(e, now)
+		st[i] = computeStatus(e, now, m.th)
 	}
 
 	body := m.tree.Render(mainW, contentH, func(role, w, h int) string {
@@ -767,9 +787,9 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.Help, "this help"},
 	}
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("keybindings") + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.accent).Render("keybindings") + "\n\n")
 	for _, r := range rows {
-		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(16).Render(r[0]))
+		b.WriteString(lipgloss.NewStyle().Foreground(m.th.accent).Width(16).Render(r[0]))
 		b.WriteString(" " + r[1] + "\n")
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
@@ -777,7 +797,7 @@ func (m *Model) renderHelp(w, h int) string {
 		return truncate(b.String(), w*h)
 	}
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Border(lipgloss.RoundedBorder()).BorderForeground(m.th.accent).
 		Width(w - 2).Height(h - 2).MaxHeight(h).
 		Render(b.String())
 }
@@ -790,9 +810,9 @@ func (m *Model) renderGate(w, h int) string {
 		label = "brief: " + filepath.Base(g.cmd.Brief)
 	}
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(waitingColor).Render("delegation awaiting approval") + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.waiting).Render("delegation awaiting approval") + "\n\n")
 	row := func(k, v string) {
-		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Width(10).Render(k) + " " + v + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(m.th.accent).Width(10).Render(k) + " " + v + "\n")
 	}
 	row("to", g.to)
 	row("task", truncate(label, w-14))
@@ -814,7 +834,7 @@ func (m *Model) renderGate(w, h int) string {
 		return truncate(b.String(), w*h)
 	}
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).BorderForeground(waitingColor).
+		Border(lipgloss.RoundedBorder()).BorderForeground(m.th.waiting).
 		Width(w - 2).Height(h - 2).MaxHeight(h).
 		Render(b.String())
 }
@@ -822,7 +842,7 @@ func (m *Model) renderGate(w, h int) string {
 // renderBoard draws the delegation-event board in place of the tiled area; any key closes it.
 func (m *Model) renderBoard(w, h int) string {
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render("task board") + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.accent).Render("task board") + "\n\n")
 	if len(m.board) == 0 {
 		b.WriteString(lipgloss.NewStyle().Faint(true).Render("no delegations yet"))
 	}
@@ -835,9 +855,9 @@ func (m *Model) renderBoard(w, h int) string {
 		status := ""
 		switch {
 		case ev.kind == "delegate" && ev.doneAt.IsZero():
-			status = lipgloss.NewStyle().Foreground(waitingColor).Render(" pending")
+			status = lipgloss.NewStyle().Foreground(m.th.waiting).Render(" pending")
 		case ev.kind == "delegate":
-			status = lipgloss.NewStyle().Foreground(workingColor).Render(" ✓ " + ev.doneAt.Sub(ev.at).Round(time.Second).String())
+			status = lipgloss.NewStyle().Foreground(m.th.working).Render(" ✓ " + ev.doneAt.Sub(ev.at).Round(time.Second).String())
 		case ev.kind == "work-done" && ev.done:
 			kind = "work-done ✓"
 		}
@@ -850,7 +870,7 @@ func (m *Model) renderBoard(w, h int) string {
 			task += "  [" + filepath.Base(ev.file) + "]"
 		}
 		line := ev.at.Format("15:04:05") + "  " + id +
-			lipgloss.NewStyle().Foreground(accentColor).Render(kind) + " → " + ev.to + status + "  " +
+			lipgloss.NewStyle().Foreground(m.th.accent).Render(kind) + " → " + ev.to + status + "  " +
 			lipgloss.NewStyle().Faint(true).Render(truncate(task, w-50))
 		b.WriteString(line + "\n")
 	}
@@ -859,7 +879,7 @@ func (m *Model) renderBoard(w, h int) string {
 		return truncate(b.String(), w*h)
 	}
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).
+		Border(lipgloss.RoundedBorder()).BorderForeground(m.th.accent).
 		Width(w - 2).Height(h - 2).MaxHeight(h).
 		Render(b.String())
 }
@@ -929,18 +949,18 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 	if !chrome {
 		return lipgloss.NewStyle().Width(w).Height(h).MaxWidth(w).MaxHeight(h).Render(content)
 	}
-	border := dimColor
+	border := m.th.dim
 	switch {
 	case scrolled:
-		border = scrollColor
+		border = m.th.scroll
 	case focused:
-		border = accentColor
+		border = m.th.accent
 	case st[role].waiting:
-		border = waitingColor
+		border = m.th.waiting
 	}
 	nameStyle := lipgloss.NewStyle().Bold(true)
 	if focused {
-		nameStyle = nameStyle.Foreground(accentColor)
+		nameStyle = nameStyle.Foreground(m.th.accent)
 	}
 	header := lipgloss.NewStyle().MaxWidth(cw).Render(
 		lipgloss.NewStyle().Foreground(st[role].color).Render(st[role].dot) + " " +
@@ -960,14 +980,14 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		if e.gone {
 			continue
 		}
-		border := dimColor
+		border := m.th.dim
 		nameStyle := lipgloss.NewStyle().Bold(true)
 		if i == m.active {
-			border = accentColor
-			nameStyle = nameStyle.Foreground(accentColor)
+			border = m.th.accent
+			nameStyle = nameStyle.Foreground(m.th.accent)
 		}
 		if st[i].waiting {
-			border = waitingColor
+			border = m.th.waiting
 		}
 		inner := nameStyle.Render(fmt.Sprintf("%d %s", i+1, e.role.Name)) + "\n" +
 			lipgloss.NewStyle().Foreground(st[i].color).Render(st[i].dot) + " " +
@@ -1005,11 +1025,11 @@ func (m *Model) renderStats(st []roleState) string {
 	}
 	scroll := ""
 	if m.scrollOff > 0 {
-		scroll = lipgloss.NewStyle().Foreground(scrollColor).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
+		scroll = lipgloss.NewStyle().Foreground(m.th.scroll).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
 	}
 	gated := ""
 	if len(m.gates) > 0 {
-		gated = lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render(fmt.Sprintf(" · %d awaiting approval", len(m.gates)))
+		gated = lipgloss.NewStyle().Foreground(m.th.waiting).Bold(true).Render(fmt.Sprintf(" · %d awaiting approval", len(m.gates)))
 	}
 	txt := fmt.Sprintf("%d active · %d working · %d waiting · %s · %s wm · ctrl+g gateway · ctrl+o focus · ctrl+q quit",
 		active, working, waiting, m.gatewayLabel(), m.keys.Prefix)
@@ -1020,28 +1040,28 @@ func (m *Model) renderStats(st []roleState) string {
 func (m *Model) modeLabel() string {
 	var out string
 	if m.broadcast {
-		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[BCAST] ")
+		out += lipgloss.NewStyle().Foreground(m.th.waiting).Bold(true).Render("[BCAST] ")
 	}
 	if m.searching {
-		out += lipgloss.NewStyle().Foreground(scrollColor).Bold(true).Render("[SEARCH /" + m.searchBuf + "] ")
+		out += lipgloss.NewStyle().Foreground(m.th.scroll).Bold(true).Render("[SEARCH /" + m.searchBuf + "] ")
 	}
 	switch {
 	case m.tree != nil && m.tree.Resizing():
-		out += lipgloss.NewStyle().Foreground(waitingColor).Bold(true).Render("[RESIZE h/j/k/l] ")
+		out += lipgloss.NewStyle().Foreground(m.th.waiting).Bold(true).Render("[RESIZE h/j/k/l] ")
 	case m.prefixed:
-		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[PREFIX] ")
+		out += lipgloss.NewStyle().Foreground(m.th.accent).Bold(true).Render("[PREFIX] ")
 	case m.tree != nil && m.tree.Zoomed():
-		out += lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("[ZOOM] ")
+		out += lipgloss.NewStyle().Foreground(m.th.accent).Bold(true).Render("[ZOOM] ")
 	}
 	return out
 }
 
 func (m *Model) gatewayLabel() string {
 	if !m.sphragisOn {
-		return lipgloss.NewStyle().Foreground(dimColor).Render("sphragis off")
+		return lipgloss.NewStyle().Foreground(m.th.dim).Render("sphragis off")
 	}
 	if m.gatewayUp {
-		return lipgloss.NewStyle().Foreground(workingColor).Render("sphragis ●")
+		return lipgloss.NewStyle().Foreground(m.th.working).Render("sphragis ●")
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("sphragis down")
 }
@@ -1057,16 +1077,16 @@ type roleState struct {
 }
 
 // computeStatus classifies a pane: exited, waiting for input, working, or idle.
-func computeStatus(e *entry, now time.Time) roleState {
+func computeStatus(e *entry, now time.Time, th deckTheme) roleState {
 	switch {
 	case e.exited:
-		return roleState{dot: "○", color: dimColor, label: "exited", exited: true}
+		return roleState{dot: "○", color: th.dim, label: "exited", exited: true}
 	case needsInput(e):
-		return roleState{dot: "◆", color: waitingColor, label: "waiting for input", waiting: true}
+		return roleState{dot: "◆", color: th.waiting, label: "waiting for input", waiting: true}
 	case now.Sub(e.lastActive) < workingWindow:
-		return roleState{dot: "●", color: workingColor, label: "working", working: true}
+		return roleState{dot: "●", color: th.working, label: "working", working: true}
 	default:
-		return roleState{dot: "◦", color: idleColor, label: "idle " + humanizeSince(now.Sub(e.lastActive))}
+		return roleState{dot: "◦", color: th.idle, label: "idle " + humanizeSince(now.Sub(e.lastActive))}
 	}
 }
 

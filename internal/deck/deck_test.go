@@ -103,14 +103,29 @@ func TestTileContent(t *testing.T) {
 
 func TestComputeStatus(t *testing.T) {
 	now := time.Now()
-	if s := computeStatus(&entry{lastActive: now}, now); s.dot != "●" || s.label != "working" || !s.working {
+	th := themeFrom(config.Theme{})
+	if s := computeStatus(&entry{lastActive: now}, now, th); s.dot != "●" || s.label != "working" || !s.working {
 		t.Errorf("recent = %q/%q, want working", s.dot, s.label)
 	}
-	if s := computeStatus(&entry{lastActive: now.Add(-10 * time.Second)}, now); s.label != "idle 10s ago" {
+	if s := computeStatus(&entry{lastActive: now.Add(-10 * time.Second)}, now, th); s.label != "idle 10s ago" {
 		t.Errorf("stale label = %q", s.label)
 	}
-	if s := computeStatus(&entry{exited: true}, now); s.dot != "○" || s.label != "exited" || !s.exited {
+	if s := computeStatus(&entry{exited: true}, now, th); s.dot != "○" || s.label != "exited" || !s.exited {
 		t.Errorf("exited = %q/%q", s.dot, s.label)
+	}
+}
+
+func TestThemeFromOverrides(t *testing.T) {
+	th := themeFrom(config.Theme{})
+	if th.accent != "45" || th.working != "42" || th.waiting != "214" || th.scroll != "213" || th.idle != "244" || th.dim != "240" {
+		t.Errorf("defaults = %+v", th)
+	}
+	th = themeFrom(config.Theme{Accent: "#ff00ff", Dim: "236"})
+	if th.accent != "#ff00ff" || th.dim != "236" {
+		t.Errorf("overrides = %+v", th)
+	}
+	if th.working != "42" || th.waiting != "214" {
+		t.Errorf("unset keys changed: %+v", th)
 	}
 }
 

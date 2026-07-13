@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -144,6 +145,17 @@ type UI struct {
 	// notification hooks, run via sh -c when the deck wants a human; empty = bell only
 	OnGate  string `toml:"on_gate"`
 	OnInput string `toml:"on_input"`
+	Theme   Theme  `toml:"theme"`
+}
+
+// Theme overrides the deck's status colors; values are ANSI 0-255 or #rrggbb hex.
+type Theme struct {
+	Accent  string `toml:"accent"`
+	Working string `toml:"working"`
+	Waiting string `toml:"waiting"`
+	Scroll  string `toml:"scroll"`
+	Idle    string `toml:"idle"`
+	Dim     string `toml:"dim"`
 }
 
 // IsAutoFocus reports whether delegations and input prompts steal focus (default true).
@@ -237,6 +249,16 @@ func Default() Config {
 }
 
 // Load reads the config at path, or DefaultFile in cwd, falling back to Default when absent.
+// validColor accepts what lipgloss renders: an ANSI index 0-255 or #rrggbb hex.
+func validColor(v string) bool {
+	if len(v) == 7 && v[0] == '#' {
+		_, err := strconv.ParseUint(v[1:], 16, 32)
+		return err == nil
+	}
+	n, err := strconv.Atoi(v)
+	return err == nil && n >= 0 && n <= 255
+}
+
 func Load(path string) (Config, error) {
 	if path == "" {
 		if _, err := os.Stat(DefaultFile); err != nil {
@@ -270,6 +292,16 @@ func Load(path string) (Config, error) {
 	for _, r := range c.Roles {
 		if r.Restart != "" && !r.RestartOnFailure() {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
+		}
+	}
+	th := &c.UI.Theme
+	for _, e := range []struct {
+		name string
+		p    *string
+	}{{"accent", &th.Accent}, {"working", &th.Working}, {"waiting", &th.Waiting}, {"scroll", &th.Scroll}, {"idle", &th.Idle}, {"dim", &th.Dim}} {
+		if *e.p != "" && !validColor(*e.p) {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: [ui.theme] %s: invalid color %q (use ANSI 0-255 or #rrggbb); using the default", path, e.name, *e.p))
+			*e.p = ""
 		}
 	}
 	c.Path = path
