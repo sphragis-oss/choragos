@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -91,6 +92,7 @@ type entry struct {
 	role       config.Role
 	pane       *pane.Pane
 	exited     bool
+	gone       bool // tombstoned by a config reload; the index stays valid and is never reused
 	booted     bool
 	waiting    bool // last observed waiting-for-input state, for bell edge detection
 	gen        int  // bumped on restart; stale stream messages are dropped
@@ -513,6 +515,8 @@ func (m *Model) wmAction(key string) {
 		m.helpOn = true
 	case m.keys.RestartRole:
 		m.restartRole()
+	case m.keys.Reload:
+		m.reloadConfig()
 	case m.keys.Broadcast:
 		m.broadcast = !m.broadcast
 	case m.keys.TaskBoard:
@@ -595,7 +599,7 @@ func (m *Model) split(vert bool) {
 	m.syncFocus()
 }
 
-// nextHiddenRole picks the first role after the focused one that has no tile.
+// nextHiddenRole picks the first role after the focused one that has no tile; tombstoned roles are skipped.
 func (m *Model) nextHiddenRole() int {
 	vis := make(map[int]bool)
 	for _, r := range m.tree.VisibleRoles() {
@@ -603,7 +607,7 @@ func (m *Model) nextHiddenRole() int {
 	}
 	for off := 1; off <= len(m.panes); off++ {
 		i := (m.active + off) % len(m.panes)
-		if !vis[i] {
+		if !vis[i] && !m.panes[i].gone {
 			return i
 		}
 	}
@@ -657,6 +661,10 @@ func ensureGateway(cfg config.Sphragis) tea.Cmd {
 
 // dispatch routes a command to its pane: delegate to a worker, work-done to the orchestrator, via kernel-buffered PTY writes.
 func (m *Model) dispatch(cmd ipc.Command) {
+	if cmd.Cmd == "reload" {
+		m.reloadConfig() // config convergence, not orchestration: allowed even with the gateway down
+		return
+	}
 	if m.gatewayBlocked() {
 		m.log().Warn("dispatch refused: gateway down", "cmd", cmd.Cmd, "to", strings.Join(cmd.To, ","))
 		return // fail closed: no gateway, no orchestration
@@ -995,7 +1003,7 @@ func truncate(s string, max int) string {
 
 func (m *Model) findRole(name string) (*entry, int) {
 	for i, e := range m.panes {
-		if e.role.Name == name {
+		if e.role.Name == name && !e.gone {
 			return e, i
 		}
 	}
@@ -1063,6 +1071,7 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.ResizeMode, "resize mode (h/j/k/l, other key exits)"},
 		{k.Prefix + " " + k.ToggleSidebar, "toggle sidebar"},
 		{k.Prefix + " " + k.RestartRole, "restart focused role"},
+		{k.Prefix + " " + k.Reload, "reload config (add/remove roles)"},
 		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
 		{k.Prefix + " " + k.TaskBoard, "task board"},
 		{k.Prefix + " " + k.Search, "search scrollback"},
@@ -1259,6 +1268,9 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 func (m *Model) renderCards(width int, height int, st []roleState) string {
 	var cards []string
 	for i, e := range m.panes {
+		if e.gone {
+			continue
+		}
 		border := dimColor
 		nameStyle := lipgloss.NewStyle().Bold(true)
 		if i == m.active {
@@ -1526,7 +1538,7 @@ func (m *Model) restartRole() {
 
 // autoRestart respawns a role that exited non-zero when its config asks for it, capped so a broken command cannot crash-loop.
 func (m *Model) autoRestart(e *entry, idx int) {
-	if m.closed || !e.role.RestartOnFailure() {
+	if m.closed || e.gone || !e.role.RestartOnFailure() {
 		return
 	}
 	_ = e.pane.Close() // reap the child to capture its exit status
@@ -1562,6 +1574,180 @@ func (m *Model) respawn(e *entry, idx, cols, rows int) {
 	e.lastActive = time.Now()
 	m.log().Info("role restarted", "role", e.role.Name)
 	m.watchPane(e, idx)
+}
+
+// reloadConfig re-reads the config file and converges the roster on it: spawn added roles,
+// tombstone removed ones, respawn changed specs. The start role's process is never touched.
+func (m *Model) reloadConfig() {
+	if m.cfg.Path == "" {
+		m.log().Warn("reload refused: running on the built-in config (no file to reload)")
+		return
+	}
+	cfg, err := config.Load(m.cfg.Path)
+	if err != nil {
+		m.log().Error("reload failed", "err", err)
+		return
+	}
+	for _, w := range cfg.Warnings {
+		m.log().Warn("config", "warning", w)
+	}
+	startName := m.panes[m.startIdx()].role.Name
+	next := make(map[string]bool, len(cfg.Roles))
+	for _, r := range cfg.Roles {
+		next[r.Name] = true
+		if r.Start != (r.Name == startName) {
+			m.log().Warn("reload: start role reassignment ignored (restart the deck to apply)", "role", r.Name)
+		}
+	}
+
+	var added, removed, respawned []string
+	// retire roles the file dropped; removal is the user's explicit decision, in-flight or not
+	for i, e := range m.panes {
+		if e.gone || next[e.role.Name] {
+			continue
+		}
+		if e.role.Name == startName {
+			m.log().Warn("reload: refusing to remove the start role", "role", startName)
+			continue
+		}
+		m.retireRole(e, i)
+		removed = append(removed, e.role.Name)
+	}
+	// converge existing roles and spawn new ones, in file order
+	for _, r := range cfg.Roles {
+		e, i := m.findRole(r.Name)
+		switch {
+		case e == nil:
+			if _, err := exec.LookPath(r.Command); err != nil {
+				m.log().Error("reload: new role command not found", "role", r.Name, "command", r.Command)
+				continue
+			}
+			m.spawnRole(r)
+			added = append(added, r.Name)
+		case r.Name == startName:
+			if specChanged(e.role, r) {
+				m.log().Warn("reload: start role spec changes ignored (restart the deck to apply)", "role", startName)
+			}
+			e.role = softMerge(e.role, r) // prompt/approve/restart changes still land
+		case !specChanged(e.role, r):
+			r.Start = false
+			e.role = r // no process identity change; takes effect on the next task
+		case m.tasksInFlight(r.Name):
+			m.log().Warn("reload: respawn skipped, tasks in flight (rerun once resolved)", "role", r.Name)
+		default:
+			if _, err := exec.LookPath(r.Command); err != nil {
+				m.log().Error("reload: changed command not found, keeping the old process", "role", r.Name, "command", r.Command)
+				continue
+			}
+			r.Start = false
+			e.role = r
+			_ = e.pane.Close()
+			e.restarts = 0
+			cw, ch := e.pane.Size()
+			m.respawn(e, i, cw, ch)
+			respawned = append(respawned, r.Name)
+		}
+	}
+	// pending gates for tombstoned roles can never be delivered; drop them loudly
+	kept := m.gates[:0]
+	for _, g := range m.gates {
+		if e, _ := m.findRole(g.to); e != nil {
+			kept = append(kept, g)
+		} else {
+			m.log().Warn("reload: dropped pending gate for removed role", "to", g.to)
+		}
+	}
+	m.gates = kept
+	m.cfg.Roles = cfg.Roles // future orchestrator boots see the new roster
+	if len(added)+len(removed)+len(respawned) == 0 {
+		m.log().Info("reload: no role changes")
+		return
+	}
+	m.log().Info("reload applied",
+		"added", strings.Join(added, ","), "removed", strings.Join(removed, ","), "respawned", strings.Join(respawned, ","))
+	// the orchestrator's boot context listed the old team; tell it the roster moved
+	var parts []string
+	for _, n := range added {
+		parts = append(parts, "+"+n)
+	}
+	for _, n := range removed {
+		parts = append(parts, "-"+n)
+	}
+	if len(parts) > 0 {
+		if s := m.panes[m.startIdx()]; !s.exited {
+			injectLine(s, "[choragos] Team changed: "+strings.Join(parts, ", ")+". Delegate accordingly.")
+		}
+	}
+	m.resizePanes()
+}
+
+// retireRole tombstones a reload-removed role: graceful stop off the UI loop, its tile closed, its index kept.
+func (m *Model) retireRole(e *entry, idx int) {
+	e.gone = true
+	e.exited = true
+	m.log().Info("role removed", "role", e.role.Name)
+	p := e.pane
+	go func() {
+		p.Terminate()
+		p.Shutdown(time.Now().Add(gracefulTimeout))
+	}()
+	if m.tree.FocusRole(idx) {
+		if !m.tree.Close() {
+			m.tree.Focus(m.startIdx()) // last tile: retarget to the start role
+		}
+		m.syncFocus()
+	}
+}
+
+// spawnRole appends a reload-added role and watches it; boot injection follows on the next ticks.
+func (m *Model) spawnRole(r config.Role) {
+	r.Start = false
+	cw, ch := m.focusedTileContent()
+	p, err := startRole(r, cw, ch, roleEnv(r, m.socket, m.baseURL))
+	if err != nil {
+		m.log().Error("reload: role start failed", "role", r.Name, "err", err)
+		return
+	}
+	e := &entry{role: r, pane: p}
+	e.startedAt = time.Now()
+	e.lastActive = time.Now()
+	m.panes = append(m.panes, e)
+	m.watchPane(e, len(m.panes)-1)
+	m.log().Info("role added", "role", r.Name)
+}
+
+// specChanged reports whether a role change needs a process restart (command line or env identity).
+func specChanged(a, b config.Role) bool {
+	return a.Command != b.Command || a.Model != b.Model ||
+		!slices.Equal(a.Args, b.Args) ||
+		!slices.Equal(a.EnvAllow, b.EnvAllow) ||
+		!slices.Equal(a.EnvDeny, b.EnvDeny)
+}
+
+// softMerge keeps old's process identity and takes upd's restart-free fields.
+func softMerge(old, upd config.Role) config.Role {
+	old.Prompt = upd.Prompt
+	old.Approve = upd.Approve
+	old.Restart = upd.Restart
+	old.RestartRetries = upd.RestartRetries
+	old.InputPrompts = upd.InputPrompts
+	old.ChromeMarkers = upd.ChromeMarkers
+	return old
+}
+
+// tasksInFlight reports whether the role has a pending gate or an unresolved delegation.
+func (m *Model) tasksInFlight(name string) bool {
+	for _, g := range m.gates {
+		if g.to == name {
+			return true
+		}
+	}
+	for _, ev := range m.board {
+		if ev.kind == "delegate" && ev.to == name && ev.doneAt.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 // focusedTileContent returns the focused tile's pane content dims.

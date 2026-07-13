@@ -158,7 +158,7 @@ func TestKeysDefaultsMatchHerdr(t *testing.T) {
 		Prefix: "ctrl+b", SplitVertical: "v", SplitHorizontal: "-", ClosePane: "x",
 		FocusLeft: "h", FocusDown: "j", FocusUp: "k", FocusRight: "l",
 		CycleNext: "tab", CyclePrev: "shift+tab", Zoom: "z", ResizeMode: "r", ToggleSidebar: "b",
-		Help: "?", RestartRole: "R", Broadcast: "a", TaskBoard: "t", Search: "/",
+		Help: "?", RestartRole: "R", Broadcast: "a", TaskBoard: "t", Search: "/", Reload: "C",
 	}
 	if k != want {
 		t.Fatalf("default keys = %+v, want %+v", k, want)
@@ -203,6 +203,9 @@ on_input = "notify-input"
 	}
 	if c.UI.OnGate != "notify-gate" || c.UI.OnInput != "notify-input" {
 		t.Fatalf("notification hooks not loaded: %+v", c.UI)
+	}
+	if c.Path != f {
+		t.Fatalf("Path = %q, want %q", c.Path, f)
 	}
 	if len(c.Warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", c.Warnings)

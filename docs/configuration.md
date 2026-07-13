@@ -95,6 +95,7 @@ zoom = "z"
 resize_mode = "r"
 toggle_sidebar = "b"
 restart_role = "R"
+reload = "C"
 broadcast = "a"
 task_board = "t"
 search = "/"
@@ -124,3 +125,25 @@ otherwise ignored. macOS example with
 on_gate  = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE: delegation awaiting approval\""
 on_input = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE is waiting for input\""
 ```
+
+## Reloading the config at runtime
+
+Edit the config file, then `choragos reload` (or `prefix+C` in the deck):
+the deck re-reads the file it was started with and converges the team on
+it by role name. Added roles spawn and get their boot brief; removed roles
+are stopped gracefully and disappear from the sidebar and delegation
+targets; a changed `command`/`args`/`model`/`env_*` respawns that role
+with the new spec; changed `prompt_template`/`approve`/`restart*` apply
+without a restart, on the next task.
+
+Guardrails, all reported in `events.log`:
+
+- The start role's process is never touched: its spec changes and removal
+  are ignored until a deck restart (prompt-only changes still land).
+- A role with a pending approval gate or an unresolved delegation is not
+  respawned; rerun the reload once its work resolves. Removing such a
+  role outright is honored (that is an explicit decision).
+- Running on the built-in team (no config file) there is nothing to
+  re-read, so reload is refused.
+- `[keys]`, `[ui]`, and `[sphragis]` changes need a deck restart; only
+  `[[roles]]` converges live.

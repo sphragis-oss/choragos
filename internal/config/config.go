@@ -58,6 +58,8 @@ type Config struct {
 	Pricing map[string]Price `toml:"pricing"`
 	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
 	Warnings []string `toml:"-"`
+	// Path is the file this config was loaded from; empty for the built-in default (not reloadable).
+	Path string `toml:"-"`
 }
 
 // Price is a model's USD cost per million tokens, by direction.
@@ -88,6 +90,7 @@ type Keys struct {
 	Broadcast       string `toml:"broadcast"`
 	TaskBoard       string `toml:"task_board"`
 	Search          string `toml:"search"`
+	Reload          string `toml:"reload"`
 }
 
 // Defaulted fills empty bindings with the herdr default keymap and normalizes herdr syntax.
@@ -126,6 +129,7 @@ func (k Keys) Defaulted() Keys {
 	set(&k.Broadcast, "a")
 	set(&k.TaskBoard, "t")
 	set(&k.Search, "/")
+	set(&k.Reload, "C")
 	return k
 }
 
@@ -266,6 +270,7 @@ func Load(path string) (Config, error) {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
 		}
 	}
+	c.Path = path
 	c.Sphragis.applyDefaults()
 	c.Keys = c.Keys.Defaulted()
 	return c, nil
