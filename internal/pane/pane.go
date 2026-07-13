@@ -95,6 +95,12 @@ func (r *ring) Write(p []byte) {
 	}
 }
 
+func (r *ring) Reset() {
+	r.mu.Lock()
+	r.head, r.full = 0, false
+	r.mu.Unlock()
+}
+
 func (r *ring) Snapshot() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -155,6 +161,15 @@ func (p *Pane) Feed(chunk []byte) {
 	_, _ = p.term.Write(chunk)
 	p.streamMu.Lock()
 	p.hist.Write(chunk)
+	p.seq.Add(1)
+	p.streamMu.Unlock()
+}
+
+// Reset clears a remote pane's screen and history before a respawned role's stream starts.
+func (p *Pane) Reset() {
+	_, _ = p.term.Write([]byte("\x1b[0m\x1b[2J\x1b[H"))
+	p.streamMu.Lock()
+	p.hist.Reset()
 	p.seq.Add(1)
 	p.streamMu.Unlock()
 }

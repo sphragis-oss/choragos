@@ -299,6 +299,29 @@ func TestRemotePaneFeedRenderInput(t *testing.T) {
 	}
 }
 
+func TestRemotePaneReset(t *testing.T) {
+	p := pane.Remote(20, 4, func([]byte) error { return nil }, nil)
+	p.Feed([]byte("stale boot output"))
+	seq0 := p.Seq()
+	p.Reset()
+	if p.Seq() == seq0 {
+		t.Fatal("Reset did not bump Seq")
+	}
+	if got := p.Render(); strings.Contains(got, "stale") {
+		t.Fatalf("screen not cleared: %q", got)
+	}
+	if b, _ := p.RingBytes(); len(b) != 0 {
+		t.Fatalf("ring not cleared: %q", b)
+	}
+	p.Feed([]byte("fresh"))
+	if got := p.Render(); !strings.Contains(got, "fresh") || strings.Contains(got, "stale") {
+		t.Fatalf("render after reset = %q", got)
+	}
+	if b, _ := p.RingBytes(); string(b) != "fresh" {
+		t.Fatalf("ring after reset = %q", b)
+	}
+}
+
 func TestTeeAndRingBytesSequence(t *testing.T) {
 	cmd := exec.Command("sh", "-c", "printf one; sleep 0.2; printf two; sleep 0.5")
 	p, err := pane.Start(cmd, 40, 4)

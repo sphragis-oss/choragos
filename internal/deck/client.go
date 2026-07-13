@@ -153,6 +153,10 @@ func clientReader(m *Model, wc *wireConn) {
 				m.prog.Send(frameMsg{idx: idx, gen: m.panes[idx].gen})
 			}
 		case kindEvent:
+			// reset must land before the frames that follow it, so apply it here in wire order
+			if ev.Kind == "reset" && ev.Idx >= 0 && ev.Idx < len(m.panes) {
+				m.panes[ev.Idx].pane.Reset()
+			}
 			m.prog.Send(remoteEvMsg{ev: ev})
 		}
 	}

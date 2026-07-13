@@ -19,6 +19,7 @@ import (
 // outputMsg carries one teed pane chunk into the server loop for wire forwarding.
 type outputMsg struct {
 	idx   int
+	p     *pane.Pane // identifies the source; chunks from a replaced pane are dropped
 	chunk []byte
 	seq   uint64
 }
@@ -43,7 +44,7 @@ type server struct {
 	client  *wireConn
 	snap    map[int]uint64 // per-role ring sequence at attach; older chunks are already replayed
 	layout  []byte         // client wm checkpoint, restored on the next attach
-	teed    map[*pane.Pane]bool
+	wired   map[int]*pane.Pane
 }
 
 // RunServer runs the session core headless until shutdown; `choragos attach` brings the UI.
@@ -51,7 +52,7 @@ func RunServer(cfg config.Config, version string) error {
 	s := &session{cfg: cfg}
 	msgs := make(chan any, 1024)
 	s.notify = func(v any) { msgs <- v }
-	srv := &server{sess: s, msgs: msgs, version: version, teed: map[*pane.Pane]bool{}}
+	srv := &server{sess: s, msgs: msgs, version: version, wired: map[int]*pane.Pane{}}
 	s.focusFn = func(i int) { srv.sendEvent(wireEvent{Kind: "focus", Idx: i}) }
 	s.bellFn = func() { srv.sendEvent(wireEvent{Kind: "bell"}) }
 	if err := s.start(80, 24); err != nil {
@@ -113,7 +114,7 @@ func (srv *server) handle(v any) bool {
 			s.panes[msg.idx].lastActive = time.Now()
 		}
 	case outputMsg:
-		if srv.client != nil && msg.seq > srv.snap[msg.idx] {
+		if srv.client != nil && srv.wired[msg.idx] == msg.p && msg.seq > srv.snap[msg.idx] {
 			if err := srv.client.WriteOutput(msg.idx, msg.chunk); err != nil {
 				srv.dropClient()
 			}
@@ -321,14 +322,32 @@ func (srv *server) syncClient() {
 // ensureTees keeps every live pane teed into the loop; respawns swap the pane object.
 func (srv *server) ensureTees() {
 	for i, e := range srv.sess.panes {
-		if e.gone || srv.teed[e.pane] {
+		if e.gone || srv.wired[i] == e.pane {
 			continue
 		}
-		idx := i
-		e.pane.SetTee(func(chunk []byte, seq uint64) {
+		idx, p, swapped := i, e.pane, srv.wired[i] != nil
+		p.SetTee(func(chunk []byte, seq uint64) {
 			cp := append([]byte(nil), chunk...) // the stream loop reuses its buffer
-			srv.msgs <- outputMsg{idx: idx, chunk: cp, seq: seq}
+			srv.msgs <- outputMsg{idx: idx, p: p, chunk: cp, seq: seq}
 		})
-		srv.teed[e.pane] = true
+		srv.wired[i] = p
+		if swapped {
+			srv.resetClientPane(idx, p)
+		}
+	}
+}
+
+// resetClientPane tells the attached client the pane was replaced, replaying its fresh ring.
+func (srv *server) resetClientPane(idx int, p *pane.Pane) {
+	if srv.client == nil {
+		return
+	}
+	srv.sendEvent(wireEvent{Kind: "reset", Idx: idx})
+	b, seq := p.RingBytes()
+	srv.snap[idx] = seq
+	if len(b) > 0 && srv.client != nil {
+		if err := srv.client.WriteOutput(idx, b); err != nil {
+			srv.dropClient()
+		}
 	}
 }
