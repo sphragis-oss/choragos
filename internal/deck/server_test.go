@@ -206,7 +206,7 @@ func TestServerAttachLifecycle(t *testing.T) {
 	if err := wc.WriteEvent(wireEvent{Kind: "detach"}); err != nil {
 		t.Fatal(err)
 	}
-	_ = wc.Close()
+	// keep wc open: closing now can fail a server write and drop the client before layout lands
 	var w3 wireEvent
 	var wc3 *wireConn
 	if !waitFor(func() bool {
@@ -219,6 +219,7 @@ func TestServerAttachLifecycle(t *testing.T) {
 	}) {
 		t.Fatalf("re-attach failed: %+v", w3)
 	}
+	_ = wc.Close()
 	if string(w3.Layout) != string(layout) {
 		t.Fatalf("layout = %s, want %s", w3.Layout, layout)
 	}

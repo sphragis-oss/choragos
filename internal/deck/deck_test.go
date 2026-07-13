@@ -943,6 +943,14 @@ func TestScrollbackSearch(t *testing.T) {
 	if !waitFor(func() bool { return strings.Contains(m.panes[0].pane.Render(), "pad-c-39") }) {
 		t.Fatal("pane never echoed")
 	}
+	// cat's copies still stream after the echo; settle so offsets cannot shift mid-search
+	if !waitFor(func() bool {
+		s := m.panes[0].pane.Seq()
+		time.Sleep(50 * time.Millisecond)
+		return m.panes[0].pane.Seq() == s
+	}) {
+		t.Fatal("pane never settled")
+	}
 	m.Update(key("ctrl+b"))
 	m.Update(key("/"))
 	if !m.searching {
