@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sphragis-oss/choragos/internal/checkpoint"
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/pane"
@@ -114,10 +115,11 @@ type session struct {
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
 	gateway    *sphragis.Supervisor
-	sphragisOn bool   // gateway enforcement, toggled live with ctrl+g
-	gatewayUp  bool   // last known gateway health (refreshed off the UI thread)
-	closed     bool   // closeAll ran; makes cleanup idempotent
-	bellFn     func() // rings the terminal bell; nil disables ([ui] bell)
+	sphragisOn bool              // gateway enforcement, toggled live with ctrl+g
+	gatewayUp  bool              // last known gateway health (refreshed off the UI thread)
+	closed     bool              // closeAll ran; makes cleanup idempotent
+	ckpt       *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
+	bellFn     func()            // rings the terminal bell; nil disables ([ui] bell)
 	events     *slog.Logger
 	eventsC    io.Closer
 	notify     func(any) // core -> UI message pump; nil-safe via send
@@ -206,6 +208,7 @@ func (s *session) start(cw, ch int) error {
 	for _, w := range s.cfg.Warnings {
 		s.log().Warn("config", "warning", w)
 	}
+	s.initCheckpoints()
 	s.sphragisOn = s.cfg.Sphragis.IsEnabled()
 	s.baseURL = ""
 	if s.sphragisOn {
@@ -287,6 +290,39 @@ func (s *session) dispatch(cmd ipc.Command) {
 	}
 }
 
+// initCheckpoints wires the snapshot store when enabled and the directory is a git repository.
+func (s *session) initCheckpoints() {
+	if !s.cfg.Checkpoints.IsEnabled() {
+		return
+	}
+	st := checkpoint.New(".")
+	if ok, reason := st.Active(); !ok {
+		s.log().Warn("checkpoints disabled", "reason", reason)
+		return
+	}
+	s.ckpt = st
+	if n, err := st.Prune(s.cfg.Checkpoints.KeepCount()); err != nil {
+		s.log().Warn("checkpoint prune failed", "err", err)
+	} else if n > 0 {
+		s.log().Info("checkpoints pruned", "removed", n)
+	}
+}
+
+// snapshotTask checkpoints the workspace before a task reaches its worker; failure warns, never blocks.
+func (s *session) snapshotTask(id, role, label string) {
+	if s.ckpt == nil {
+		return
+	}
+	t0 := time.Now()
+	name := fmt.Sprintf("%d-%s", t0.Unix(), id)
+	ref, err := s.ckpt.Snapshot(name, id+" -> "+role+": "+label, "head: "+s.ckpt.Head())
+	if err != nil {
+		s.log().Warn("checkpoint failed", "task", id, "err", err)
+		return
+	}
+	s.log().Info("checkpoint", "task", id, "ref", ref, "took", time.Since(t0).Round(time.Millisecond))
+}
+
 // deliverDelegate hands an (approved) delegation to a worker: task file, board entry, PTY injection.
 func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) {
 	s.taskSeq++
@@ -304,6 +340,7 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) {
 		"Read "+filepath.Join(contextDir, file)+" for your task.")
 	s.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
+	s.snapshotTask(id, e.role.Name, label)
 	injectLine(e, line)
 	s.focus(i)
 }

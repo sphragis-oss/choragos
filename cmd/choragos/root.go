@@ -42,6 +42,8 @@ func rootCmd() *cobra.Command {
 		killCmd(),
 		initCmd(),
 		doctorCmd(),
+		checkpointsCmd(),
+		rollbackCmd(),
 		delegateCmd(),
 		workDoneCmd(),
 		reloadCmd(),

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,6 +248,33 @@ func TestDispatchDelegateInjects(t *testing.T) {
 	}
 	if m.active != 0 {
 		t.Errorf("active = %d, want orchestrator (0)", m.active)
+	}
+}
+
+func TestDelegateCheckpointsWorkspace(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	panes := startCatPanes(t, "orchestrator", "coder") // note: chdirs into its own temp dir
+	if out, err := exec.Command("git", "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if err := os.WriteFile("work.txt", []byte("precious"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(panes)
+	m.initCheckpoints()
+	if m.ckpt == nil {
+		t.Fatal("checkpoints inactive in a git repo")
+	}
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T1 do work"})
+	out, err := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/choragos/checkpoints").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := strings.TrimSpace(string(out))
+	if !strings.HasSuffix(refs, "-T1") || strings.Contains(refs, "\n") {
+		t.Fatalf("want exactly one T1 checkpoint ref, got %q", refs)
 	}
 }
 

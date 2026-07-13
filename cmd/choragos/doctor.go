@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sphragis-oss/choragos/internal/checkpoint"
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
@@ -98,6 +99,14 @@ func runDoctor(out io.Writer, cfgPath string) int {
 		}
 	} else {
 		report("WARN", "sphragis", "gateway disabled; agent traffic is not routed or audited")
+	}
+
+	if !cfg.Checkpoints.IsEnabled() {
+		report("WARN", "checkpoints", "disabled in config; delegations will not be snapshotted")
+	} else if ok, reason := checkpoint.New(".").Active(); ok {
+		report("OK", "checkpoints", "git repository; delegations snapshot the workspace")
+	} else {
+		report("WARN", "checkpoints", reason+"; delegations will not be snapshotted")
 	}
 	return fails
 }

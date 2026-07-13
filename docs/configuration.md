@@ -149,6 +149,34 @@ on_gate  = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE: delegat
 on_input = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE is waiting for input\""
 ```
 
+## `[checkpoints]`
+
+Per-delegation workspace snapshots (git repositories only; see
+[design-checkpoints.md](design-checkpoints.md)). Every delegation
+snapshots tracked and untracked files (gitignore respected) as a
+parentless commit under `refs/choragos/checkpoints/<epoch>-<task-id>`,
+before the task reaches the worker. The user's index, HEAD, and
+history are never touched. In a non-git directory the deck warns at
+startup and runs unprotected.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `true` | Snapshot the workspace on every delegation |
+| `keep` | int | `20` | Newest checkpoints retained; older ones are pruned at session start |
+
+Recovery is post-hoc, from the CLI (no session needed):
+
+```bash
+choragos checkpoints              # list: task id, age, target role
+choragos rollback T3              # restore files to the state before T3 ran
+choragos checkpoints prune        # apply the retention policy now
+```
+
+`rollback` restores files (deleting ones the task created) but never
+moves HEAD, branches, the index, the stash, or commits a worker made;
+ignored files are never touched. It checkpoints the current state
+first, so `choragos rollback pre-rollback-T3` undoes it.
+
 ## Reloading the config at runtime
 
 Edit the config file, then `choragos reload` (or `prefix+C` in the deck):
