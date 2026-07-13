@@ -1,0 +1,24 @@
+# Auto-detected Go team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Go project team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested change in idiomatic Go (effective Go, explicit error handling, table-driven tests). Run gofmt, go vet, and go test ./... before reporting done; a red test is the bug to fix, not to skip."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior Go engineer: correctness, error handling, goroutine and channel safety, API stability, and test coverage. Run go vet and the race detector where it matters. Report findings only; never modify code."

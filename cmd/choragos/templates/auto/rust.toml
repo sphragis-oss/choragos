@@ -1,0 +1,24 @@
+# Auto-detected Rust team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Rust project team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested change in idiomatic Rust: prefer ownership over cloning, avoid unwrap outside tests, keep unsafe out unless the task demands it. Run cargo fmt, cargo clippy, and cargo test before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior Rust engineer: correctness, lifetime and borrow issues, error handling (Result vs panic), unsafe blocks, and test coverage. Report findings only; never modify code."
