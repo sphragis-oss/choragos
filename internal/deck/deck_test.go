@@ -263,8 +263,8 @@ func TestDelegateCheckpointsWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := newTestModel(panes)
-	m.session.initCheckpoints()
-	if m.session.ckpt == nil {
+	m.initCheckpoints()
+	if m.ckpt == nil {
 		t.Fatal("checkpoints inactive in a git repo")
 	}
 	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T1 do work"})

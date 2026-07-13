@@ -79,7 +79,7 @@ func (s *Store) withIndex(fn func(env []string) error) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(tmp, "index"))
 	return fn(env)
 }
