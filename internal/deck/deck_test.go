@@ -1242,6 +1242,172 @@ func TestOnInputHookFiresOncePerEdge(t *testing.T) {
 	}
 }
 
+// reloadFixture starts a deck from a real config file so reloadConfig can re-read it.
+func reloadFixture(t *testing.T, body string) (*Model, string) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	path := filepath.Join(".", "team.toml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	panes, err := startPanes(cfg, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, e := range panes {
+			_ = e.pane.Close()
+		}
+	})
+	for _, e := range panes {
+		go func(p *pane.Pane) { _ = p.Stream(nil) }(e.pane)
+	}
+	m := newTestModel(panes)
+	m.cfg = cfg
+	return m, path
+}
+
+const reloadBase = `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+
+[[roles]]
+name = "coder"
+command = "cat"
+`
+
+func TestReloadAddsAndRemovesRoles(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase)
+	next := `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+
+[[roles]]
+name = "reviewer"
+command = "cat"
+`
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.reloadConfig()
+
+	if len(m.panes) != 3 {
+		t.Fatalf("panes = %d, want 3 (tombstones are kept)", len(m.panes))
+	}
+	if e, _ := m.findRole("coder"); e != nil {
+		t.Fatal("removed role still resolvable")
+	}
+	if !m.panes[1].gone || !m.panes[1].exited {
+		t.Fatalf("coder not tombstoned: gone=%v exited=%v", m.panes[1].gone, m.panes[1].exited)
+	}
+	e, i := m.findRole("reviewer")
+	if e == nil || i != 2 {
+		t.Fatalf("added role not appended: %v idx=%d", e, i)
+	}
+	// the new role is a live delegation target
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"reviewer"}, Task: "NEW-1"})
+	if !waitFor(func() bool { return strings.Contains(e.pane.Render(), "worker-task-reviewer.md") }) {
+		t.Fatal("delegation to the added role not injected")
+	}
+	// the tombstone is never offered by split: auto-focus moved to reviewer, so orchestrator is the hidden one
+	if got := m.nextHiddenRole(); got != 0 {
+		t.Fatalf("nextHiddenRole = %d, want 0 (never the tombstone)", got)
+	}
+	// the orchestrator hears about the roster change
+	if !waitFor(func() bool { return strings.Contains(m.panes[0].pane.Render(), "Team changed") }) {
+		t.Fatal("roster notice not injected into the orchestrator")
+	}
+}
+
+func TestReloadRespawnsChangedSpec(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase)
+	next := strings.Replace(reloadBase, "name = \"coder\"\ncommand = \"cat\"",
+		"name = \"coder\"\ncommand = \"sh\"\nargs = [\"-c\", \"printf coder-respawned; exec cat\"]", 1)
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gen := m.panes[1].gen
+	m.reloadConfig()
+	if len(m.panes) != 2 {
+		t.Fatalf("panes = %d, want 2", len(m.panes))
+	}
+	if m.panes[1].gen != gen+1 {
+		t.Fatalf("gen = %d, want %d (respawn)", m.panes[1].gen, gen+1)
+	}
+	if !waitFor(func() bool { return strings.Contains(m.panes[1].pane.Render(), "coder-respawned") }) {
+		t.Fatal("respawned process not running the new command")
+	}
+}
+
+func TestReloadSoftChangeKeepsProcess(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase)
+	next := reloadBase + "\n" // same specs, coder gains a gate and a prompt
+	next = strings.Replace(next, "name = \"coder\"\ncommand = \"cat\"",
+		"name = \"coder\"\ncommand = \"cat\"\napprove = true\nprompt_template = \"new brief\"", 1)
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gen := m.panes[1].gen
+	m.reloadConfig()
+	if m.panes[1].gen != gen {
+		t.Fatal("soft field change restarted the process")
+	}
+	if !m.panes[1].role.Approve || m.panes[1].role.Prompt != "new brief" {
+		t.Fatalf("soft fields not applied: %+v", m.panes[1].role)
+	}
+	// the new gate is live
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-NOW"})
+	if len(m.gates) != 1 {
+		t.Fatalf("gates = %d, want 1 after approve turned on", len(m.gates))
+	}
+}
+
+func TestReloadProtectsStartRoleAndInFlight(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase)
+	// an unresolved delegation to coder blocks its respawn
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "INFLIGHT-1"})
+	next := `[[roles]]
+name = "orchestrator"
+command = "sh"
+args = ["-c", "exec cat"]
+start = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+args = ["-c", "exec cat"]
+`
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	genO, genC := m.panes[0].gen, m.panes[1].gen
+	m.reloadConfig()
+	if m.panes[0].gen != genO {
+		t.Fatal("start role was respawned by reload")
+	}
+	if m.panes[0].role.Command != "cat" {
+		t.Fatalf("start role spec replaced: %q", m.panes[0].role.Command)
+	}
+	if m.panes[1].gen != genC {
+		t.Fatal("in-flight role was respawned by reload")
+	}
+}
+
+func TestReloadRefusedWithoutConfigFile(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	m.cfg.Path = ""
+	m.reloadConfig() // must not panic or mutate
+	if len(m.panes) != 1 {
+		t.Fatalf("panes = %d, want 1", len(m.panes))
+	}
+}
+
 func TestDelegateWithoutApproveIsImmediate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	panes, err := startPanes(config.Config{Roles: []config.Role{

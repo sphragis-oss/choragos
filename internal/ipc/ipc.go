@@ -29,7 +29,7 @@ const EnvSocket = "CHORAGOS_SOCK"
 
 // Command is one control message.
 type Command struct {
-	Cmd    string   `json:"cmd"` // "delegate" or "work-done"
+	Cmd    string   `json:"cmd"` // "delegate", "work-done", or "reload"
 	To     []string `json:"to,omitempty"`
 	Task   string   `json:"task,omitempty"`
 	Brief  string   `json:"brief,omitempty"`  // absolute path to a delegation brief file

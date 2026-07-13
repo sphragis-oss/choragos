@@ -41,7 +41,7 @@ happens asynchronously in the UI loop.
 
 | Field | Type | Used by | Meaning |
 |-------|------|---------|---------|
-| `cmd` | string | both | `"delegate"` or `"work-done"` |
+| `cmd` | string | all | `"delegate"`, `"work-done"`, or `"reload"` |
 | `to` | string array | delegate | Target role names; one injection per role |
 | `task` | string | both | Task text (delegate) or one-line summary (work-done) |
 | `brief` | string | delegate | Absolute path to a brief file holding the full task |
@@ -52,6 +52,12 @@ happens asynchronously in the UI loop.
 The CLI verbs validate `brief` / `report` (non-empty regular file) and
 absolutize them before sending, so they resolve from any working directory.
 Unknown fields are ignored; new fields are always additive.
+
+`reload` carries no other fields: it asks the deck to re-read its config
+file and converge the team on it (see
+[configuration.md](configuration.md#reloading-the-config-at-runtime)).
+It is accepted even while the gateway is down, because it changes the
+team, not the work.
 
 ## What the deck does with a delegate
 
