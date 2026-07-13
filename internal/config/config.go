@@ -91,6 +91,7 @@ type Keys struct {
 	TaskBoard       string `toml:"task_board"`
 	Search          string `toml:"search"`
 	Reload          string `toml:"reload"`
+	Detach          string `toml:"detach"`
 }
 
 // Defaulted fills empty bindings with the herdr default keymap and normalizes herdr syntax.
@@ -130,6 +131,7 @@ func (k Keys) Defaulted() Keys {
 	set(&k.TaskBoard, "t")
 	set(&k.Search, "/")
 	set(&k.Reload, "C")
+	set(&k.Detach, "d")
 	return k
 }
 

@@ -113,6 +113,8 @@ Choragos will start the agents, ensure Sphragis is running, and route all traffi
 
 The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`), zoom (`z`), live resize (`r`), restart a role (`R`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
 
+Sessions detach like tmux does: `choragos serve --detach` runs the crew headless, `choragos attach` brings the TUI back with screens, tasks, gates, and layout restored, and `prefix+d` leaves the agents running when you go. `choragos ls` and `choragos kill` manage sessions across projects.
+
 ### Documentation
 
 - [Keybindings](docs/keybindings.md) - the full keymap and window-manager modes
@@ -120,7 +122,7 @@ The deck is a tiling window manager over the role panes, driven tmux-style behin
 - [Building your own team](docs/teams.md) - roles, per-role models, briefs, and a worked pipeline example
 - [Control protocol](docs/protocol.md) - the delegate/work-done wire contract for integrators
 - [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
-- [Long-running sessions](docs/long-running-sessions.md) - detach/attach with tmux or zellij
+- [Long-running sessions](docs/long-running-sessions.md) - native detach/attach and session management
 - [Verifying releases](SECURITY.md#verifying-releases) - cosign signatures, checksums, provenance
 
 ## Configuration & Roles

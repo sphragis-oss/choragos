@@ -120,6 +120,8 @@ type histCache struct {
 }
 
 // Pane is one agent process bound to a PTY and a virtual-terminal emulator.
+// A remote pane (see Remote) has no process: cmd and ptmx are nil, the screen
+// is fed from a byte stream, and input/resize forward through callbacks.
 type Pane struct {
 	cmd       *exec.Cmd
 	ptmx      *os.File
@@ -132,6 +134,44 @@ type Pane struct {
 	closeOnce sync.Once
 	seq       atomic.Uint64 // bumped on every content-affecting change; render-cache key
 	exitCode  atomic.Int32  // child exit status once reaped; -1 until then and for signal deaths
+	// streamMu makes (ring write, seq bump, tee) atomic against RingBytes, so an
+	// attach snapshot plus seq-filtered live chunks never duplicates or drops bytes.
+	streamMu sync.Mutex
+	tee      func(chunk []byte, seq uint64)
+	sendFn   func([]byte) error // remote pane: forwards Input over the wire
+	resizeFn func(cols, rows int)
+}
+
+// Remote builds a process-less pane view: Feed drives the screen, Input forwards through send.
+func Remote(cols, rows int, send func([]byte) error, resize func(cols, rows int)) *Pane {
+	term := vt10x.New(vt10x.WithWriter(io.Discard), vt10x.WithSize(cols, rows))
+	p := &Pane{term: term, hist: newRing(ringCap), done: make(chan struct{}), sendFn: send, resizeFn: resize}
+	p.exitCode.Store(-1)
+	return p
+}
+
+// Feed applies remote PTY bytes to the screen and history, like Stream does locally.
+func (p *Pane) Feed(chunk []byte) {
+	_, _ = p.term.Write(chunk)
+	p.streamMu.Lock()
+	p.hist.Write(chunk)
+	p.seq.Add(1)
+	p.streamMu.Unlock()
+}
+
+// SetTee registers a sink receiving every output chunk with its sequence number, for wire forwarding.
+func (p *Pane) SetTee(fn func(chunk []byte, seq uint64)) {
+	p.streamMu.Lock()
+	p.tee = fn
+	p.streamMu.Unlock()
+}
+
+// RingBytes snapshots the raw scrollback ring and the sequence it is current to;
+// chunks teed with a higher sequence are exactly the ones the snapshot misses.
+func (p *Pane) RingBytes() ([]byte, uint64) {
+	p.streamMu.Lock()
+	defer p.streamMu.Unlock()
+	return p.hist.Snapshot(), p.seq.Load()
 }
 
 // Seq returns a counter that advances whenever the screen may have changed (output or resize).
@@ -179,14 +219,23 @@ func (p *Pane) SetLog(w io.Writer) { p.logw = w }
 
 // Stream copies PTY output into the emulator until read error, calling onFrame per chunk; blocks.
 func (p *Pane) Stream(onFrame func()) error {
+	if p.ptmx == nil {
+		return ErrPaneClosed // remote panes are fed, not streamed
+	}
 	buf := make([]byte, 4096)
 	for {
 		n, err := p.ptmx.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
 			_, _ = p.term.Write(chunk)
+			p.streamMu.Lock()
 			p.hist.Write(chunk)
-			p.seq.Add(1)
+			s := p.seq.Add(1)
+			tee := p.tee
+			p.streamMu.Unlock()
+			if tee != nil {
+				tee(chunk, s)
+			}
 			if onFrame != nil {
 				onFrame()
 			}
@@ -199,6 +248,7 @@ func (p *Pane) Stream(onFrame func()) error {
 
 // Input queues keystrokes for the child; it never blocks the caller so PTY backpressure cannot freeze the UI loop.
 // A full inbox means the child stopped draining its PTY; the input is dropped rather than queued forever.
+// Remote panes forward through the wire instead of a local inbox.
 func (p *Pane) Input(b []byte) error {
 	select {
 	case <-p.done:
@@ -206,6 +256,9 @@ func (p *Pane) Input(b []byte) error {
 	default:
 	}
 	cp := append([]byte(nil), b...) // caller may reuse b
+	if p.sendFn != nil {
+		return p.sendFn(cp)
+	}
 	select {
 	case p.inbox <- cp:
 		return nil
@@ -216,11 +269,17 @@ func (p *Pane) Input(b []byte) error {
 	}
 }
 
-// Resize updates both the emulator and the PTY window size.
+// Resize updates both the emulator and the PTY window size; a remote pane forwards the new size instead.
 func (p *Pane) Resize(cols, rows int) error {
 	cols, rows = clampDim(cols), clampDim(rows)
 	p.term.Resize(cols, rows)
 	p.seq.Add(1) // reflow changes the rendered screen without new output
+	if p.ptmx == nil {
+		if p.resizeFn != nil {
+			p.resizeFn(cols, rows)
+		}
+		return nil
+	}
 	return pty.Setsize(p.ptmx, winsize(cols, rows))
 }
 
@@ -427,12 +486,16 @@ func colorParams(c vt10x.Color, base, bright int, ext string) []string {
 // Close force-stops the child (SIGKILL), releases the PTY, writes the transcript, and closes the log sink; idempotent.
 func (p *Pane) Close() error {
 	p.closeOnce.Do(func() {
-		close(p.done)      // release writeLoop and refuse further input
-		_ = p.ptmx.Close() // close the master first: unblocks the child's tty I/O and our reader so Wait can return
-		if p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
+		close(p.done) // release writeLoop and refuse further input
+		if p.ptmx != nil {
+			_ = p.ptmx.Close() // close the master first: unblocks the child's tty I/O and our reader so Wait can return
 		}
-		p.reap()
+		if p.cmd != nil {
+			if p.cmd.Process != nil {
+				_ = p.cmd.Process.Kill()
+			}
+			p.reap()
+		}
 		p.writeTranscript()
 		if c, ok := p.logw.(io.Closer); ok {
 			_ = c.Close()
@@ -469,7 +532,7 @@ func (p *Pane) reap() {
 
 // Terminate asks the child to exit cleanly (SIGTERM) so it can run its own shutdown hooks.
 func (p *Pane) Terminate() {
-	if p.cmd.Process != nil {
+	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(syscall.SIGTERM)
 	}
 }
@@ -484,7 +547,7 @@ func (p *Pane) Shutdown(deadline time.Time) {
 
 // exited reports whether the child process is gone, probed with signal 0.
 func (p *Pane) exited() bool {
-	if p.cmd.Process == nil {
+	if p.cmd == nil || p.cmd.Process == nil {
 		return true
 	}
 	return p.cmd.Process.Signal(syscall.Signal(0)) != nil

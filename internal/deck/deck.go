@@ -63,18 +63,19 @@ type Model struct {
 	manual    bool // user drove focus (ctrl+o or any WM action); pause auto-focus
 	tree      *wm.Tree
 	keys      config.Keys
-	prefixed  bool     // prefix armed; next key runs a WM action
-	sidebar   bool     // status-card column visible
-	autoFocus bool     // delegations and input prompts steal focus ([ui] auto_focus)
-	helpOn    bool     // help overlay visible; any key closes it
-	boardOn   bool     // task board overlay visible; any key closes it
-	broadcast bool     // normal-mode keys go to every live pane
-	searching bool     // typing a scrollback search query
-	searchBuf string   // query being typed
-	searchQ   string   // committed query; n/N navigate while scrolled
-	usage     usageMsg // last per-role token snapshot from the gateway metrics
-	scrollOff int      // focused-pane scrollback offset (0 = live tail)
-	maxScroll int      // last render's max scrollback offset, for clamping keys
+	prefixed  bool      // prefix armed; next key runs a WM action
+	sidebar   bool      // status-card column visible
+	autoFocus bool      // delegations and input prompts steal focus ([ui] auto_focus)
+	helpOn    bool      // help overlay visible; any key closes it
+	boardOn   bool      // task board overlay visible; any key closes it
+	broadcast bool      // normal-mode keys go to every live pane
+	searching bool      // typing a scrollback search query
+	searchBuf string    // query being typed
+	searchQ   string    // committed query; n/N navigate while scrolled
+	usage     usageMsg  // last per-role token snapshot from the gateway metrics
+	scrollOff int       // focused-pane scrollback offset (0 = live tail)
+	maxScroll int       // last render's max scrollback offset, for clamping keys
+	remote    *wireConn // attached to a detached session; core actions go over the wire
 	w, h      int
 	err       error
 }
@@ -165,7 +166,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.autoRestart(m.panes[msg.idx], msg.idx)
 		}
 	case ipcMsg:
+		if msg.cmd.Cmd == "shutdown" {
+			m.closeAll()
+			return m, tea.Quit
+		}
 		m.applyCommand(msg.cmd)
+	case remoteEvMsg:
+		m.applyRemoteEvent(msg.ev)
+	case connLostMsg:
+		m.err = fmt.Errorf("session connection lost: %w", msg.err)
+		return m, tea.Quit
 	case gatewayReadyMsg:
 		if msg.err == nil {
 			m.gateway = msg.sup
@@ -186,6 +196,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usage = msg
 	case tickMsg:
+		if m.remote != nil {
+			// the server boots, probes, and rings; the client only refreshes usage
+			if m.sphragisOn && m.gatewayUp {
+				return m, tea.Batch(tick(), fetchUsage(m.cfg.Sphragis.Addr, m.cfg.Pricing))
+			}
+			return m, tick()
+		}
 		m.bootPanes()
 		m.checkWaiting()
 		if m.sphragisOn {
@@ -204,6 +221,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlQ:
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "quit"}) // stops the detached session too
+			return m, tea.Quit
+		}
 		m.closeAll()
 		return m, tea.Quit
 	case tea.KeyCtrlO:
@@ -213,7 +234,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyCtrlG:
-		m.sphragisOn = !m.sphragisOn
+		m.sphragisOn = !m.sphragisOn // remote: optimistic, the status event resyncs
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "sphragis"})
+		}
 		return m, nil
 	case tea.KeyPgUp:
 		m.scrollOff += scrollStep
@@ -241,7 +265,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.prefixed {
 		m.prefixed = false
+		if msg.String() == m.keys.Detach && m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "detach"}) // the session keeps running
+			return m, tea.Quit
+		}
 		m.wmAction(msg.String())
+		if m.remote != nil && m.tree != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "layout", Data: m.tree.Marshal()}) // checkpoint for the next attach
+		}
 		return m, nil
 	}
 	if m.tree != nil && msg.String() == m.keys.Prefix {
@@ -379,8 +410,16 @@ func (m *Model) wmAction(key string) {
 	case m.keys.Help:
 		m.helpOn = true
 	case m.keys.RestartRole:
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "restart", Idx: m.active})
+			break
+		}
 		m.restartRole()
 	case m.keys.Reload:
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "reload"})
+			break
+		}
 		m.reloadConfig()
 	case m.keys.Broadcast:
 		m.broadcast = !m.broadcast
@@ -560,19 +599,19 @@ func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 	g := m.gates[0]
 	switch string(msg.Runes) {
 	case "y", "Y":
-		m.gates = m.gates[1:]
-		if e, i := m.findRole(g.to); e != nil && !e.exited {
-			m.log().Info("delegate approved", "to", g.to, "waited", time.Since(g.at).Round(time.Second))
-			m.deliverDelegate(e, i, g.cmd)
-		} else {
-			m.log().Warn("delegate target unavailable", "to", g.to)
+		if m.remote != nil {
+			m.gates = m.gates[1:] // optimistic; the server's gates event resyncs
+			_ = m.remote.WriteEvent(wireEvent{Kind: "gate", Approve: true})
+			return nil
 		}
+		m.approveGate()
 	case "n", "N":
-		m.gates = m.gates[1:]
-		m.log().Warn("delegate rejected", "to", g.to, "task", singleLine(g.cmd.Task), "brief", g.cmd.Brief)
-		if i := m.startIdx(); i >= 0 && i < len(m.panes) && !m.panes[i].exited {
-			injectLine(m.panes[i], "[choragos] The user rejected your delegation to "+g.to+". Revise the plan or the brief and delegate again if still needed.")
+		if m.remote != nil {
+			m.gates = m.gates[1:]
+			_ = m.remote.WriteEvent(wireEvent{Kind: "gate"})
+			return nil
 		}
+		m.rejectGate()
 	case "e", "E":
 		if g.cmd.Brief == "" {
 			return nil // nothing to edit; the gate stays
@@ -721,6 +760,7 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.ToggleSidebar, "toggle sidebar"},
 		{k.Prefix + " " + k.RestartRole, "restart focused role"},
 		{k.Prefix + " " + k.Reload, "reload config (add/remove roles)"},
+		{k.Prefix + " " + k.Detach, "detach (attached sessions; agents keep running)"},
 		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
 		{k.Prefix + " " + k.TaskBoard, "task board"},
 		{k.Prefix + " " + k.Search, "search scrollback"},

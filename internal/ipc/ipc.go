@@ -4,6 +4,8 @@
 package ipc
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -38,16 +40,92 @@ type Command struct {
 	ID     string   `json:"id,omitempty"` // task id assigned by the deck on delegate, echoed by work-done
 }
 
-// SocketPath resolves the control socket: $CHORAGOS_SOCK, else a per-user runtime/temp path.
+// SessionDir is the per-user directory holding session sockets and metadata (0700).
+func SessionDir() string {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		dir = os.TempDir()
+	}
+	dir = filepath.Join(dir, fmt.Sprintf("choragos-%d", os.Getuid()))
+	_ = os.MkdirAll(dir, 0o700)
+	return dir
+}
+
+// SessionID names the session for a working directory: an 8-hex dir hash,
+// because unix socket paths cap near 104 bytes on macOS.
+func SessionID(dir string) string {
+	sum := sha256.Sum256([]byte(dir))
+	return hex.EncodeToString(sum[:4])
+}
+
+// cwdID is the session id for the current working directory.
+func cwdID() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "unknown"
+	}
+	return SessionID(wd)
+}
+
+// SocketPath resolves the control socket: $CHORAGOS_SOCK, else the per-session
+// (working-directory) path, so one deck per project instead of one per user.
 func SocketPath() string {
 	if p := os.Getenv(EnvSocket); p != "" {
 		return p
 	}
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return filepath.Join(dir, "choragos.sock")
-	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("choragos-%d.sock", os.Getuid()))
+	return filepath.Join(SessionDir(), cwdID()+".sock")
 }
+
+// UISocketPath is the attach socket next to the control socket.
+func UISocketPath() string {
+	return filepath.Join(SessionDir(), cwdID()+".ui.sock")
+}
+
+// Meta describes a running session, written next to its sockets for `choragos ls`.
+type Meta struct {
+	PID     int       `json:"pid"`
+	Dir     string    `json:"dir"`
+	Started time.Time `json:"started"`
+	Socket  string    `json:"socket"`
+}
+
+// MetaPath is the sidecar metadata file for the current working directory's session.
+func MetaPath() string {
+	return filepath.Join(SessionDir(), cwdID()+".json")
+}
+
+// WriteMeta records the running session; best-effort.
+func WriteMeta(socket string) {
+	wd, _ := os.Getwd()
+	b, _ := json.Marshal(Meta{PID: os.Getpid(), Dir: wd, Started: time.Now(), Socket: socket})
+	_ = os.WriteFile(MetaPath(), b, 0o600)
+}
+
+// ReadMetas lists every session sidecar in the session dir.
+func ReadMetas() []Meta {
+	ents, err := os.ReadDir(SessionDir())
+	if err != nil {
+		return nil
+	}
+	var out []Meta
+	for _, e := range ents {
+		if filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(SessionDir(), e.Name()))
+		if err != nil {
+			continue
+		}
+		var m Meta
+		if json.Unmarshal(b, &m) == nil && m.Socket != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// RemoveMeta drops the sidecar for the current working directory's session.
+func RemoveMeta() { _ = os.Remove(MetaPath()) }
 
 // Server accepts control commands and hands each to a callback.
 type Server struct{ ln net.Listener }

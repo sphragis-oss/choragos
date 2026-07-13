@@ -36,6 +36,7 @@ forwarded to the PTY.
 | `toggle_sidebar` | `prefix+b` | Show/hide the status-card sidebar; tiles reflow to the full width |
 | `restart_role` | `prefix+R` | Respawn the focused tile's agent (works on live or exited roles) |
 | `reload` | `prefix+C` | Re-read the config file and converge the team: spawn added roles, retire removed ones, respawn changed specs (same as `choragos reload`) |
+| `detach` | `prefix+d` | Detach from a `choragos attach` session: the TUI exits, agents keep running (no-op in a foreground `serve`) |
 | `broadcast` | `prefix+a` | Toggle sending normal-mode keys to every live pane (`[BCAST]`) |
 | `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; any key closes |
 | `search` | `prefix+/` | Search the focused tile's scrollback; Enter jumps, `n`/`N` navigate |
@@ -75,6 +76,7 @@ resize_mode = "r"
 toggle_sidebar = "b"
 restart_role = "R"
 reload = "C"
+detach = "d"
 broadcast = "a"
 task_board = "t"
 search = "/"

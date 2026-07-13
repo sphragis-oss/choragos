@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -268,5 +269,71 @@ func TestExitCodeCaptured(t *testing.T) {
 	_ = p.Close()
 	if p.ExitCode() != 3 {
 		t.Fatalf("exit code = %d, want 3", p.ExitCode())
+	}
+}
+
+func TestRemotePaneFeedRenderInput(t *testing.T) {
+	var sent [][]byte
+	var resized [][2]int
+	p := pane.Remote(20, 4, func(b []byte) error { sent = append(sent, b); return nil },
+		func(c, r int) { resized = append(resized, [2]int{c, r}) })
+	seq0 := p.Seq()
+	p.Feed([]byte("hello remote"))
+	if p.Seq() == seq0 {
+		t.Fatal("Feed did not bump Seq")
+	}
+	if got := p.Render(); !strings.Contains(got, "hello remote") {
+		t.Fatalf("render = %q", got)
+	}
+	if err := p.Input([]byte("keys")); err != nil || len(sent) != 1 || string(sent[0]) != "keys" {
+		t.Fatalf("input not forwarded: err=%v sent=%v", err, sent)
+	}
+	if err := p.Resize(30, 5); err != nil || len(resized) != 1 || resized[0] != [2]int{30, 5} {
+		t.Fatalf("resize not forwarded: err=%v resized=%v", err, resized)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Input([]byte("x")); err == nil {
+		t.Fatal("input after close must error")
+	}
+}
+
+func TestTeeAndRingBytesSequence(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "printf one; sleep 0.2; printf two; sleep 0.5")
+	p, err := pane.Start(cmd, 40, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Close() }()
+	type chunk struct {
+		b   string
+		seq uint64
+	}
+	var mu sync.Mutex
+	var chunks []chunk
+	p.SetTee(func(b []byte, seq uint64) {
+		mu.Lock()
+		chunks = append(chunks, chunk{string(b), seq})
+		mu.Unlock()
+	})
+	done := make(chan struct{})
+	go func() { _ = p.Stream(nil); close(done) }()
+	<-done
+
+	ring, snapSeq := p.RingBytes()
+	if !strings.Contains(string(ring), "one") || !strings.Contains(string(ring), "two") {
+		t.Fatalf("ring = %q", ring)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(chunks) == 0 {
+		t.Fatal("tee never fired")
+	}
+	// every teed chunk is covered by the final snapshot sequence: replay + filter loses nothing
+	for _, c := range chunks {
+		if c.seq > snapSeq {
+			t.Fatalf("chunk seq %d beyond snapshot seq %d", c.seq, snapSeq)
+		}
 	}
 }

@@ -1,17 +1,25 @@
 # Control protocol
 
-The deck and the `delegate` / `work-done` verbs talk JSON over a unix socket.
-This page is the contract: everything a third-party tool needs to drive a
-running deck without reading the Go source.
+The deck and the `delegate` / `work-done` / `reload` verbs talk JSON over a
+unix socket. This page is the contract: everything a third-party tool needs
+to drive a running deck without reading the Go source.
 
 ## Socket
 
-Resolution order (both for the deck and the CLI verbs):
+Sessions are per working directory. Resolution order (both for the deck and
+the CLI verbs):
 
 1. `$CHORAGOS_SOCK`, if set. The deck injects this into every role's
    environment, so agents inside panes always find their own deck.
-2. `$XDG_RUNTIME_DIR/choragos.sock`, if `XDG_RUNTIME_DIR` is set.
-3. `<temp dir>/choragos-<uid>.sock`.
+2. `<runtime dir>/choragos-<uid>/<dir-hash>.sock`, where the runtime dir is
+   `$XDG_RUNTIME_DIR` (or the temp dir) and `<dir-hash>` is 8 hex chars of
+   the working directory's SHA-256, so one deck per project and paths that
+   fit macOS's ~104-byte `sun_path` cap.
+
+Run the CLI verbs from the project directory (or set `$CHORAGOS_SOCK`) so
+they resolve the same session. A `<dir-hash>.ui.sock` next to it carries the
+`choragos attach` client protocol (internal, versioned separately), and a
+`<dir-hash>.json` sidecar feeds `choragos ls`.
 
 The deck listens with file mode `0600` and removes a stale socket from a
 crashed run at startup. On macOS, keep overrides short: `sun_path` caps unix
@@ -58,6 +66,10 @@ file and converge the team on it (see
 [configuration.md](configuration.md#reloading-the-config-at-runtime)).
 It is accepted even while the gateway is down, because it changes the
 team, not the work.
+
+Two more field-less verbs exist for session lifecycle: `ping` (liveness,
+the ack is the answer; used by `choragos ls`) and `shutdown` (stop the
+session and its agents; used by `choragos kill`).
 
 ## What the deck does with a delegate
 
