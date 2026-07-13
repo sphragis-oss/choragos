@@ -16,6 +16,8 @@ args = ["-c", "printf '\\033[1;32mcoder\\033[0m pane (demo)\\n'; exec cat"]
 name = "reviewer"
 command = "sh"
 args = ["-c", "printf '\\033[1;35mreviewer\\033[0m pane (demo)\\n'; exec cat"]
+# delegations to the reviewer pause for user approval (y/n overlay)
+approve = true
 
 [[roles]]
 name = "auditor"
