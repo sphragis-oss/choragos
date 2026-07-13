@@ -1146,6 +1146,45 @@ func TestApprovalGateFlow(t *testing.T) {
 	}
 }
 
+func TestGateEditKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "orchestrator", Command: "cat", Start: true},
+		{Name: "coder", Command: "cat", Approve: true},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, e := range panes {
+			_ = e.pane.Close()
+		}
+	}()
+	m := newTestModel(panes)
+
+	// without a brief: e is inert, the footer does not advertise it
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-NOBRIEF"})
+	if got := m.renderGate(60, 20); strings.Contains(got, "[e] edit brief") {
+		t.Fatalf("footer advertises edit without a brief:\n%q", got)
+	}
+	if _, cmd := m.Update(key("e")); cmd != nil || len(m.gates) != 1 {
+		t.Fatalf("e without brief: cmd=%v gates=%d, want nil/1", cmd, len(m.gates))
+	}
+	m.gates = nil
+
+	// with a brief: e returns the editor exec and the gate stays pending
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-BRIEF", Brief: "/tmp/brief.md"})
+	if got := m.renderGate(60, 20); !strings.Contains(got, "[e] edit brief") {
+		t.Fatalf("footer missing edit key with a brief:\n%q", got)
+	}
+	if _, cmd := m.Update(key("e")); cmd == nil {
+		t.Fatal("e with brief returned no editor command")
+	}
+	if len(m.gates) != 1 {
+		t.Fatalf("edit resolved the gate: gates=%d, want 1", len(m.gates))
+	}
+}
+
 func TestDelegateWithoutApproveIsImmediate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	panes, err := startPanes(config.Config{Roles: []config.Role{

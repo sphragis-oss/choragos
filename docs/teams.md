@@ -110,9 +110,10 @@ model = "opus"
 approve = true
 ```
 
-Because briefs are files, amending is free: read the brief the overlay
-points at, edit it in another terminal, then approve; the worker reads the
-corrected file. Gates queue in arrival order, the status line counts them,
+Because briefs are files, amending is free: when the gated delegation
+carries a brief, `e` suspends the deck and opens it in `$VISUAL`/`$EDITOR`
+(fallback `vi`); fix it, quit the editor, then approve, and the worker
+reads the corrected file. Gates queue in arrival order, the status line counts them,
 and approvals and rejections land in `events.log`. Use it on the roles
 whose mistakes are expensive (implementation, release), and leave
 read-only reporters ungated.
