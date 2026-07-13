@@ -184,6 +184,20 @@ func TestServerAttachLifecycle(t *testing.T) {
 		t.Fatalf("board = %+v", bev.Board)
 	}
 
+	// a wire restart replaces the pane: a reset arrives first, then only the fresh boot output
+	if err := wc.WriteEvent(wireEvent{Kind: "restart", Idx: 0}); err != nil {
+		t.Fatal(err)
+	}
+	rev := readUntil(t, wc, "reset", out)
+	if rev.Idx != 0 {
+		t.Fatalf("reset idx = %d, want 0", rev.Idx)
+	}
+	out[0] = nil
+	waitOutput(t, wc, out, 0, "orch-banner")
+	if strings.Contains(string(out[0]), "marco") {
+		t.Fatalf("stale pre-restart output after reset: %q", out[0])
+	}
+
 	// detach leaves the session running; re-attach returns the checkpointed layout
 	layout := []byte(`{"root":{"leaf":true,"role":1},"focused":1}`)
 	if err := wc.WriteEvent(wireEvent{Kind: "layout", Data: layout}); err != nil {
