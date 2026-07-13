@@ -675,6 +675,7 @@ func (m *Model) dispatch(cmd ipc.Command) {
 				if m.bellFn != nil {
 					m.bellFn()
 				}
+				m.runHook(m.cfg.UI.OnGate, name, singleLine(cmd.Task))
 				continue
 			}
 			m.deliverDelegate(e, i, cmd)
@@ -771,6 +772,21 @@ func editBrief(path string) tea.Cmd {
 // shellQuote single-quotes s for sh -c.
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
+// runHook fires a [ui] notification hook in the background; a broken hook only logs, never wedges the deck.
+func (m *Model) runHook(hook, role, task string) {
+	if hook == "" {
+		return
+	}
+	c := exec.Command("sh", "-c", hook)
+	c.Env = append(os.Environ(), "CHORAGOS_ROLE="+role, "CHORAGOS_TASK="+task)
+	logger := m.log()
+	go func() {
+		if err := c.Run(); err != nil {
+			logger.Error("notification hook failed", "role", role, "err", err)
+		}
+	}()
+}
+
 // checkWaiting rings the bell once per transition into waiting-for-input.
 func (m *Model) checkWaiting() {
 	for i, e := range m.panes {
@@ -780,6 +796,7 @@ func (m *Model) checkWaiting() {
 			if m.bellFn != nil {
 				m.bellFn()
 			}
+			m.runHook(m.cfg.UI.OnInput, e.role.Name, "")
 			if m.autoFocus && !m.manual {
 				m.focusRole(i) // surface whoever blocks on input
 			}

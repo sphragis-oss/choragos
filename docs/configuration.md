@@ -111,3 +111,16 @@ See [keybindings.md](keybindings.md) for what each action does.
 | `sidebar` | bool | `true` | Start with the status-card sidebar visible |
 | `bell` | bool | `true` | Ring the terminal bell when an agent transitions to waiting-for-input |
 | `mouse` | bool | `true` | Capture the mouse for tile focus and wheel scrollback; set `false` to restore terminal-native text selection (no Shift+drag needed) |
+| `on_gate` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation joins the approval queue; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
+| `on_input` | string | `""` | Command run via `sh -c` (background, non-blocking) when an agent transitions to waiting-for-input; `CHORAGOS_ROLE` is in its env |
+
+Notification hooks reach you when the terminal bell cannot (another
+window, another room). A failing hook is logged to `events.log` and
+otherwise ignored. macOS example with
+[terminal-notifier](https://github.com/julienXX/terminal-notifier):
+
+```toml
+[ui]
+on_gate  = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE: delegation awaiting approval\""
+on_input = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE is waiting for input\""
+```

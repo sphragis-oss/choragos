@@ -135,6 +135,9 @@ type UI struct {
 	Sidebar   *bool `toml:"sidebar"`
 	Bell      *bool `toml:"bell"`
 	Mouse     *bool `toml:"mouse"`
+	// notification hooks, run via sh -c when the deck wants a human; empty = bell only
+	OnGate  string `toml:"on_gate"`
+	OnInput string `toml:"on_input"`
 }
 
 // IsAutoFocus reports whether delegations and input prompts steal focus (default true).

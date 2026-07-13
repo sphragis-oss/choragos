@@ -1185,6 +1185,63 @@ func TestGateEditKey(t *testing.T) {
 	}
 }
 
+func TestOnGateHookFires(t *testing.T) {
+	t.Chdir(t.TempDir())
+	panes, err := startPanes(config.Config{Roles: []config.Role{
+		{Name: "orchestrator", Command: "cat", Start: true},
+		{Name: "reviewer", Command: "cat", Approve: true},
+	}}, 40, 6, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, e := range panes {
+			_ = e.pane.Close()
+		}
+	}()
+	m := newTestModel(panes)
+	out := filepath.Join(t.TempDir(), "hook.out")
+	m.cfg.UI.OnGate = "echo gate:$CHORAGOS_ROLE:$CHORAGOS_TASK >> " + out
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"reviewer"}, Task: "RISKY-1"})
+	if !waitFor(func() bool {
+		b, err := os.ReadFile(out)
+		return err == nil && strings.Contains(string(b), "gate:reviewer:RISKY-1")
+	}) {
+		t.Fatal("on_gate hook never fired with role and task in env")
+	}
+
+	// ungated delegation: no hook
+	m.gates = nil
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"orchestrator"}, Task: "PLAIN-1"})
+	time.Sleep(150 * time.Millisecond)
+	if b, _ := os.ReadFile(out); strings.Contains(string(b), "PLAIN-1") {
+		t.Fatalf("hook fired for an ungated delegation:\n%s", b)
+	}
+}
+
+func TestOnInputHookFiresOncePerEdge(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	out := filepath.Join(t.TempDir(), "hook.out")
+	m.cfg.UI.OnInput = "echo input:$CHORAGOS_ROLE >> " + out
+	_ = m.panes[0].pane.Input([]byte("Do you want to proceed? (y/n)\r"))
+	if !waitFor(func() bool { return needsInput(m.panes[0]) }) {
+		t.Fatal("pane never showed the blocking prompt")
+	}
+	m.checkWaiting()
+	m.checkWaiting() // still waiting: no second fire
+	if !waitFor(func() bool {
+		b, err := os.ReadFile(out)
+		return err == nil && strings.Contains(string(b), "input:orchestrator")
+	}) {
+		t.Fatal("on_input hook never fired")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if b, _ := os.ReadFile(out); strings.Count(string(b), "input:orchestrator") != 1 {
+		t.Fatalf("hook fired more than once per edge:\n%s", b)
+	}
+}
+
 func TestDelegateWithoutApproveIsImmediate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	panes, err := startPanes(config.Config{Roles: []config.Role{

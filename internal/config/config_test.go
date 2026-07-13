@@ -182,6 +182,8 @@ split_horizontal = "prefix+minus"
 auto_focus = false
 sidebar = false
 mouse = false
+on_gate = "notify-gate"
+on_input = "notify-input"
 `
 	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -198,6 +200,12 @@ mouse = false
 	}
 	if c.UI.IsAutoFocus() || c.UI.SidebarStart() || c.UI.IsMouse() {
 		t.Fatalf("ui overrides ignored: %+v", c.UI)
+	}
+	if c.UI.OnGate != "notify-gate" || c.UI.OnInput != "notify-input" {
+		t.Fatalf("notification hooks not loaded: %+v", c.UI)
+	}
+	if len(c.Warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", c.Warnings)
 	}
 	if !(config.UI{}).IsMouse() {
 		t.Fatal("mouse must default to enabled")

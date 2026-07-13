@@ -48,3 +48,5 @@ prompt_template = "Review the change for correctness and edge cases. Report find
 # auto_focus = true     # focus the agent that gets a delegation or blocks on input
 # sidebar = true        # start with the status-card sidebar visible
 # bell = true           # terminal bell when an agent blocks on input
+# on_gate = ""          # sh -c command when a delegation awaits approval ($CHORAGOS_ROLE, $CHORAGOS_TASK)
+# on_input = ""         # sh -c command when an agent blocks on input ($CHORAGOS_ROLE)
