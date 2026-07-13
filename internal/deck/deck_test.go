@@ -23,10 +23,13 @@ import (
 
 // newTestModel wires a Model the way startAll does: focused single tile, defaults on.
 func newTestModel(panes []*entry) *Model {
-	return &Model{
-		panes: panes, tree: wm.New(0), keys: config.Keys{}.Defaulted(),
+	m := &Model{
+		session: &session{panes: panes},
+		tree:    wm.New(0), keys: config.Keys{}.Defaulted(),
 		autoFocus: true, sidebar: true, w: 160, h: 48,
 	}
+	m.wireSession()
+	return m
 }
 
 func TestStartPanesSpawnsAllRoles(t *testing.T) {
