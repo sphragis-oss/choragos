@@ -40,6 +40,7 @@ prompt_template = "Review the change for correctness and edge cases. Report find
 # toggle_sidebar = "b"
 # restart_role = "R"
 # reload = "C"
+# detach = "d"
 # broadcast = "a"
 # task_board = "t"
 # search = "/"

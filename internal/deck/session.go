@@ -200,6 +200,7 @@ func (s *session) start(cw, ch int) error {
 		return fmt.Errorf("ipc serve: %w", err)
 	}
 	s.server = srv
+	ipc.WriteMeta(s.socket) // sidecar for `choragos ls`
 	wd, _ := os.Getwd()
 	s.log().Info("deck starting", "roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd)
 	for _, w := range s.cfg.Warnings {
@@ -305,6 +306,34 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) {
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
 	injectLine(e, line)
 	s.focus(i)
+}
+
+// approveGate resolves the oldest pending gate by delivering it to its worker.
+func (s *session) approveGate() {
+	if len(s.gates) == 0 {
+		return
+	}
+	g := s.gates[0]
+	s.gates = s.gates[1:]
+	if e, i := s.findRole(g.to); e != nil && !e.exited {
+		s.log().Info("delegate approved", "to", g.to, "waited", time.Since(g.at).Round(time.Second))
+		s.deliverDelegate(e, i, g.cmd)
+	} else {
+		s.log().Warn("delegate target unavailable", "to", g.to)
+	}
+}
+
+// rejectGate drops the oldest pending gate and tells the orchestrator to revise.
+func (s *session) rejectGate() {
+	if len(s.gates) == 0 {
+		return
+	}
+	g := s.gates[0]
+	s.gates = s.gates[1:]
+	s.log().Warn("delegate rejected", "to", g.to, "task", singleLine(g.cmd.Task), "brief", g.cmd.Brief)
+	if i := s.startIdx(); i >= 0 && i < len(s.panes) && !s.panes[i].exited {
+		injectLine(s.panes[i], "[choragos] The user rejected your delegation to "+g.to+". Revise the plan or the brief and delegate again if still needed.")
+	}
 }
 
 // runHook fires a [ui] notification hook in the background; a broken hook only logs, never wedges the deck.
@@ -742,6 +771,7 @@ func (s *session) closeAll() {
 	if s.server != nil {
 		_ = s.server.Close()
 		_ = os.Remove(s.socket)
+		ipc.RemoveMeta()
 	}
 	// SIGTERM every agent first so they all run their SessionEnd hooks in parallel, then force after the shared deadline.
 	deadline := time.Now().Add(gracefulTimeout)
