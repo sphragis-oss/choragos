@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-07-13
+
+### Added
+- `[ui.theme]`: the deck's status colors are configurable (accent,
+  working, waiting, scroll, idle, dim) as ANSI 0-255 palette indices
+  or `#rrggbb` hex, so the deck matches your terminal. Omitted keys
+  keep the classic palette; an invalid value warns at startup (and in
+  events.log) and keeps the default. Foreground serve, headless
+  server, and attached clients all render from the config the session
+  was started with.
+
 ## [0.7.1] - 2026-07-13
 
 ### Fixed
@@ -203,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...v0.7.5
 [0.7.1]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/sphragis-oss/choragos/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sphragis-oss/choragos/compare/v0.5.0...v0.6.0
