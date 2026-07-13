@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-07-13
+## [0.7.0] - 2026-07-13
+
+### Added
+- Native detach/attach: `choragos serve --detach` runs the crew headless
+  in the background, `choragos attach` brings the TUI back with screens,
+  tasks, gates, and the tiling layout restored, and `prefix+d` (default)
+  detaches again leaving the agents running. Attach replay is exact
+  (sequence-numbered ring buffer, no duplicated or lost bytes), one
+  client attaches at a time, and a client/server version mismatch is
+  refused with a clear message. While detached, delegations, approval
+  gates, auto-restart, and notification hooks keep working.
+- Session management across projects: sessions are per working
+  directory (socket under `<runtime dir>/choragos-<uid>/`), `choragos ls`
+  lists them with liveness, and `choragos kill [--all]` stops them; two
+  new field-less IPC verbs `ping` and `shutdown` back these and are
+  documented in docs/protocol.md.
+- docs/long-running-sessions.md rewritten around native detach/attach;
+  tmux is now the fallback, with a note on the prefix-key collision.
+
+### Changed
+- The deck internals split into a UI-free session core and the TUI
+  model (behavior-neutral refactor), which is what lets the same
+  session run headless under the server or rendered under the client.
 
 ### Added
 - Roles at runtime: edit the config file, then `choragos reload` (new
@@ -169,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/sphragis-oss/choragos/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sphragis-oss/choragos/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sphragis-oss/choragos/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/sphragis-oss/choragos/compare/v0.4.1...v0.4.2
