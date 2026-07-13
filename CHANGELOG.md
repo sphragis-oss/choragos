@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-13
+
+### Fixed
+- Respawning a role while a client is attached (auto-restart, `prefix+R`,
+  or a reload spec change) now resets that pane on the client: the fresh
+  boot output starts on a clean screen instead of appending under the
+  old content. The same change fixes a real suppression bug: the
+  respawned pane's ring sequence restarts from zero, so the attach-time
+  snapshot sequence could silently filter out all post-respawn output
+  for that role; the sequence now restarts with the pane, and chunks
+  still queued from the replaced pane are dropped by identity.
+
 ## [0.7.0] - 2026-07-13
 
 ### Added
@@ -191,7 +203,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/sphragis-oss/choragos/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sphragis-oss/choragos/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sphragis-oss/choragos/compare/v0.4.2...v0.5.0
