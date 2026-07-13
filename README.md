@@ -105,6 +105,10 @@ make build
 # Or start from a team template: starter, claude-team, mixed-team, review
 ./choragos init --template review
 
+# Or let it detect the project (go.mod, package.json, Cargo.toml, pyproject.toml)
+# and write a team with language-specific roles
+./choragos init --auto
+
 # Start the TUI
 ./choragos serve
 ```

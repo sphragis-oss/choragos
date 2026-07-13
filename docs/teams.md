@@ -12,7 +12,17 @@ choragos init --template starter      # commented single-agent scaffold
 choragos init --template claude-team  # all-Claude 5-role crew
 choragos init --template mixed-team   # Claude + Gemini mix
 choragos init --template review       # review-focused team
+choragos init --auto                  # detect the project, language-specific roles
 ```
+
+`--auto` looks for a project manifest (`go.mod`, `package.json`,
+`Cargo.toml`, `pyproject.toml`/`setup.py`/`requirements.txt`) and writes
+a team whose coder and reviewer briefs are tailored to that language
+(gofmt/go test, eslint/npm test, clippy/cargo test, ruff/pytest). In a
+multi-language repo the dominant language by source count wins and the
+others are noted in a comment; with no manifest it falls back to the
+starter template. Detection is static file inspection: no network, no
+LLM calls.
 
 Then `choragos doctor` to verify binaries resolve and the gateway is
 reachable, and `choragos serve` to start.

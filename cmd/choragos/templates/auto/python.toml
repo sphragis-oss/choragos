@@ -1,0 +1,24 @@
+# Auto-detected Python team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Python project team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested change in modern Python: type hints, f-strings, pathlib, and the project's existing style. Run the project's linter (ruff or flake8) and pytest before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior Python engineer: correctness, typing, exception handling, mutable default arguments and similar footguns, and test coverage. Report findings only; never modify code."

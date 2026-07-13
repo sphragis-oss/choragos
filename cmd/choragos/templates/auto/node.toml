@@ -1,0 +1,24 @@
+# Auto-detected Node.js/TypeScript team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Node.js/TypeScript project team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested change in the project's JavaScript/TypeScript style. Respect the existing tsconfig/eslint/prettier setup, keep types strict, and run the package's lint and test scripts (npm test or the pnpm/yarn equivalent) before reporting done."
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior Node.js/TypeScript engineer: correctness, async/await pitfalls, type soundness, dependency hygiene, and test coverage. Report findings only; never modify code."
