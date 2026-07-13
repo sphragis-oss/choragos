@@ -116,6 +116,27 @@ See [keybindings.md](keybindings.md) for what each action does.
 | `on_gate` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation joins the approval queue; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
 | `on_input` | string | `""` | Command run via `sh -c` (background, non-blocking) when an agent transitions to waiting-for-input; `CHORAGOS_ROLE` is in its env |
 
+### `[ui.theme]`
+
+Overrides the deck's status colors so it matches your terminal. Values
+are ANSI 0-255 palette indices or `#rrggbb` hex; keys you omit keep the
+default, and an invalid value warns at startup and keeps the default.
+
+| Key | Default | Colors |
+|-----|---------|--------|
+| `accent` | `45` (cyan) | Focused tile border, overlay titles, prefix indicator |
+| `working` | `42` (green) | Working status dot, gateway-up label, done tasks |
+| `waiting` | `214` (orange) | Waiting-for-input status, approval overlay, resize/broadcast indicators |
+| `scroll` | `213` (magenta) | Scrollback and search indicators |
+| `idle` | `244` (grey) | Idle status dot |
+| `dim` | `240` (dark grey) | Unfocused tile borders, exited roles, gateway-off label |
+
+```toml
+[ui.theme]
+accent = "#7aa2f7"
+waiting = "179"
+```
+
 Notification hooks reach you when the terminal bell cannot (another
 window, another room). A failing hook is logged to `events.log` and
 otherwise ignored. macOS example with

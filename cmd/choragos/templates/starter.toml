@@ -52,3 +52,11 @@ prompt_template = "Review the change for correctness and edge cases. Report find
 # bell = true           # terminal bell when an agent blocks on input
 # on_gate = ""          # sh -c command when a delegation awaits approval ($CHORAGOS_ROLE, $CHORAGOS_TASK)
 # on_input = ""         # sh -c command when an agent blocks on input ($CHORAGOS_ROLE)
+
+# [ui.theme]            # status colors: ANSI 0-255 or #rrggbb; omitted keys keep the defaults
+# accent = "45"         # focused border, overlay titles
+# working = "42"        # working dot, gateway up
+# waiting = "214"       # waiting for input, approval overlay
+# scroll = "213"        # scrollback / search indicators
+# idle = "244"          # idle dot
+# dim = "240"           # unfocused borders, exited roles
