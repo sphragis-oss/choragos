@@ -76,27 +76,32 @@ type editorDoneMsg struct{ err error }
 // and adds focus, layout, overlays, and rendering on top.
 type Model struct {
 	*session
-	prog      *tea.Program
-	active    int
-	manual    bool // user drove focus (ctrl+o or any WM action); pause auto-focus
-	tree      *wm.Tree
-	keys      config.Keys
-	prefixed  bool      // prefix armed; next key runs a WM action
-	sidebar   bool      // status-card column visible
-	autoFocus bool      // delegations and input prompts steal focus ([ui] auto_focus)
-	helpOn    bool      // help overlay visible; any key closes it
-	boardOn   bool      // task board overlay visible; any key closes it
-	broadcast bool      // normal-mode keys go to every live pane
-	searching bool      // typing a scrollback search query
-	searchBuf string    // query being typed
-	searchQ   string    // committed query; n/N navigate while scrolled
-	usage     usageMsg  // last per-role token snapshot from the gateway metrics
-	scrollOff int       // focused-pane scrollback offset (0 = live tail)
-	maxScroll int       // last render's max scrollback offset, for clamping keys
-	th        deckTheme // resolved status colors ([ui.theme] over the defaults)
-	remote    *wireConn // attached to a detached session; core actions go over the wire
-	w, h      int
-	err       error
+	prog       *tea.Program
+	active     int
+	manual     bool // user drove focus (ctrl+o or any WM action); pause auto-focus
+	tree       *wm.Tree
+	keys       config.Keys
+	prefixed   bool // prefix armed; next key runs a WM action
+	sidebar    bool // status-card column visible
+	autoFocus  bool // delegations and input prompts steal focus ([ui] auto_focus)
+	helpOn     bool // help overlay visible; any key closes it
+	boardOn    bool // task board overlay visible; j/k/v navigate, any other key closes
+	boardSel   int  // task board selection, index into board
+	pagerOn    bool // pager overlay visible; scrolls briefs/reports in-app
+	pagerTitle string
+	pagerLines []string
+	pagerOff   int       // first visible pager line
+	broadcast  bool      // normal-mode keys go to every live pane
+	searching  bool      // typing a scrollback search query
+	searchBuf  string    // query being typed
+	searchQ    string    // committed query; n/N navigate while scrolled
+	usage      usageMsg  // last per-role token snapshot from the gateway metrics
+	scrollOff  int       // focused-pane scrollback offset (0 = live tail)
+	maxScroll  int       // last render's max scrollback offset, for clamping keys
+	th         deckTheme // resolved status colors ([ui.theme] over the defaults)
+	remote     *wireConn // attached to a detached session; core actions go over the wire
+	w, h       int
+	err        error
 }
 
 // wireSession points the core's UI callbacks at this Model.
@@ -260,16 +265,34 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPgUp:
+		if m.pagerOn {
+			m.pagerOff -= m.pagerPage()
+			return m, nil
+		}
 		m.scrollOff += scrollStep
 		return m, nil
 	case tea.KeyPgDown:
+		if m.pagerOn {
+			m.pagerOff += m.pagerPage()
+			return m, nil
+		}
 		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
 			m.scrollOff = 0
 		}
 		return m, nil
 	}
-	if m.helpOn || m.boardOn {
-		m.helpOn, m.boardOn = false, false
+	if m.pagerOn {
+		m.pagerKey(msg)
+		return m, nil
+	}
+	if m.boardOn {
+		if !m.boardKey(msg) {
+			m.boardOn = false
+		}
+		return m, nil
+	}
+	if m.helpOn {
+		m.helpOn = false
 		return m, nil
 	}
 	if len(m.gates) > 0 {
@@ -445,6 +468,7 @@ func (m *Model) wmAction(key string) {
 		m.broadcast = !m.broadcast
 	case m.keys.TaskBoard:
 		m.boardOn = true
+		m.boardSel = len(m.board) - 1
 	case m.keys.Search:
 		m.searching = true
 		m.searchBuf = ""
@@ -611,6 +635,30 @@ func (m *Model) reloadConfig() {
 	}
 }
 
+// boardKey handles task-board navigation; false means the key closes the board.
+func (m *Model) boardKey(msg tea.KeyMsg) bool {
+	switch msg.String() {
+	case "j", "down":
+		if m.boardSel < len(m.board)-1 {
+			m.boardSel++
+		}
+		return true
+	case "k", "up":
+		if m.boardSel > 0 {
+			m.boardSel--
+		}
+		return true
+	case "v", "V":
+		if m.boardSel < len(m.board) {
+			if f := m.board[m.boardSel].file; f != "" {
+				m.openPager(filepath.Base(f), f)
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // gateKey resolves the oldest pending gate: y approves and injects, n rejects back to the orchestrator, e edits the brief.
 func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
@@ -638,6 +686,10 @@ func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.log().Info("gate brief edit", "to", g.to, "brief", g.cmd.Brief)
 		return editBrief(g.cmd.Brief)
+	case "v", "V":
+		if g.cmd.Brief != "" {
+			m.openPager("brief: "+filepath.Base(g.cmd.Brief), g.cmd.Brief) // the gate stays
+		}
 	}
 	return nil
 }
@@ -754,6 +806,9 @@ func (m *Model) View() string {
 	if len(m.gates) > 0 {
 		body = m.renderGate(mainW, contentH) // approval outranks the other overlays
 	}
+	if m.pagerOn {
+		body = m.renderPager(mainW, contentH) // reading outranks even the gate; esc returns to it
+	}
 	main := lipgloss.NewStyle().Width(mainW).Height(contentH).MaxHeight(contentH).Render(body)
 	if leftW > 0 {
 		left := m.renderCards(leftW, contentH, st)
@@ -825,8 +880,8 @@ func (m *Model) renderGate(w, h int) string {
 	}
 	keys, hint := "[y] approve   [n] reject", "to amend it, edit the brief file first, then approve"
 	if g.cmd.Brief != "" {
-		keys = "[y] approve   [e] edit brief   [n] reject"
-		hint = "e opens the brief in your $EDITOR; the gate stays until y or n"
+		keys = "[y] approve   [v] view brief   [e] edit brief   [n] reject"
+		hint = "v pages the brief in-app, e opens your $EDITOR; the gate stays until y or n"
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render(keys) + "\n")
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render(hint))
@@ -839,18 +894,27 @@ func (m *Model) renderGate(w, h int) string {
 		Render(b.String())
 }
 
-// renderBoard draws the delegation-event board in place of the tiled area; any key closes it.
+// renderBoard draws the delegation-event board in place of the tiled area; j/k select, v views, any other key closes.
 func (m *Model) renderBoard(w, h int) string {
 	var b strings.Builder
 	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.accent).Render("task board") + "\n\n")
 	if len(m.board) == 0 {
 		b.WriteString(lipgloss.NewStyle().Faint(true).Render("no delegations yet"))
 	}
-	rows := m.board
-	if maxRows := h - 6; maxRows > 0 && len(rows) > maxRows {
-		rows = rows[len(rows)-maxRows:]
+	if m.boardSel >= len(m.board) {
+		m.boardSel = len(m.board) - 1
 	}
-	for _, ev := range rows {
+	if m.boardSel < 0 {
+		m.boardSel = 0
+	}
+	rows, start := m.board, 0
+	if maxRows := h - 6; maxRows > 0 && len(rows) > maxRows {
+		if start = len(rows) - maxRows; m.boardSel < start {
+			start = m.boardSel // the window follows the selection upward
+		}
+		rows = rows[start : start+maxRows]
+	}
+	for i, ev := range rows {
 		kind := ev.kind
 		status := ""
 		switch {
@@ -869,12 +933,16 @@ func (m *Model) renderBoard(w, h int) string {
 		if ev.file != "" {
 			task += "  [" + filepath.Base(ev.file) + "]"
 		}
-		line := ev.at.Format("15:04:05") + "  " + id +
+		marker := "  "
+		if start+i == m.boardSel {
+			marker = lipgloss.NewStyle().Foreground(m.th.accent).Render("▸ ")
+		}
+		line := marker + ev.at.Format("15:04:05") + "  " + id +
 			lipgloss.NewStyle().Foreground(m.th.accent).Render(kind) + " → " + ev.to + status + "  " +
 			lipgloss.NewStyle().Faint(true).Render(truncate(task, w-50))
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("press any key to close"))
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("j/k select · v view brief/report · any other key closes"))
 	if w < 6 || h < 5 {
 		return truncate(b.String(), w*h)
 	}

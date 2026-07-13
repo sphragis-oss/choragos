@@ -78,8 +78,9 @@ session and its agents; used by `choragos kill`).
 2. If the target role has `approve = true`, holds the delegation in the
    deck's approval overlay (logged as `delegate gated`) until the user
    presses `y` (proceed with the steps below) or `n` (inject a rejection
-   notice into the orchestrator instead); `e` opens the attached brief
-   in `$VISUAL`/`$EDITOR` first, leaving the gate pending.
+   notice into the orchestrator instead); `v` pages the attached brief
+   in-app and `e` opens it in `$VISUAL`/`$EDITOR`, both leaving the
+   gate pending.
 3. Assigns a task id (`T1`, `T2`, ...) per target role.
 4. Writes `.choragos/worker-task-<role>.md`: the role's `prompt_template`,
    the task id, the task text (pointing at `brief` when given), and the
