@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-13
+
+### Added
+- In-app pager for briefs and reports: `v` on the approval overlay pages
+  the gated delegation's brief, and on the task board `j`/`k` select a
+  task and `v` pages its brief or report, all without leaving the deck.
+  Markdown renders styled (glamour, auto light/dark), anything else
+  falls back to plain text, files are capped at 512 KB, and
+  `esc`/`q` returns to the overlay it came from with the gate intact.
+- `choragos init --auto`: detects the project from its manifests
+  (`go.mod`, `package.json`, `Cargo.toml`,
+  `pyproject.toml`/`setup.py`/`requirements.txt`) and writes a team
+  whose coder and reviewer briefs are tailored to that language
+  (gofmt/go test, eslint/npm test, clippy/cargo test, ruff/pytest).
+  In a multi-language repo the dominant language by source count wins
+  and the others are noted in a comment; with no manifest it falls
+  back to the starter template. Detection is static file inspection:
+  no network, no LLM calls.
+
+### Security
+- goldmark bumped to v1.8.4, past the GO-2026-5320 XSS fix (pulled in
+  as a dependency of the new markdown pager).
+
 ## [0.7.5] - 2026-07-13
 
 ### Added
@@ -214,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...v0.8.0
 [0.7.5]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...v0.7.5
 [0.7.1]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/sphragis-oss/choragos/compare/v0.6.0...v0.7.0
