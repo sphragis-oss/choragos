@@ -7,41 +7,38 @@ Set Width 1600
 Set Height 900
 Set Theme "Catppuccin Mocha"
 
+# queue a delegation that arrives mid-demo; the reviewer role is gated (approve = true)
+Hide
+Type "(sleep 12; ./choragos delegate --to reviewer --task 'T1: review the auth middleware diff') >/dev/null 2>&1 &"
+Enter
+Show
+
 Type "./choragos serve --config examples/demo.toml --sphragis=false"
 Enter
-Sleep 4s
+Sleep 5s
 
-# split twice, walk focus, zoom
+# tile the team: split twice, walk focus
 Ctrl+B
 Type "v"
-Sleep 1.5s
+Sleep 2s
 Ctrl+B
 Type "-"
-Sleep 1.5s
+Sleep 2s
 Ctrl+B
 Type "h"
-Sleep 1s
-Ctrl+B
-Type "z"
-Sleep 1.5s
-Ctrl+B
-Type "z"
-Sleep 1s
+Sleep 2s
 
-# resize, help overlay, quit
+# the delegation lands gated: approval overlay, approve it
+Sleep 4s
+Type "y"
+Sleep 3s
+
+# task board shows the delivered task
 Ctrl+B
-Type "r"
-Sleep 500ms
-Type "h"
-Sleep 300ms
-Type "h"
-Sleep 300ms
-Escape
-Sleep 500ms
-Ctrl+B
-Type "?"
-Sleep 2.5s
+Type "t"
+Sleep 3.5s
 Type "q"
-Sleep 1s
+Sleep 1.5s
+
 Ctrl+Q
 Sleep 2s
