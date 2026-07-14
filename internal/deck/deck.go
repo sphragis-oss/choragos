@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/sphragis-oss/choragos/internal/checkpoint"
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
@@ -90,7 +91,14 @@ type Model struct {
 	pagerOn    bool // pager overlay visible; scrolls briefs/reports in-app
 	pagerTitle string
 	pagerLines []string
-	pagerOff   int       // first visible pager line
+	pagerOff   int               // first visible pager line
+	rbOn       bool              // rollback confirm overlay visible
+	rbStore    *checkpoint.Store // pending rollback; nil once applied or when rbMsg reports
+	rbTarget   checkpoint.Entry
+	rbExtra    []string  // files the rollback will delete
+	rbFiles    int       // files the rollback will restore
+	rbMsg      string    // error or result text; any key closes
+	rbWarn     string    // unresolved-task caution shown in the overlay
 	broadcast  bool      // normal-mode keys go to every live pane
 	searching  bool      // typing a scrollback search query
 	searchBuf  string    // query being typed
@@ -283,6 +291,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.pagerOn {
 		m.pagerKey(msg)
+		return m, nil
+	}
+	if m.rbOn {
+		m.rollbackKey(msg)
 		return m, nil
 	}
 	if m.boardOn {
@@ -655,6 +667,9 @@ func (m *Model) boardKey(msg tea.KeyMsg) bool {
 			}
 		}
 		return true
+	case "u", "U":
+		m.startRollback()
+		return true
 	}
 	return false
 }
@@ -806,6 +821,9 @@ func (m *Model) View() string {
 	if len(m.gates) > 0 {
 		body = m.renderGate(mainW, contentH) // approval outranks the other overlays
 	}
+	if m.rbOn {
+		body = m.renderRollback(mainW, contentH) // a started rollback outranks a gate; one keypress resolves it
+	}
 	if m.pagerOn {
 		body = m.renderPager(mainW, contentH) // reading outranks even the gate; esc returns to it
 	}
@@ -942,7 +960,7 @@ func (m *Model) renderBoard(w, h int) string {
 			lipgloss.NewStyle().Faint(true).Render(truncate(task, w-50))
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("j/k select · v view brief/report · any other key closes"))
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("j/k select · v view brief/report · u roll back workspace · any other key closes"))
 	if w < 6 || h < 5 {
 		return truncate(b.String(), w*h)
 	}

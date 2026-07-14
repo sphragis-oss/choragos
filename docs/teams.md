@@ -128,6 +128,26 @@ and approvals and rejections land in `events.log`. Use it on the roles
 whose mistakes are expensive (implementation, release), and leave
 read-only reporters ungated.
 
+## Checkpoints: undo what a worker did
+
+Gates guard the plan before it runs; checkpoints recover the workspace
+after it ran badly. In a git repository every delegation snapshots
+tracked and untracked files before the task reaches the worker (no
+config needed, `[checkpoints]` tunes it), and the task board offers
+`u` on any entry to roll the workspace back to that moment, after a
+confirm overlay that says exactly how many files it will restore and
+delete. The same recovery works with no deck running:
+
+```bash
+choragos checkpoints    # what can I go back to?
+choragos rollback T7    # restore the files from before T7
+```
+
+Rollback never touches history: HEAD, branches, and any commits the
+worker made stay where they are, and the pre-rollback state is itself
+checkpointed, so the rollback can be undone. Details in the
+`[checkpoints]` section of [configuration.md](configuration.md).
+
 ## Isolate credentials per role
 
 A reviewer does not need your cloud keys:

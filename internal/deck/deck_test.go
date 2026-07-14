@@ -278,6 +278,65 @@ func TestDelegateCheckpointsWorkspace(t *testing.T) {
 	}
 }
 
+func TestBoardRollbackRestoresWorkspace(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	panes := startCatPanes(t, "orchestrator", "coder") // note: chdirs into its own temp dir
+	if out, err := exec.Command("git", "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if err := os.WriteFile("work.txt", []byte("precious"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(panes)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 48})
+	m.initCheckpoints()
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T1 do work"})
+	// the worker wrecks the workspace
+	if err := os.WriteFile("work.txt", []byte("WRECKED"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("junk.txt", []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.boardOn = true
+	m.Update(key("u"))
+	if !m.rbOn || m.rbMsg != "" {
+		t.Fatalf("overlay: on=%v msg=%q", m.rbOn, m.rbMsg)
+	}
+	if m.rbFiles != 1 || len(m.rbExtra) != 1 {
+		t.Fatalf("plan = %d restored / %d deleted, want 1/1", m.rbFiles, len(m.rbExtra))
+	}
+	if v := m.View(); !strings.Contains(v, "workspace rollback") || !strings.Contains(v, "roll back") {
+		t.Fatal("rollback overlay not rendered")
+	}
+	// cancel: overlay closes, board stays, files untouched
+	m.Update(key("q"))
+	if m.rbOn || !m.boardOn {
+		t.Fatal("cancel should return to the board")
+	}
+	if b, _ := os.ReadFile("work.txt"); string(b) != "WRECKED" {
+		t.Fatalf("cancel touched files: %q", b)
+	}
+	// confirm: files restored, extras deleted, result shown until the next key
+	m.Update(key("u"))
+	m.Update(key("y"))
+	if !strings.Contains(m.rbMsg, "rolled back") {
+		t.Fatalf("result = %q", m.rbMsg)
+	}
+	if b, _ := os.ReadFile("work.txt"); string(b) != "precious" {
+		t.Fatalf("work.txt = %q, want precious", b)
+	}
+	if _, err := os.Stat("junk.txt"); !os.IsNotExist(err) {
+		t.Fatal("junk.txt should be deleted")
+	}
+	m.Update(key("x"))
+	if m.rbOn || !m.boardOn {
+		t.Fatal("closing the result should return to the board")
+	}
+}
+
 func TestDispatchLogsEvents(t *testing.T) {
 	t.Chdir(t.TempDir())
 	panes, err := startPanes(config.Config{Roles: []config.Role{
