@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-14
+
+### Added
+- Workspace checkpoints: in a git repository, every delegation
+  snapshots tracked and untracked files (gitignore respected,
+  choragos's own `.choragos/` state excluded) as a parentless commit
+  under `refs/choragos/checkpoints/<epoch>-<task-id>`, taken before
+  the task reaches the worker. The user's index, HEAD, and history
+  are never touched; a snapshot failure warns and never blocks the
+  delegation. New `[checkpoints]` config: `enabled` (default true)
+  and `keep` (default 20, pruned at session start). `choragos doctor`
+  reports whether snapshots are active.
+- Rollback, from the deck and the CLI: `u` on a task board entry
+  opens a confirm overlay with the checkpoint's age and the exact
+  restore/delete counts; `choragos rollback <task-id>` does the same
+  with no session running, and `choragos checkpoints` lists what you
+  can go back to. Rollback restores files only (HEAD, branches, the
+  index, the stash, and worker commits stay untouched), never touches
+  ignored files, and checkpoints the current state first, so every
+  rollback is undoable (`choragos rollback pre-rollback-<task-id>`).
+
+### Fixed
+- Two flaky deck tests (TestScrollbackSearch, TestServerAttachLifecycle)
+  that could fail CI on slow runners; test-only changes.
+
 ## [0.8.0] - 2026-07-13
 
 ### Added
@@ -237,7 +262,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/sphragis-oss/choragos/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...v0.8.0
 [0.7.5]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...v0.7.5
 [0.7.1]: https://github.com/sphragis-oss/choragos/compare/v0.7.0...v0.7.1
