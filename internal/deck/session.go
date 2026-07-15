@@ -68,7 +68,9 @@ type entry struct {
 	bootSentAt time.Time
 	bootTries  int
 	bootOK     bool
-	restarts   int // auto-restarts consumed; reset by a manual restart
+	restarts   int  // auto-restarts consumed; reset by a manual restart
+	paused     bool // process group SIGSTOPped via prefix+p; resume credits timeouts
+	pausedAt   time.Time
 	// screen caches keyed by the pane's write sequence, so idle panes cost nothing per frame
 	renderSeq   uint64
 	renderPane  *pane.Pane
@@ -278,6 +280,9 @@ func (s *session) dispatch(cmd ipc.Command) {
 				s.log().Warn("delegate target unavailable", "to", name)
 				continue
 			}
+			if e.paused {
+				s.log().Warn("delegate to paused role; input buffers until resume", "to", name)
+			}
 			if e.role.Approve {
 				s.gates = append(s.gates, pendingGate{cmd: cmd, to: name, at: time.Now()})
 				s.log().Info("delegate gated", "to", name, "task", singleLine(cmd.Task), "brief", cmd.Brief)
@@ -410,6 +415,9 @@ func (s *session) runHook(hook, role, task string) {
 // checkWaiting rings the bell once per transition into waiting-for-input.
 func (s *session) checkWaiting() {
 	for i, e := range s.panes {
+		if e.paused {
+			continue // a stopped process must not look or ring as waiting
+		}
 		w := needsInput(e)
 		if w && !e.waiting {
 			s.log().Info("waiting for input", "role", e.role.Name)
@@ -423,6 +431,50 @@ func (s *session) checkWaiting() {
 	}
 }
 
+// togglePause freezes or resumes the focused role's process group.
+func (s *session) togglePause(i int) {
+	if i < 0 || i >= len(s.panes) {
+		return
+	}
+	e := s.panes[i]
+	if e.exited || e.gone {
+		return
+	}
+	if e.paused {
+		if err := e.pane.Resume(); err != nil {
+			s.log().Error("resume failed", "role", e.role.Name, "err", err)
+			return
+		}
+		s.creditPause(e.role.Name, e.pausedAt)
+		e.paused = false
+		s.log().Info("role resumed", "role", e.role.Name, "paused", time.Since(e.pausedAt).Round(time.Second).String())
+		return
+	}
+	if err := e.pane.Pause(); err != nil {
+		s.log().Error("pause failed", "role", e.role.Name, "err", err)
+		return
+	}
+	e.paused = true
+	e.pausedAt = time.Now()
+	s.log().Info("role paused", "role", e.role.Name)
+}
+
+// creditPause shifts open delegations forward so paused time never counts toward timeouts.
+func (s *session) creditPause(role string, pausedAt time.Time) {
+	now := time.Now()
+	for i := range s.board {
+		ev := &s.board[i]
+		if ev.kind != "delegate" || ev.to != role || !ev.doneAt.IsZero() || ev.timedOut {
+			continue
+		}
+		from := ev.at
+		if pausedAt.After(from) {
+			from = pausedAt
+		}
+		ev.at = ev.at.Add(now.Sub(from))
+	}
+}
+
 // checkTimeouts flags delegations that outlived their role's wall-clock limit; fires once per delegation.
 func (s *session) checkTimeouts() {
 	now := time.Now()
@@ -432,7 +484,7 @@ func (s *session) checkTimeouts() {
 			continue
 		}
 		e, _ := s.findRole(ev.to)
-		if e == nil {
+		if e == nil || e.paused {
 			continue
 		}
 		d := e.role.TimeoutDuration()
@@ -666,6 +718,7 @@ func (s *session) respawn(e *entry, idx, cols, rows int) {
 	e.gen++
 	e.exited = false
 	e.booted = false
+	e.paused = false
 	e.bootOK = false
 	e.bootTries = 0
 	e.bootLine = ""

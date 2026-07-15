@@ -653,6 +653,23 @@ func (p *Pane) Terminate() {
 	}
 }
 
+// Pause freezes the child's process group (SIGSTOP cannot be caught); Resume undoes it.
+func (p *Pane) Pause() error { return p.signalGroup(syscall.SIGSTOP) }
+
+// Resume continues a paused child's process group.
+func (p *Pane) Resume() error { return p.signalGroup(syscall.SIGCONT) }
+
+// signalGroup targets the group (the PTY child is its session leader) so shell children freeze too.
+func (p *Pane) signalGroup(sig syscall.Signal) error {
+	if p.cmd == nil || p.cmd.Process == nil {
+		return ErrPaneClosed
+	}
+	if err := syscall.Kill(-p.cmd.Process.Pid, sig); err == nil {
+		return nil
+	}
+	return p.cmd.Process.Signal(sig)
+}
+
 // Shutdown waits until deadline for a terminated child to exit (running its hooks), then force-closes.
 func (p *Pane) Shutdown(deadline time.Time) {
 	for time.Now().Before(deadline) && !p.exited() {

@@ -99,6 +99,7 @@ type Keys struct {
 	ToggleSidebar   string `toml:"toggle_sidebar"`
 	Help            string `toml:"help"`
 	RestartRole     string `toml:"restart_role"`
+	PauseRole       string `toml:"pause_role"`
 	Broadcast       string `toml:"broadcast"`
 	TaskBoard       string `toml:"task_board"`
 	Search          string `toml:"search"`
@@ -139,6 +140,7 @@ func (k Keys) Defaulted() Keys {
 	set(&k.ToggleSidebar, "b")
 	set(&k.Help, "?")
 	set(&k.RestartRole, "R")
+	set(&k.PauseRole, "p")
 	set(&k.Broadcast, "a")
 	set(&k.TaskBoard, "t")
 	set(&k.Search, "/")

@@ -35,6 +35,7 @@ forwarded to the PTY.
 | `resize_mode` | `prefix+r` | Enter resize mode (status line shows `[RESIZE]`) |
 | `toggle_sidebar` | `prefix+b` | Show/hide the status-card sidebar; tiles reflow to the full width |
 | `restart_role` | `prefix+R` | Respawn the focused tile's agent (works on live or exited roles) |
+| `pause_role` | `prefix+p` | Freeze/resume the focused role's process group (SIGSTOP/SIGCONT): inspect the workspace mid-flight without losing the agent's context. Status shows `paused`; paused time never counts toward `timeout`; input typed or delegated meanwhile buffers until resume. Best-effort: children in their own process groups keep running, and an API call in flight during a long pause may drop and retry on resume |
 | `reload` | `prefix+C` | Re-read the config file and converge the team: spawn added roles, retire removed ones, respawn changed specs (same as `choragos reload`) |
 | `detach` | `prefix+d` | Detach from a `choragos attach` session: the TUI exits, agents keep running (no-op in a foreground `serve`) |
 | `broadcast` | `prefix+a` | Toggle sending normal-mode keys to every live pane (`[BCAST]`) |
@@ -98,6 +99,7 @@ zoom = "z"
 resize_mode = "r"
 toggle_sidebar = "b"
 restart_role = "R"
+pause_role = "p"
 reload = "C"
 detach = "d"
 broadcast = "a"

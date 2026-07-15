@@ -57,6 +57,7 @@ type wireRole struct {
 	Exited   bool        `json:"exited"`
 	Gone     bool        `json:"gone"`
 	Waiting  bool        `json:"waiting"`
+	Paused   bool        `json:"paused,omitempty"`
 	Restarts int         `json:"restarts"`
 }
 
@@ -181,7 +182,7 @@ func toWireGates(gates []pendingGate) []wireGate {
 func (s *session) snapshotEvents() []wireEvent {
 	roster := make([]wireRole, 0, len(s.panes))
 	for _, e := range s.panes {
-		roster = append(roster, wireRole{Role: e.role, Exited: e.exited, Gone: e.gone, Waiting: e.waiting, Restarts: e.restarts})
+		roster = append(roster, wireRole{Role: e.role, Exited: e.exited, Gone: e.gone, Waiting: e.waiting, Paused: e.paused, Restarts: e.restarts})
 	}
 	return []wireEvent{
 		{Kind: "roster", Roster: roster},

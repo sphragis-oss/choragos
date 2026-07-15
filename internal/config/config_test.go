@@ -200,7 +200,7 @@ func TestKeysDefaultsMatchHerdr(t *testing.T) {
 		Prefix: "ctrl+b", SplitVertical: "v", SplitHorizontal: "-", ClosePane: "x",
 		FocusLeft: "h", FocusDown: "j", FocusUp: "k", FocusRight: "l",
 		CycleNext: "tab", CyclePrev: "shift+tab", Zoom: "z", ResizeMode: "r", ToggleSidebar: "b",
-		Help: "?", RestartRole: "R", Broadcast: "a", TaskBoard: "t", Search: "/", Reload: "C", Detach: "d",
+		Help: "?", RestartRole: "R", PauseRole: "p", Broadcast: "a", TaskBoard: "t", Search: "/", Reload: "C", Detach: "d",
 	}
 	if k != want {
 		t.Fatalf("default keys = %+v, want %+v", k, want)
