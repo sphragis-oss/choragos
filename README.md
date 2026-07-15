@@ -32,7 +32,7 @@
 
 ---
 
-Choragos is a secure multi-agent development orchestrator. It runs a team of AI coding agents in its own TUI and PTY panes, routing every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), the EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log.
+Choragos is a secure multi-agent development orchestrator. It runs a team of AI coding agents in its own TUI and PTY panes, and can route every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), the EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log. The gateway is optional: choragos works standalone, and every feature degrades cleanly without it.
 
 > The name is the Greek χορηγός (*choragos*), the one who led and funded the chorus. Here it leads a chorus of agents.
 
@@ -44,8 +44,9 @@ Choragos is a secure multi-agent development orchestrator. It runs a team of AI 
 
 - **Owned PTY panes:** Choragos spawns each agent in a pseudo-terminal it owns and parses (`hinshun/vt10x`), so it knows real input readiness instead of polling a status that lies. This removes the boot races that plague multiplexer-driven orchestrators.
 - **Delegate/work-done protocol:** The orchestrator agent hands work to workers via a local UNIX socket with `choragos delegate --to <role> --task "..."`; workers report back with `choragos work-done`.
-- **Sphragis in the data path, fail-closed:** Every worker is launched with its LLM base URL pointed at a local Sphragis gateway. If the gateway is not healthy, delegation is refused.
-- **Live token and cost telemetry:** Because every call already flows through the gateway, each role's status card shows live token counts, and dollar cost once you set a `[pricing]` table. No SDK hooks, no vendor lock: the gateway counts what the provider reports.
+- **Sphragis in the data path, fail-closed when you ask for it:** With the gateway enabled, every worker is launched with its LLM base URL pointed at a local Sphragis gateway, and delegation is refused while it is down. When you never asked for it and it is not installed, the deck simply runs with the gateway off and says so.
+- **Live token and cost telemetry:** With the gateway in the path, each role's status card shows its model and live token counts, and dollar cost once you set a `[pricing]` table. No SDK hooks, no vendor lock: the gateway counts what the provider reports. After the run, `choragos report` summarizes tasks, durations, and token burn per role from the event log.
+- **Runtime control:** Per-role delegation timeouts catch a worker stuck in a loop (`timeout = "45m"`, notify or restart), and `prefix+p` freezes a role (SIGSTOP) so you can inspect its work mid-flight and resume without losing the agent's context.
 - **Least privilege per role (opt-in):** By default roles inherit the parent environment. Set `env_allow` on a role to switch it to an allowlist (baseline vars like `PATH`/`HOME`/`TERM` plus the names or `PREFIX_*` patterns you list), or `env_deny` to strip specific variables, so a reviewer never sees your `AWS_*` credentials.
 
 ## Architecture
@@ -81,7 +82,7 @@ graph TD
 ### Prerequisites
 - Go 1.26+
 - Supported CLI agents installed (e.g. `claude`, `agy`)
-- [Sphragis](https://github.com/sphragis-oss/sphragis) installed in PATH
+- [Sphragis](https://github.com/sphragis-oss/sphragis) installed in PATH (optional, for compliance routing and token telemetry)
 
 ### Installation
 
@@ -111,11 +112,14 @@ make build
 
 # Start the TUI
 ./choragos serve
+
+# After a run: per-role tasks, durations, and token usage
+./choragos report
 ```
 
-Choragos will start the agents, ensure Sphragis is running, and route all traffic automatically.
+Choragos will start the agents and, when Sphragis is installed or explicitly enabled, start the gateway and route all traffic through it automatically; otherwise it runs standalone with the gateway off.
 
-The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`), zoom (`z`), live resize (`r`), restart a role (`R`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
+The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`, `1..9`), zoom (`z`), live resize (`r`), restart a role (`R`), pause/resume a role (`p`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
 
 Sessions detach like tmux does: `choragos serve --detach` runs the crew headless, `choragos attach` brings the TUI back with screens, tasks, gates, and layout restored, and `prefix+d` leaves the agents running when you go. `choragos ls` and `choragos kill` manage sessions across projects.
 
