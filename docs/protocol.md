@@ -98,7 +98,13 @@ matching delegation resolved on the task board (prefix key, then `t`).
 ## Observability
 
 - `.choragos/logs/events.log`: every delegate, work-done, boot injection,
-  gateway refusal, and pane exit, as structured slog lines.
+  gateway refusal, and pane exit, as structured slog lines. With the
+  gateway on, cumulative per-role token counters are snapshotted into the
+  log every 30s and on quit.
+- `choragos report`: aggregates that log (or a saved copy passed as an
+  argument) into a per-role table of tasks, completions, busy and average
+  task time, first and last activity, and token usage; the token column
+  reads n/a for roles the gateway never reported.
 - `.choragos/logs/<role>.log`: each role's plain-text transcript (the
   rendered scrollback, written when the pane closes), one session per
   header line with the working directory and start time.

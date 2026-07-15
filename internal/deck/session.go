@@ -129,6 +129,7 @@ type session struct {
 	gateway    *sphragis.Supervisor
 	sphragisOn bool              // gateway enforcement, toggled live with ctrl+g
 	gatewayUp  bool              // last known gateway health (refreshed off the UI thread)
+	lastTokens time.Time         // last event-log token snapshot, paced by tokenSnapInterval
 	closed     bool              // closeAll ran; makes cleanup idempotent
 	ckpt       *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
 	bellFn     func()            // rings the terminal bell; nil disables ([ui] bell)
@@ -829,6 +830,10 @@ func (s *session) closeAll() {
 	}
 	for _, e := range s.panes {
 		e.pane.Shutdown(deadline)
+	}
+	// final cumulative snapshot so the report sees tokens burned since the last tick
+	if s.sphragisOn && s.gatewayUp {
+		s.logTokens()
 	}
 	_ = s.gateway.Close()
 	if s.eventsC != nil {
