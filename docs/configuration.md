@@ -28,6 +28,8 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `env_deny` | array | `[]` | Strip matching vars (exact or `PREFIX_*`) in either mode; wins over `env_allow` |
 | `restart` | string | `""` | `"on-failure"` respawns the role in place when its process exits non-zero (or dies by signal); clean exits and deck shutdown are respected |
 | `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
+| `timeout` | string | `""` | Wall-clock limit per delegation to this role (Go duration, e.g. `"45m"`); empty disables. The timer starts when the task is delivered (after any approval gate) and clears on the matching work-done |
+| `timeout_action` | string | `"notify"` | What a timeout does: `notify` (bell, board `timeout` mark, `on_timeout` hook; the worker keeps running) or `restart` (SIGTERM the role; auto-restart takes over with `restart = "on-failure"`) |
 | `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); `v` pages the attached brief in-app, `e` opens it in `$VISUAL`/`$EDITOR`, and a rejection is reported back to the orchestrator |
 
 Environment isolation example: a reviewer that never sees cloud credentials.
@@ -122,6 +124,7 @@ See [keybindings.md](keybindings.md) for what each action does.
 | `mouse` | bool | `true` | Capture the mouse for tile focus and wheel scrollback; set `false` to restore terminal-native text selection (no Shift+drag needed) |
 | `on_gate` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation joins the approval queue; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
 | `on_input` | string | `""` | Command run via `sh -c` (background, non-blocking) when an agent transitions to waiting-for-input; `CHORAGOS_ROLE` is in its env |
+| `on_timeout` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation outlives its role's `timeout`; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
 | `viewer` | string | `"pager"` | How `v` opens briefs/reports: `"pager"` renders in-app, `"editor"` opens `$VISUAL`/`$EDITOR` (pager when both are unset). The board and gate `e` always open the editor |
 
 ### `[ui.theme]`

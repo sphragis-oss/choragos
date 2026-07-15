@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -36,6 +37,15 @@ type Role struct {
 	RestartRetries int    `toml:"restart_retries"`
 	// human gate: delegations to this role pause in the deck until the user approves
 	Approve bool `toml:"approve"`
+	// wall-clock limit per delegation ("45m"); empty = disabled. Action: "notify" (default) or "restart"
+	Timeout       string `toml:"timeout"`
+	TimeoutAction string `toml:"timeout_action"`
+}
+
+// TimeoutDuration returns the per-delegation wall-clock limit; zero means disabled. Load validated the format.
+func (r Role) TimeoutDuration() time.Duration {
+	d, _ := time.ParseDuration(r.Timeout)
+	return d
 }
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
@@ -144,10 +154,11 @@ type UI struct {
 	Bell      *bool `toml:"bell"`
 	Mouse     *bool `toml:"mouse"`
 	// notification hooks, run via sh -c when the deck wants a human; empty = bell only
-	OnGate  string `toml:"on_gate"`
-	OnInput string `toml:"on_input"`
-	Viewer  string `toml:"viewer"` // how v opens briefs/reports: "pager" (default) or "editor"
-	Theme   Theme  `toml:"theme"`
+	OnGate    string `toml:"on_gate"`
+	OnInput   string `toml:"on_input"`
+	OnTimeout string `toml:"on_timeout"`
+	Viewer    string `toml:"viewer"` // how v opens briefs/reports: "pager" (default) or "editor"
+	Theme     Theme  `toml:"theme"`
 }
 
 // Theme overrides the deck's status colors; values are ANSI 0-255 or #rrggbb hex.
@@ -311,6 +322,19 @@ func Load(path string) (Config, error) {
 	for _, r := range c.Roles {
 		if r.Restart != "" && !r.RestartOnFailure() {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
+		}
+	}
+	for i := range c.Roles {
+		r := &c.Roles[i]
+		if r.Timeout != "" {
+			if d, err := time.ParseDuration(r.Timeout); err != nil || d <= 0 {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: invalid timeout %q (use a positive Go duration like \"45m\"); timeouts disabled", path, r.Name, r.Timeout))
+				r.Timeout = ""
+			}
+		}
+		if a := r.TimeoutAction; a != "" && a != "notify" && a != "restart" {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown timeout_action %q (notify or restart); using notify", path, r.Name, a))
+			r.TimeoutAction = ""
 		}
 	}
 	th := &c.UI.Theme
