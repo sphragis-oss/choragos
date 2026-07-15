@@ -3,8 +3,12 @@
 package deck
 
 import (
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 )
@@ -114,6 +118,43 @@ func TestUsageLabel(t *testing.T) {
 	small := roleUsage{In: 100, Out: 7, Cost: 0.0027}
 	if got := small.usageLabel(); !strings.Contains(got, "$0.0027") {
 		t.Errorf("small cost label = %q", got)
+	}
+}
+
+func TestLogTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(sampleMetrics))
+	}))
+	defer srv.Close()
+	var buf strings.Builder
+	s := &session{
+		cfg:    config.Config{Sphragis: config.Sphragis{Addr: strings.TrimPrefix(srv.URL, "http://")}},
+		events: slog.New(slog.NewTextHandler(&buf, nil)),
+	}
+	s.logTokens()
+	got := buf.String()
+	for _, want := range []string{"msg=tokens", "role=coder", "in=200", "out=50", "cache_read=1000000", "role=reviewer"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("token snapshot missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `role= `) || strings.Contains(got, `role=""`) {
+		t.Errorf("empty agent should be dropped:\n%s", got)
+	}
+}
+
+func TestMaybeLogTokensGating(t *testing.T) {
+	var buf strings.Builder
+	s := &session{events: slog.New(slog.NewTextHandler(&buf, nil))}
+	s.maybeLogTokens() // sphragis off: no snapshot, no rate-limit consumed
+	if !s.lastTokens.IsZero() || buf.Len() != 0 {
+		t.Fatalf("gateway-off tick should be a no-op, log=%q", buf.String())
+	}
+	s.sphragisOn, s.gatewayUp = true, true
+	s.lastTokens = time.Now()
+	s.maybeLogTokens() // within the interval: skipped
+	if buf.Len() != 0 {
+		t.Fatalf("rate-limited tick should not log, log=%q", buf.String())
 	}
 }
 

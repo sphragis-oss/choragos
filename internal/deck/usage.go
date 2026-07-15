@@ -45,6 +45,36 @@ func fetchUsage(addr string, pricing map[string]config.Price) tea.Cmd {
 	}
 }
 
+// tokenSnapInterval paces the cumulative token snapshots written to the event log.
+const tokenSnapInterval = 30 * time.Second
+
+// maybeLogTokens rate-limits event-log token snapshots; the fetch runs off the loop thread.
+func (s *session) maybeLogTokens() {
+	if !s.sphragisOn || !s.gatewayUp || time.Since(s.lastTokens) < tokenSnapInterval {
+		return
+	}
+	s.lastTokens = time.Now()
+	go s.logTokens()
+}
+
+// logTokens writes one cumulative token line per role so the report survives quit.
+func (s *session) logTokens() {
+	client := http.Client{Timeout: time.Second}
+	resp, err := client.Get(s.cfg.Sphragis.BaseURL() + "/metrics")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return
+	}
+	for role, u := range parseUsage(string(body), nil) {
+		s.log().Info("tokens", "role", role, "in", u.In, "out", u.Out,
+			"cache_creation", u.CacheCreation, "cache_read", u.CacheRead)
+	}
+}
+
 // parseUsage aggregates token metric lines into per-agent tallies and priced cost.
 func parseUsage(body string, pricing map[string]config.Price) usageMsg {
 	out := usageMsg{}

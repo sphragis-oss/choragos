@@ -93,6 +93,7 @@ func RunServer(cfg config.Config, version string) error {
 		case <-ticker.C:
 			s.bootPanes()
 			s.checkWaiting()
+			s.maybeLogTokens()
 			if s.sphragisOn {
 				go func() { msgs <- gatewayHealthMsg{up: sphragis.Healthy(cfg.Sphragis.Addr)} }()
 			}

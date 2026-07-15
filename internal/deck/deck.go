@@ -242,6 +242,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.bootPanes()
 		m.checkWaiting()
+		m.maybeLogTokens()
 		if m.sphragisOn {
 			cmds := []tea.Cmd{tick(), checkHealth(m.cfg.Sphragis.Addr)}
 			if m.gatewayUp {

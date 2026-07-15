@@ -44,6 +44,7 @@ func rootCmd() *cobra.Command {
 		doctorCmd(),
 		checkpointsCmd(),
 		rollbackCmd(),
+		reportCmd(),
 		delegateCmd(),
 		workDoneCmd(),
 		reloadCmd(),
