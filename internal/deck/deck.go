@@ -1379,7 +1379,22 @@ func keyBytes(k tea.KeyMsg) []byte {
 		return []byte("\x1b[C")
 	case tea.KeyLeft:
 		return []byte("\x1b[D")
+	case tea.KeyHome:
+		return []byte("\x1b[H")
+	case tea.KeyEnd:
+		return []byte("\x1b[F")
+	case tea.KeyDelete:
+		return []byte("\x1b[3~")
+	case tea.KeyPgUp:
+		return []byte("\x1b[5~")
+	case tea.KeyPgDown:
+		return []byte("\x1b[6~")
 	default:
-		return []byte(k.String())
+		// control KeyTypes equal their ASCII byte (ctrl+a = 0x01); anything else is dropped,
+		// never typed into the pane as its key name
+		if k.Type >= 0 && k.Type < 0x20 {
+			return []byte{byte(k.Type)}
+		}
+		return nil
 	}
 }
