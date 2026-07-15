@@ -1162,6 +1162,9 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		inner := nameStyle.Render(fmt.Sprintf("%d %s", i+1, e.role.Name)) + "\n" +
 			lipgloss.NewStyle().Foreground(st[i].color).Render(st[i].dot) + " " +
 			lipgloss.NewStyle().Faint(true).Render(st[i].label)
+		if md := m.roleModel(e.role); md != "" {
+			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(md, width-4))
+		}
 		if u := m.usage[e.role.Name].usageLabel(); u != "" {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(u, width-4))
 		}

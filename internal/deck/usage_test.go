@@ -121,6 +121,33 @@ func TestUsageLabel(t *testing.T) {
 	}
 }
 
+func TestParseUsageDominantModel(t *testing.T) {
+	body := `sphragis_tokens_total{agent="coder",model="claude-haiku-4-5",direction="input"} 300
+sphragis_tokens_total{agent="coder",model="claude-opus-4-8",direction="input"} 200
+sphragis_tokens_total{agent="coder",model="claude-opus-4-8",direction="output"} 150
+`
+	got := parseUsage(body, nil)
+	if got["coder"].Model != "claude-opus-4-8" {
+		t.Fatalf("dominant model = %q, want claude-opus-4-8", got["coder"].Model)
+	}
+}
+
+func TestPrettyModel(t *testing.T) {
+	cases := []struct{ id, want string }{
+		{"claude-opus-4-8", "Claude Opus 4.8"},
+		{"claude-sonnet-5-20250929", "Claude Sonnet 5"},
+		{"claude-haiku-4-5", "Claude Haiku 4.5"},
+		{"gpt-4o", "gpt-4o"},
+		{"opus", "opus"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := prettyModel(c.id); got != c.want {
+			t.Errorf("prettyModel(%q) = %q, want %q", c.id, got, c.want)
+		}
+	}
+}
+
 func TestLogTokens(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(sampleMetrics))
@@ -161,11 +188,20 @@ func TestMaybeLogTokensGating(t *testing.T) {
 func TestCardsShowUsage(t *testing.T) {
 	panes := startCatPanes(t, "orchestrator", "coder")
 	m := newTestModel(panes)
-	m.usage = usageMsg{"coder": {In: 1500, Out: 200, Cost: 0.05}}
+	m.usage = usageMsg{"coder": {In: 1500, Out: 200, Cost: 0.05, Model: "claude-opus-4-8"}}
 	view := m.View()
-	for _, want := range []string{"↑1.5k", "↓200", "$0.05"} {
+	for _, want := range []string{"↑1.5k", "↓200", "$0.05", "Claude Opus 4.8"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q", want)
 		}
+	}
+}
+
+func TestCardsShowConfiguredModelWithoutGateway(t *testing.T) {
+	panes := startCatPanes(t, "orchestrator", "coder")
+	m := newTestModel(panes)
+	m.panes[1].role.Model = "opus"
+	if view := m.View(); !strings.Contains(view, "opus") {
+		t.Error("card should fall back to the configured model")
 	}
 }
