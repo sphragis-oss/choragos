@@ -20,6 +20,7 @@ import (
 type roleUsage struct {
 	In, Out, CacheCreation, CacheRead int64
 	Cost                              float64
+	Model                             string // dominant model by token volume
 }
 
 // usageMsg carries the latest per-role usage snapshot, keyed by role name.
@@ -78,6 +79,7 @@ func (s *session) logTokens() {
 // parseUsage aggregates token metric lines into per-agent tallies and priced cost.
 func parseUsage(body string, pricing map[string]config.Price) usageMsg {
 	out := usageMsg{}
+	perModel := map[string]map[string]int64{}
 	for _, line := range strings.Split(body, "\n") {
 		m := tokenLine.FindStringSubmatch(strings.TrimSpace(line))
 		if m == nil {
@@ -89,6 +91,10 @@ func parseUsage(body string, pricing map[string]config.Price) usageMsg {
 			continue
 		}
 		n := int64(v)
+		if perModel[agent] == nil {
+			perModel[agent] = map[string]int64{}
+		}
+		perModel[agent][model] += n
 		u := out[agent]
 		p, priced := priceFor(model, pricing)
 		switch dir {
@@ -107,7 +113,61 @@ func parseUsage(body string, pricing map[string]config.Price) usageMsg {
 		}
 		out[agent] = u
 	}
+	for agent, u := range out {
+		u.Model = dominantModel(perModel[agent])
+		out[agent] = u
+	}
 	return out
+}
+
+// dominantModel picks the model with the most tokens; ties break lexicographically for determinism.
+func dominantModel(tokens map[string]int64) string {
+	var best string
+	max := int64(-1)
+	for m, n := range tokens {
+		if n > max || (n == max && m < best) {
+			best, max = m, n
+		}
+	}
+	return best
+}
+
+// prettyModel humanizes claude model ids (claude-opus-4-8-20260115 -> Claude Opus 4.8); other ids pass through.
+func prettyModel(id string) string {
+	if !strings.HasPrefix(id, "claude-") {
+		return id
+	}
+	parts := strings.Split(id, "-")
+	if last := parts[len(parts)-1]; len(last) == 8 && allDigits(last) {
+		parts = parts[:len(parts)-1] // date suffix
+	}
+	var words, nums []string
+	for _, p := range parts {
+		switch {
+		case p == "":
+		case allDigits(p):
+			nums = append(nums, p)
+		default:
+			words = append(words, strings.ToUpper(p[:1])+p[1:])
+		}
+	}
+	s := strings.Join(words, " ")
+	if len(nums) > 0 {
+		s += " " + strings.Join(nums, ".")
+	}
+	return s
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func cost(n int64, priced bool, perMtok float64) float64 {
@@ -147,6 +207,14 @@ func pathSafe(name string) bool {
 		}
 	}
 	return true
+}
+
+// roleModel prefers the model the gateway actually saw over the configured one.
+func (m *Model) roleModel(r config.Role) string {
+	if u, ok := m.usage[r.Name]; ok && u.Model != "" {
+		return prettyModel(u.Model)
+	}
+	return prettyModel(r.Model)
 }
 
 // usageLabel renders a compact card line: token arrows plus cost when priced.
