@@ -168,7 +168,16 @@ func Run(cfg config.Config) (err error) {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(tea.SetWindowTitle("choragos"), tick())
+	return tea.Batch(tea.SetWindowTitle(windowTitle()), tick())
+}
+
+// windowTitle names the terminal tab after the workspace; attach runs in the session's directory too.
+func windowTitle() string {
+	wd, err := os.Getwd()
+	if err != nil || wd == "" {
+		return "choragos"
+	}
+	return "choragos · " + filepath.Base(wd)
 }
 
 func tick() tea.Cmd {
