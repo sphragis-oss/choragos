@@ -73,6 +73,16 @@ func TestRoleArgsAppendsModel(t *testing.T) {
 	}
 }
 
+func TestWindowTitle(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := windowTitle(), "choragos · "+filepath.Base(wd); got != want {
+		t.Fatalf("windowTitle = %q, want %q", got, want)
+	}
+}
+
 func TestDims(t *testing.T) {
 	// 120x40 with sidebar: left ~1/3, main the rest, one status row.
 	m := &Model{w: 120, h: 40, sidebar: true}
