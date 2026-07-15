@@ -1054,11 +1054,39 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 		lipgloss.NewStyle().Foreground(st[role].color).Render(st[role].dot) + " " +
 			nameStyle.Render(e.role.Name) + "  " +
 			lipgloss.NewStyle().Faint(true).Render(st[role].label))
-	return lipgloss.NewStyle().
+	tile := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(border).
 		Width(w - 2).Height(h - 2).MaxHeight(h).
 		Render(header + "\n" + content)
+	if scrolled {
+		tile = overlayScrollThumb(tile, ch, m.scrollOff, m.maxScroll)
+	}
+	return tile
+}
+
+// overlayScrollThumb swaps the right border of the view's proportional window for a block thumb.
+func overlayScrollThumb(tile string, ch, off, maxOff int) string {
+	total := maxOff + ch // rows of scrollable history
+	if total < 1 || ch < 1 {
+		return tile
+	}
+	tlen := ch * ch / total
+	if tlen < 1 {
+		tlen = 1
+	}
+	tstart := (maxOff - off) * ch / total
+	lines := strings.Split(tile, "\n")
+	for i := 0; i < tlen; i++ {
+		n := 2 + tstart + i // border row, header row, then content
+		if n >= len(lines)-1 {
+			break
+		}
+		if j := strings.LastIndex(lines[n], "│"); j >= 0 {
+			lines[n] = lines[n][:j] + "█" + lines[n][j+len("│"):]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderCards is the left column: one status card per role, with a tail activity preview.
@@ -1113,7 +1141,8 @@ func (m *Model) renderStats(st []roleState) string {
 	}
 	scroll := ""
 	if m.scrollOff > 0 {
-		scroll = lipgloss.NewStyle().Foreground(m.th.scroll).Render(fmt.Sprintf(" · scrollback ↑%d", m.scrollOff))
+		scroll = lipgloss.NewStyle().Foreground(m.th.scroll).Render(fmt.Sprintf(" · scrollback ↑%d/%d", m.scrollOff, m.maxScroll)) +
+			lipgloss.NewStyle().Faint(true).Render(" · PgDn live · "+m.keys.Prefix+" "+m.keys.Search+" search")
 	}
 	gated := ""
 	if len(m.gates) > 0 {

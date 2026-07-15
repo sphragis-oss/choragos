@@ -477,6 +477,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyShiftTab}
 	case "pgup":
 		return tea.KeyMsg{Type: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -1008,6 +1010,64 @@ func TestScrollbackOnFocusedTile(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "scrollback") {
 		t.Fatal("status line should show the scrollback indicator")
 	}
+}
+
+func TestScrollbackIndicatorAndThumb(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "solo"))
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 48})
+	for i := 0; i < 80; i++ {
+		_ = m.panes[0].pane.Input([]byte(fmt.Sprintf("scroll-me-%d\r", i)))
+	}
+	if !waitFor(func() bool { return strings.Contains(m.panes[0].pane.Render(), "scroll-me-79") }) {
+		t.Fatal("pane never echoed")
+	}
+	if v := m.View(); strings.Contains(v, "█") {
+		t.Fatal("thumb must not show at the live tail")
+	}
+	m.Update(key("pgup"))
+	v := m.View()
+	if !strings.Contains(v, fmt.Sprintf("scrollback ↑%d/%d", scrollStep, m.maxScroll)) {
+		t.Fatalf("status line missing position:\n%s", lastLine(v))
+	}
+	if m.maxScroll <= scrollStep {
+		t.Fatalf("history too short for the test: maxScroll = %d", m.maxScroll)
+	}
+	if !strings.Contains(v, "PgDn live") {
+		t.Fatalf("status line missing the scrollback hint:\n%s", lastLine(v))
+	}
+	if !strings.Contains(v, "█") {
+		t.Fatal("scrolled tile missing the border thumb")
+	}
+	for m.scrollOff < m.maxScroll {
+		m.Update(key("pgup"))
+	}
+	top := m.View()
+	if !strings.Contains(top, "█") {
+		t.Fatal("thumb missing at the top of history")
+	}
+	if thumbRow(top) >= thumbRow(v) {
+		t.Fatalf("thumb should move up as the view scrolls back: %d >= %d", thumbRow(top), thumbRow(v))
+	}
+	for m.scrollOff > 0 {
+		m.Update(key("pgdown"))
+	}
+	if v := m.View(); strings.Contains(v, "█") {
+		t.Fatal("thumb must disappear back at the live tail")
+	}
+}
+
+func lastLine(v string) string {
+	lines := strings.Split(v, "\n")
+	return lines[len(lines)-1]
+}
+
+func thumbRow(v string) int {
+	for i, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "█") {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestScrollbackSearch(t *testing.T) {
