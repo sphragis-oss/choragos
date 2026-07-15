@@ -225,10 +225,7 @@ func (s Sphragis) IsFailClosed() bool { return s.FailClosed == nil || *s.FailClo
 func (s Sphragis) BaseURL() string { return "http://" + s.Addr }
 
 func (s *Sphragis) applyDefaults() {
-	if s.Enabled == nil {
-		v := true
-		s.Enabled = &v
-	}
+	// Enabled stays nil when omitted: default-on, but records that the user never asked (see sphragis.AutoOff)
 	if s.FailClosed == nil {
 		v := true
 		s.FailClosed = &v

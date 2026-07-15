@@ -90,12 +90,14 @@ func runDoctor(out io.Writer, cfgPath string) int {
 	}
 
 	if cfg.Sphragis.IsEnabled() {
-		if _, err := exec.LookPath(cfg.Sphragis.Command); err != nil {
-			report("FAIL", "sphragis", fmt.Sprintf("gateway enabled but %q not in PATH (serve would fail closed)", cfg.Sphragis.Command))
-		} else if sphragis.Healthy(cfg.Sphragis.Addr) {
+		if sphragis.Healthy(cfg.Sphragis.Addr) {
 			report("OK", "sphragis", "gateway already healthy at "+cfg.Sphragis.Addr)
-		} else {
+		} else if _, err := exec.LookPath(cfg.Sphragis.Command); err == nil {
 			report("OK", "sphragis", cfg.Sphragis.Command+" in PATH; serve will start the gateway")
+		} else if cfg.Sphragis.Enabled == nil {
+			report("WARN", "sphragis", fmt.Sprintf("%q not in PATH; serve will run with the gateway off (set [sphragis] enabled = true to require it)", cfg.Sphragis.Command))
+		} else {
+			report("FAIL", "sphragis", fmt.Sprintf("gateway enabled but %q not in PATH (serve would fail closed)", cfg.Sphragis.Command))
 		}
 	} else {
 		report("WARN", "sphragis", "gateway disabled; agent traffic is not routed or audited")

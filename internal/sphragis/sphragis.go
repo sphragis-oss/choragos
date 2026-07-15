@@ -25,6 +25,17 @@ func Healthy(addr string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
+// AutoOff reports whether a default-on gateway should quietly disable: never explicitly enabled, command missing, nothing listening.
+func AutoOff(cfg config.Sphragis) bool {
+	if cfg.Enabled != nil {
+		return false
+	}
+	if _, err := exec.LookPath(cfg.Command); err == nil {
+		return false
+	}
+	return !Healthy(cfg.Addr)
+}
+
 // Supervisor tracks a gateway; Close stops it only if choragos started it.
 type Supervisor struct {
 	addr    string
