@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-15
+
+First-user UX batch, driven by live feedback from a team demo.
+
+### Added
+- The focused tile renders the child's terminal cursor as a
+  reverse-video block at the live tail, so you can see where your
+  input lands. Apps that hide their cursor stay clean; unfocused
+  tiles and scrolled-back views never show one. (#81)
+- Scrollback sense of place: while scrolled back, the status line
+  shows the position and the way back
+  (`scrollback ↑15/180 · PgDn live · ctrl+b / search`) and the
+  focused tile's right border carries a proportional scrollbar
+  thumb. Both disappear at the live tail. (#82)
+- Open briefs and reports in your own editor: `e` on a task-board
+  entry opens it in `$VISUAL`/`$EDITOR` (like the gate overlay's
+  `e`), and `[ui] viewer = "editor"` makes `v` open the editor
+  everywhere, with the in-app pager as the fallback when no editor
+  is set. (#84)
+- Direct role focus: `prefix+1..9` jumps to the role by its sidebar
+  card number, and a left click on a sidebar card does the same.
+  Hidden roles surface on the focused tile; no more cycling
+  `ctrl+o` around the team. (#79, #80)
+
 ## [0.9.0] - 2026-07-14
 
 ### Added
@@ -262,7 +286,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/sphragis-oss/choragos/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/sphragis-oss/choragos/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...v0.8.0
 [0.7.5]: https://github.com/sphragis-oss/choragos/compare/v0.7.1...v0.7.5
