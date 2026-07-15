@@ -193,6 +193,9 @@ func (srv *server) handleClient(ev wireEvent) bool {
 			srv.ensureTees()
 			srv.syncClient()
 		}
+	case "pause":
+		s.togglePause(ev.Idx)
+		srv.syncClient()
 	case "reload":
 		cw, ch := s.panes[s.startIdx()].pane.Size()
 		s.reload(cw, ch)

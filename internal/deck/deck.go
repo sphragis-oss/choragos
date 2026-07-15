@@ -495,6 +495,12 @@ func (m *Model) wmAction(key string) {
 			break
 		}
 		m.restartRole()
+	case m.keys.PauseRole:
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wireEvent{Kind: "pause", Idx: m.active})
+			break
+		}
+		m.togglePause(m.active)
 	case m.keys.Reload:
 		if m.remote != nil {
 			_ = m.remote.WriteEvent(wireEvent{Kind: "reload"})
@@ -910,6 +916,7 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.ResizeMode, "resize mode (h/j/k/l, other key exits)"},
 		{k.Prefix + " " + k.ToggleSidebar, "toggle sidebar"},
 		{k.Prefix + " " + k.RestartRole, "restart focused role"},
+		{k.Prefix + " " + k.PauseRole, "pause/resume focused role (SIGSTOP)"},
 		{k.Prefix + " " + k.Reload, "reload config (add/remove roles)"},
 		{k.Prefix + " " + k.Detach, "detach (attached sessions; agents keep running)"},
 		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
@@ -1270,6 +1277,8 @@ func computeStatus(e *entry, now time.Time, th deckTheme) roleState {
 	switch {
 	case e.exited:
 		return roleState{dot: "○", color: th.dim, label: "exited", exited: true}
+	case e.paused:
+		return roleState{dot: "❚❚", color: th.waiting, label: "paused"}
 	case needsInput(e):
 		return roleState{dot: "◆", color: th.waiting, label: "waiting for input", waiting: true}
 	case now.Sub(e.lastActive) < workingWindow:
