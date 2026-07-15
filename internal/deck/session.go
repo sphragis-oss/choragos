@@ -73,6 +73,9 @@ type entry struct {
 	renderSeq   uint64
 	renderPane  *pane.Pane
 	cacheRender string
+	curSeq      uint64
+	curPane     *pane.Pane
+	cacheCur    string
 	tailSeq     uint64
 	tailPane    *pane.Pane
 	cacheTail   []string
@@ -85,6 +88,15 @@ func (e *entry) renderCached() string {
 		e.renderPane, e.renderSeq = e.pane, s
 	}
 	return e.cacheRender
+}
+
+// renderCachedCursor is renderCached with the cursor cell shown; only the focused tile uses it.
+func (e *entry) renderCachedCursor() string {
+	if s := e.pane.Seq(); e.curPane != e.pane || e.curSeq != s || e.cacheCur == "" {
+		e.cacheCur = e.pane.RenderCursor()
+		e.curPane, e.curSeq = e.pane, s
+	}
+	return e.cacheCur
 }
 
 // tailCached returns the pane's recent non-blank rows, re-scanning only after the screen changed.

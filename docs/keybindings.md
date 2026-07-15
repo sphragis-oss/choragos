@@ -112,6 +112,12 @@ Cell-motion mouse mode is on: a left click focuses the tile under the
 cursor, and the wheel scrolls the focused tile's history. The sidebar and
 status row are not clickable.
 
+## Cursor
+
+The focused tile renders the child's terminal cursor as a reverse-video
+block at the live tail. Apps that hide their cursor (menus, fullscreen
+redraws) stay clean, and scrolled-back views never show one.
+
 ## Scrollback search
 
 `prefix+/` opens a query prompt on the status line (`[SEARCH /...]`).

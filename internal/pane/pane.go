@@ -299,11 +299,21 @@ func (p *Pane) Resize(cols, rows int) error {
 }
 
 // Render returns the live screen as ANSI-colored text, preserving colors and attributes.
-func (p *Pane) Render() string {
+func (p *Pane) Render() string { return p.render(false) }
+
+// RenderCursor is Render with the cursor cell reverse-videoed, when the child shows a cursor.
+func (p *Pane) RenderCursor() string { return p.render(true) }
+
+func (p *Pane) render(cursor bool) string {
 	p.term.Lock()
 	defer p.term.Unlock()
 	cols, rows := p.term.Size()
-	return renderRows(p.term, cols, 0, rows)
+	cx, cy := -1, -1
+	if cursor && p.term.CursorVisible() {
+		c := p.term.Cursor()
+		cx, cy = c.X, c.Y
+	}
+	return renderRows(p.term, cols, 0, rows, cx, cy)
 }
 
 // histTerminal returns the replayed-history terminal and its content bounds, re-parsing the
@@ -366,7 +376,7 @@ func (p *Pane) Scrollback(cols, height, offset int) (view string, maxOffset int)
 	if start < top {
 		start = top
 	}
-	return renderRows(h, cols, start, end), maxOffset
+	return renderRows(h, cols, start, end, -1, -1), maxOffset
 }
 
 // HistoryLines replays the captured history and returns its plain-text content rows.
@@ -396,13 +406,16 @@ func (p *Pane) HistoryLines(cols int) []string {
 	return out
 }
 
-// renderRows emits rows [y0,y1) of a terminal as ANSI-colored text; caller holds the lock.
-func renderRows(t vt10x.Terminal, cols, y0, y1 int) string {
+// renderRows emits rows [y0,y1) as ANSI text, reverse-videoing cell (cx,cy) when >= 0; caller holds the lock.
+func renderRows(t vt10x.Terminal, cols, y0, y1, cx, cy int) string {
 	var b strings.Builder
 	prev := ""
 	for y := y0; y < y1; y++ {
 		for x := 0; x < cols; x++ {
 			g := t.Cell(x, y)
+			if x == cx && y == cy {
+				g.Mode ^= attrReverse
+			}
 			if s := sgr(g); s != prev {
 				b.WriteString(s)
 				prev = s
