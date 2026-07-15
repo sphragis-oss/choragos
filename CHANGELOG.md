@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-15
+
+Run visibility and runtime control, plus a standalone-first gateway
+posture: choragos now works out of the box with or without Sphragis.
+
+### Added
+- `choragos report`: aggregate `.choragos/logs/events.log` (or any
+  saved copy) into a per-role table of tasks handled, completions,
+  busy and average task time, first/last activity, and token usage.
+  With the gateway on, cumulative per-role token counters are
+  snapshotted into the event log every 30s and on quit, so token burn
+  survives the session; without it the column reads n/a. (#86)
+- Wall-clock timeout per delegation: `timeout = "45m"` on a role arms
+  a timer from delivery to work-done. The default action notifies
+  (bell, board `timeout` mark, `[ui] on_timeout` hook) and keeps the
+  worker running; `timeout_action = "restart"` SIGTERMs the role so
+  `restart = "on-failure"` respawns it. (#100)
+- Pause/resume a role with `prefix+p`: SIGSTOP/SIGCONT on the process
+  group, a `paused` status in the deck and over detach/attach, no
+  false waiting bell, and paused time never counts toward delegation
+  timeouts. Freeze a worker, inspect the diff, resume with its
+  context window intact. (#101)
+- Role transcripts stream: lines are appended to
+  `.choragos/logs/<role>.log` as they scroll off the live screen
+  (every 15s) instead of only at pane close, with a
+  `--- transcript gap ---` marker when output outran the capture
+  buffer. Long sessions survive on disk, including after a crash.
+  Note: agents that redraw in place without emitting scrollback
+  (claude-code) still leave only what the terminal ever showed. (#91)
+- Each role's sidebar card shows its model: the dominant model from
+  gateway traffic when available (`claude-opus-4-8` renders as
+  "Claude Opus 4.8"), else the configured `model`, else nothing. (#94)
+- The terminal window title carries the workspace
+  (`choragos · <dir>`), so parallel decks are distinguishable. (#95)
+
+### Changed
+- The gateway default is now soft: with `[sphragis] enabled` unset,
+  no `--sphragis` flag, the binary missing from PATH, and nothing
+  listening on the gateway address, the deck starts with the gateway
+  off and a clear warning instead of failing closed. Explicit
+  `enabled = true` keeps the strict spawn-or-fail-closed behavior,
+  and `choragos doctor` distinguishes the two cases. (#92)
+
+### Fixed
+- Unmapped keys are no longer typed into panes as their names:
+  control chords forward their control bytes (ctrl+a etc.),
+  home/end/delete/pgup/pgdn send proper sequences, and anything else
+  is dropped. (#98)
+
 ## [0.10.0] - 2026-07-15
 
 First-user UX batch, driven by live feedback from a team demo.
