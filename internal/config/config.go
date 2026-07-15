@@ -146,6 +146,7 @@ type UI struct {
 	// notification hooks, run via sh -c when the deck wants a human; empty = bell only
 	OnGate  string `toml:"on_gate"`
 	OnInput string `toml:"on_input"`
+	Viewer  string `toml:"viewer"` // how v opens briefs/reports: "pager" (default) or "editor"
 	Theme   Theme  `toml:"theme"`
 }
 
@@ -170,6 +171,9 @@ func (u UI) IsBell() bool { return u.Bell == nil || *u.Bell }
 
 // IsMouse reports whether the deck captures the mouse (default true); off restores terminal-native selection.
 func (u UI) IsMouse() bool { return u.Mouse == nil || *u.Mouse }
+
+// IsEditorViewer reports whether v opens files in $VISUAL/$EDITOR instead of the in-app pager.
+func (u UI) IsEditorViewer() bool { return u.Viewer == "editor" }
 
 // Checkpoints controls per-delegation workspace snapshots (git repositories only).
 type Checkpoints struct {
@@ -321,6 +325,10 @@ func Load(path string) (Config, error) {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: [ui.theme] %s: invalid color %q (use ANSI 0-255 or #rrggbb); using the default", path, e.name, *e.p))
 			*e.p = ""
 		}
+	}
+	if v := c.UI.Viewer; v != "" && v != "pager" && v != "editor" {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("%s: [ui] viewer: unknown value %q (pager or editor); using pager", path, v))
+		c.UI.Viewer = ""
 	}
 	c.Path = path
 	c.Sphragis.applyDefaults()

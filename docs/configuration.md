@@ -116,6 +116,7 @@ See [keybindings.md](keybindings.md) for what each action does.
 | `mouse` | bool | `true` | Capture the mouse for tile focus and wheel scrollback; set `false` to restore terminal-native text selection (no Shift+drag needed) |
 | `on_gate` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation joins the approval queue; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
 | `on_input` | string | `""` | Command run via `sh -c` (background, non-blocking) when an agent transitions to waiting-for-input; `CHORAGOS_ROLE` is in its env |
+| `viewer` | string | `"pager"` | How `v` opens briefs/reports: `"pager"` renders in-app, `"editor"` opens `$VISUAL`/`$EDITOR` (pager when both are unset). The board and gate `e` always open the editor |
 
 ### `[ui.theme]`
 

@@ -826,6 +826,49 @@ func TestTaskBoardRecordsAndRenders(t *testing.T) {
 	}
 }
 
+func TestBoardEditorAndViewerConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	brief := filepath.Join(t.TempDir(), "brief.md")
+	if err := os.WriteFile(brief, []byte("# demo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(startCatPanes(t, "solo"))
+	m.board = []taskEvent{{kind: "delegate", id: "T1", to: "solo", task: "demo", file: brief}}
+	m.boardOn = true
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "true")
+
+	// e spawns the editor regardless of [ui] viewer
+	_, cmd := m.Update(key("e"))
+	if cmd == nil {
+		t.Fatal("board e should spawn the editor")
+	}
+	if m.pagerOn {
+		t.Fatal("board e must not open the pager")
+	}
+
+	// default viewer: v pages in-app
+	_, cmd = m.Update(key("v"))
+	if cmd != nil || !m.pagerOn {
+		t.Fatalf("default v should open the pager: cmd=%v pagerOn=%v", cmd, m.pagerOn)
+	}
+	m.pagerOn = false
+
+	// viewer = editor: v spawns the editor too
+	m.cfg.UI.Viewer = "editor"
+	_, cmd = m.Update(key("v"))
+	if cmd == nil || m.pagerOn {
+		t.Fatalf("viewer=editor v should spawn the editor: cmd=%v pagerOn=%v", cmd, m.pagerOn)
+	}
+
+	// viewer = editor with no editor set falls back to the pager
+	t.Setenv("EDITOR", "")
+	_, cmd = m.Update(key("v"))
+	if cmd != nil || !m.pagerOn {
+		t.Fatalf("no editor set: v should fall back to the pager: cmd=%v pagerOn=%v", cmd, m.pagerOn)
+	}
+}
+
 func TestMouseClickFocusesTile(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.Update(key("ctrl+b"))

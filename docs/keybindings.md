@@ -38,7 +38,7 @@ forwarded to the PTY.
 | `reload` | `prefix+C` | Re-read the config file and converge the team: spawn added roles, retire removed ones, respawn changed specs (same as `choragos reload`) |
 | `detach` | `prefix+d` | Detach from a `choragos attach` session: the TUI exits, agents keep running (no-op in a foreground `serve`) |
 | `broadcast` | `prefix+a` | Toggle sending normal-mode keys to every live pane (`[BCAST]`) |
-| `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; `j`/`k` select an entry, `v` pages its brief or report in-app, `u` rolls the workspace back to before that task, any other key closes |
+| `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; `j`/`k` select an entry, `v` views its brief or report, `e` opens it in `$EDITOR`, `u` rolls the workspace back to before that task, any other key closes |
 | `search` | `prefix+/` | Search the focused tile's scrollback; Enter jumps, `n`/`N` navigate |
 | `help` | `prefix+?` | Keymap overlay; any key closes |
 
@@ -54,6 +54,10 @@ or a task-board entry's `v`), rendered as markdown. `j`/`k` scroll,
 `space`/`b` page, `g`/`G` jump to the ends, PgUp/PgDn work too, and
 `esc` or `q` closes back to whatever was underneath (a pending gate
 stays pending).
+
+With `[ui] viewer = "editor"`, `v` opens `$VISUAL`/`$EDITOR` instead
+(the pager remains the fallback when both are unset). `e` on a gate or
+task-board entry always opens the editor, regardless of the setting.
 
 ## Rollback overlay
 

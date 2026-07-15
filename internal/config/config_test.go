@@ -252,6 +252,35 @@ prefix = "ctrl+a"
 	}
 }
 
+func TestLoadValidatesViewer(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+
+[ui]
+viewer = "emacsclient"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "emacsclient") {
+		t.Fatalf("warnings = %v, want one about viewer", c.Warnings)
+	}
+	if c.UI.IsEditorViewer() {
+		t.Fatal("invalid viewer must fall back to the pager")
+	}
+	if !(config.UI{Viewer: "editor"}).IsEditorViewer() || (config.UI{Viewer: "pager"}).IsEditorViewer() {
+		t.Fatal("IsEditorViewer must reflect the setting")
+	}
+}
+
 func TestLoadValidatesTheme(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")
