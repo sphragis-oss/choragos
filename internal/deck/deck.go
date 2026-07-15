@@ -224,7 +224,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gatewayUp = msg.up
 	case editorDoneMsg:
 		if msg.err != nil {
-			m.log().Error("gate brief edit failed", "err", msg.err)
+			m.log().Error("editor failed", "err", msg.err)
 		}
 	case usageMsg:
 		m.usage = msg
@@ -298,10 +298,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.boardOn {
-		if !m.boardKey(msg) {
+		open, cmd := m.boardKey(msg)
+		if !open {
 			m.boardOn = false
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.helpOn {
 		m.helpOn = false
@@ -647,31 +648,38 @@ func (m *Model) reloadConfig() {
 	}
 }
 
-// boardKey handles task-board navigation; false means the key closes the board.
-func (m *Model) boardKey(msg tea.KeyMsg) bool {
+// boardKey handles task-board navigation; open=false means the key closes the board.
+func (m *Model) boardKey(msg tea.KeyMsg) (open bool, cmd tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
 		if m.boardSel < len(m.board)-1 {
 			m.boardSel++
 		}
-		return true
+		return true, nil
 	case "k", "up":
 		if m.boardSel > 0 {
 			m.boardSel--
 		}
-		return true
+		return true, nil
 	case "v", "V":
 		if m.boardSel < len(m.board) {
 			if f := m.board[m.boardSel].file; f != "" {
-				m.openPager(filepath.Base(f), f)
+				return true, m.viewFile(filepath.Base(f), f)
 			}
 		}
-		return true
+		return true, nil
+	case "e", "E":
+		if m.boardSel < len(m.board) {
+			if f := m.board[m.boardSel].file; f != "" {
+				return true, editBrief(f)
+			}
+		}
+		return true, nil
 	case "u", "U":
 		m.startRollback()
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // gateKey resolves the oldest pending gate: y approves and injects, n rejects back to the orchestrator, e edits the brief.
@@ -703,23 +711,36 @@ func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 		return editBrief(g.cmd.Brief)
 	case "v", "V":
 		if g.cmd.Brief != "" {
-			m.openPager("brief: "+filepath.Base(g.cmd.Brief), g.cmd.Brief) // the gate stays
+			return m.viewFile("brief: "+filepath.Base(g.cmd.Brief), g.cmd.Brief) // the gate stays
 		}
 	}
 	return nil
 }
 
-// editBrief suspends the deck and opens the gated brief in $VISUAL/$EDITOR (fallback vi); the gate stays pending.
+// editBrief suspends the deck and opens the file in $VISUAL/$EDITOR (fallback vi); overlays stay pending.
 func editBrief(path string) tea.Cmd {
-	editor := os.Getenv("VISUAL")
-	if editor == "" {
-		editor = os.Getenv("EDITOR")
-	}
-	if editor == "" {
-		editor = "vi"
-	}
-	c := exec.Command("sh", "-c", editor+" "+shellQuote(path))
+	c := exec.Command("sh", "-c", resolveEditor("vi")+" "+shellQuote(path))
 	return tea.ExecProcess(c, func(err error) tea.Msg { return editorDoneMsg{err: err} })
+}
+
+// resolveEditor returns $VISUAL/$EDITOR, or fallback when both are unset.
+func resolveEditor(fallback string) string {
+	if e := os.Getenv("VISUAL"); e != "" {
+		return e
+	}
+	if e := os.Getenv("EDITOR"); e != "" {
+		return e
+	}
+	return fallback
+}
+
+// viewFile opens a brief/report per [ui] viewer: the user's editor, or the in-app pager (also the no-editor fallback).
+func (m *Model) viewFile(title, path string) tea.Cmd {
+	if m.cfg.UI.IsEditorViewer() && resolveEditor("") != "" {
+		return editBrief(path)
+	}
+	m.openPager(title, path)
+	return nil
 }
 
 // shellQuote single-quotes s for sh -c.
@@ -900,6 +921,9 @@ func (m *Model) renderGate(w, h int) string {
 	if g.cmd.Brief != "" {
 		keys = "[y] approve   [v] view brief   [e] edit brief   [n] reject"
 		hint = "v pages the brief in-app, e opens your $EDITOR; the gate stays until y or n"
+		if m.cfg.UI.IsEditorViewer() {
+			hint = "v and e open the brief in your $EDITOR; the gate stays until y or n"
+		}
 	}
 	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render(keys) + "\n")
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render(hint))
@@ -960,7 +984,7 @@ func (m *Model) renderBoard(w, h int) string {
 			lipgloss.NewStyle().Faint(true).Render(truncate(task, w-50))
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("j/k select · v view brief/report · u roll back workspace · any other key closes"))
+	b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render("j/k select · v view brief/report · e open in $EDITOR · u roll back workspace · any other key closes"))
 	if w < 6 || h < 5 {
 		return truncate(b.String(), w*h)
 	}
