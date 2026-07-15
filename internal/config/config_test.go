@@ -107,6 +107,10 @@ func TestSphragisDefaults(t *testing.T) {
 	if c.Sphragis.BaseURL() != "http://127.0.0.1:8787" {
 		t.Errorf("BaseURL = %q", c.Sphragis.BaseURL())
 	}
+	// nil records "never asked" so serve can auto-off when the binary is missing
+	if c.Sphragis.Enabled != nil {
+		t.Fatal("omitted enabled must stay nil, not be defaulted to true")
+	}
 }
 
 func TestSphragisDisableViaTOML(t *testing.T) {

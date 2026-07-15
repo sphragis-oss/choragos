@@ -223,6 +223,11 @@ func (s *session) start(cw, ch int) error {
 	}
 	s.initCheckpoints()
 	s.sphragisOn = s.cfg.Sphragis.IsEnabled()
+	if s.sphragisOn && sphragis.AutoOff(s.cfg.Sphragis) {
+		s.sphragisOn = false
+		s.log().Warn("sphragis auto-off: command not in PATH and no gateway listening; set [sphragis] enabled = true to require it",
+			"command", s.cfg.Sphragis.Command, "addr", s.cfg.Sphragis.Addr)
+	}
 	s.baseURL = ""
 	if s.sphragisOn {
 		s.baseURL = s.cfg.Sphragis.BaseURL()

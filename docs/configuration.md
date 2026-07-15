@@ -54,6 +54,12 @@ env_deny = ["AWS_*", "GITHUB_TOKEN"]
 
 `ctrl+g` toggles enforcement live; `--sphragis=false` disables it for a run.
 
+The `enabled` default is soft: when you never set it (no config key, no
+`--sphragis` flag) and the `command` binary is not in PATH with nothing
+listening on `addr`, the deck starts with the gateway off and logs a
+warning instead of failing closed. Set `enabled = true` explicitly to
+require the gateway and keep the fail-closed guarantee.
+
 When the gateway is on, each role's `ANTHROPIC_BASE_URL` carries an
 `/agent/<role>` suffix so the gateway attributes token usage per role
 (sphragis >= 0.8). The sidebar cards then show live token counts, and cost
