@@ -73,6 +73,26 @@ func TestRoleArgsAppendsModel(t *testing.T) {
 	}
 }
 
+func TestKeyBytes(t *testing.T) {
+	cases := []struct {
+		key  tea.KeyMsg
+		want string
+	}{
+		{tea.KeyMsg{Type: tea.KeyCtrlA}, "\x01"},
+		{tea.KeyMsg{Type: tea.KeyCtrlZ}, "\x1a"},
+		{tea.KeyMsg{Type: tea.KeyCtrlC}, "\x03"},
+		{tea.KeyMsg{Type: tea.KeyHome}, "\x1b[H"},
+		{tea.KeyMsg{Type: tea.KeyDelete}, "\x1b[3~"},
+		{tea.KeyMsg{Type: tea.KeyF5}, ""},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hi")}, "hi"},
+	}
+	for _, c := range cases {
+		if got := string(keyBytes(c.key)); got != c.want {
+			t.Errorf("keyBytes(%s) = %q, want %q", c.key, got, c.want)
+		}
+	}
+}
+
 func TestWindowTitle(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
