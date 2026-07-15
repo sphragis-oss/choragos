@@ -1029,6 +1029,8 @@ func (m *Model) renderTile(role, w, h int, st []roleState) string {
 			m.scrollOff = maxOff
 		}
 		scrolled = m.scrollOff > 0
+	} else if focused {
+		content = e.renderCachedCursor() // live tail shows the child's cursor
 	} else {
 		content = e.renderCached() // idle panes serve the cache; no per-frame grid walk
 	}

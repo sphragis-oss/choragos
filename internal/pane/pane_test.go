@@ -97,6 +97,56 @@ func TestPaneRendersTruecolor(t *testing.T) {
 	}
 }
 
+func TestRenderCursorReverseVideosCursorCell(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", "printf 'ab'"), 40, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	done := make(chan struct{})
+	go func() {
+		_ = p.Stream(nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not finish")
+	}
+
+	if out := p.Render(); strings.Contains(out, "\x1b[0;7m") {
+		t.Fatalf("Render must not draw the cursor:\n%q", out)
+	}
+	out := p.RenderCursor()
+	if !strings.Contains(out, "ab\x1b[0;7m \x1b[0m") {
+		t.Fatalf("cursor cell after %q not reverse-videoed:\n%q", "ab", out)
+	}
+}
+
+func TestRenderCursorRespectsHiddenCursor(t *testing.T) {
+	p, err := pane.Start(exec.Command("sh", "-c", `printf 'ab\033[?25l'`), 40, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	done := make(chan struct{})
+	go func() {
+		_ = p.Stream(nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not finish")
+	}
+
+	if out := p.RenderCursor(); strings.Contains(out, "\x1b[0;7m") {
+		t.Fatalf("hidden cursor must not be drawn:\n%q", out)
+	}
+}
+
 func TestShutdownDoesNotHang(t *testing.T) {
 	p, err := pane.Start(exec.Command("sh", "-c", `trap "" TERM; sleep 60`), 40, 10)
 	if err != nil {
