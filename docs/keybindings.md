@@ -125,6 +125,10 @@ Enter jumps to the nearest match above the current view; while scrolled
 back, `n` steps to older matches and `N` back to newer ones. Esc cancels.
 PgDn to the live tail releases `n`/`N` back to the agent.
 
+While scrolled back, the status line shows the position (`scrollback
+↑offset/max` plus the way back), and the focused tile's right border
+carries a proportional scrollbar thumb. Both disappear at the live tail.
+
 ## Per-role status heuristics
 
 The waiting-for-input and chrome detection heuristics can be extended per
