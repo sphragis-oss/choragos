@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 )
@@ -110,6 +111,43 @@ func TestSphragisDefaults(t *testing.T) {
 	// nil records "never asked" so serve can auto-off when the binary is missing
 	if c.Sphragis.Enabled != nil {
 		t.Fatal("omitted enabled must stay nil, not be defaulted to true")
+	}
+}
+
+func TestTimeoutValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "ok"
+command = "sh"
+start = true
+timeout = "45m"
+timeout_action = "restart"
+
+[[roles]]
+name = "bad"
+command = "sh"
+timeout = "soon"
+timeout_action = "explode"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := c.Roles[0].TimeoutDuration(); d != 45*time.Minute {
+		t.Fatalf("timeout = %v, want 45m", d)
+	}
+	if c.Roles[0].TimeoutAction != "restart" {
+		t.Fatalf("action = %q", c.Roles[0].TimeoutAction)
+	}
+	if c.Roles[1].Timeout != "" || c.Roles[1].TimeoutAction != "" {
+		t.Fatalf("invalid values must reset: %+v", c.Roles[1])
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("want 2 warnings, got %v", c.Warnings)
 	}
 }
 

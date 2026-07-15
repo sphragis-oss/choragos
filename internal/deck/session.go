@@ -162,14 +162,15 @@ type pendingGate struct {
 
 // taskEvent is one delegation-protocol event, shown on the task board.
 type taskEvent struct {
-	at     time.Time
-	kind   string // delegate | work-done
-	id     string
-	to     string
-	task   string
-	file   string // brief or report path attached to the event, if any
-	done   bool
-	doneAt time.Time // delegate rows: when the matching work-done arrived
+	at       time.Time
+	kind     string // delegate | work-done
+	id       string
+	to       string
+	task     string
+	file     string // brief or report path attached to the event, if any
+	done     bool
+	doneAt   time.Time // delegate rows: when the matching work-done arrived
+	timedOut bool      // delegate rows: outlived the role's timeout before any work-done
 }
 
 // boardCap bounds the in-memory task history.
@@ -419,6 +420,38 @@ func (s *session) checkWaiting() {
 			s.focus(i) // surface whoever blocks on input
 		}
 		e.waiting = w
+	}
+}
+
+// checkTimeouts flags delegations that outlived their role's wall-clock limit; fires once per delegation.
+func (s *session) checkTimeouts() {
+	now := time.Now()
+	for i := range s.board {
+		ev := &s.board[i]
+		if ev.kind != "delegate" || ev.timedOut || !ev.doneAt.IsZero() {
+			continue
+		}
+		e, _ := s.findRole(ev.to)
+		if e == nil {
+			continue
+		}
+		d := e.role.TimeoutDuration()
+		if d <= 0 || now.Sub(ev.at) < d {
+			continue
+		}
+		ev.timedOut = true
+		action := e.role.TimeoutAction
+		if action == "" {
+			action = "notify"
+		}
+		s.log().Warn("delegate timeout", "id", ev.id, "to", ev.to, "after", d.String(), "action", action)
+		if s.bellFn != nil {
+			s.bellFn()
+		}
+		s.runHook(s.cfg.UI.OnTimeout, ev.to, ev.task)
+		if action == "restart" && !e.exited {
+			e.pane.Terminate() // SIGTERM; auto-restart takes over when restart = "on-failure"
+		}
 	}
 }
 

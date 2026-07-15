@@ -251,6 +251,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.bootPanes()
 		m.checkWaiting()
+		m.checkTimeouts()
 		m.maybeLogTokens()
 		if m.sphragisOn {
 			cmds := []tea.Cmd{tick(), checkHealth(m.cfg.Sphragis.Addr)}
@@ -997,6 +998,8 @@ func (m *Model) renderBoard(w, h int) string {
 		kind := ev.kind
 		status := ""
 		switch {
+		case ev.kind == "delegate" && ev.doneAt.IsZero() && ev.timedOut:
+			status = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(" timeout")
 		case ev.kind == "delegate" && ev.doneAt.IsZero():
 			status = lipgloss.NewStyle().Foreground(m.th.waiting).Render(" pending")
 		case ev.kind == "delegate":
