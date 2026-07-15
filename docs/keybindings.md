@@ -41,6 +41,7 @@ forwarded to the PTY.
 | `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; `j`/`k` select an entry, `v` views its brief or report, `e` opens it in `$EDITOR`, `u` rolls the workspace back to before that task, any other key closes |
 | `search` | `prefix+/` | Search the focused tile's scrollback; Enter jumps, `n`/`N` navigate |
 | `help` | `prefix+?` | Keymap overlay; any key closes |
+| direct focus | `prefix+1..9` | Focus the role by its sidebar card number, retargeting the focused tile when it has no tile (fixed binding) |
 
 Splitting never spawns a new process: the team comes from the config (live-
 editable via `prefix+C` / `choragos reload`), and tiles only arrange which of
@@ -113,8 +114,9 @@ bell = true       # terminal bell when an agent blocks on input
 ## Mouse
 
 Cell-motion mouse mode is on: a left click focuses the tile under the
-cursor, and the wheel scrolls the focused tile's history. The sidebar and
-status row are not clickable.
+cursor, a click on a sidebar card focuses that role (retargeting the
+focused tile when the role has no tile), and the wheel scrolls the
+focused tile's history. The status row is not clickable.
 
 ## Cursor
 

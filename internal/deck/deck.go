@@ -73,6 +73,9 @@ type gatewayHealthMsg struct{ up bool }
 // editorDoneMsg reports the editor spawned from the approval overlay exiting.
 type editorDoneMsg struct{ err error }
 
+// cardHit is one sidebar card's y-extent in the last render, mapping clicks to its role.
+type cardHit struct{ role, top, bot int }
+
 // Model drives the orchestration deck: the UI half. It embeds the session core
 // and adds focus, layout, overlays, and rendering on top.
 type Model struct {
@@ -106,6 +109,7 @@ type Model struct {
 	usage      usageMsg  // last per-role token snapshot from the gateway metrics
 	scrollOff  int       // focused-pane scrollback offset (0 = live tail)
 	maxScroll  int       // last render's max scrollback offset, for clamping keys
+	cardHits   []cardHit // sidebar card y-extents from the last render, for click focus
 	th         deckTheme // resolved status colors ([ui.theme] over the defaults)
 	remote     *wireConn // attached to a detached session; core actions go over the wire
 	w, h       int
@@ -374,8 +378,17 @@ func (m *Model) handleMouse(msg tea.MouseMsg) {
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
 		leftW, mainW, contentH := m.dims()
 		x := msg.X - leftW
-		if x < 0 || msg.Y >= contentH {
-			return // sidebar and status row are not clickable
+		if msg.Y >= contentH {
+			return // the status row is not clickable
+		}
+		if x < 0 {
+			for _, c := range m.cardHits {
+				if msg.Y >= c.top && msg.Y < c.bot {
+					m.surfaceRole(c.role)
+					return
+				}
+			}
+			return
 		}
 		for _, t := range m.tree.Layout(mainW, contentH) {
 			if x >= t.X && x < t.X+t.W && msg.Y >= t.Y && msg.Y < t.Y+t.H {
@@ -485,6 +498,10 @@ func (m *Model) wmAction(key string) {
 	case m.keys.Search:
 		m.searching = true
 		m.searchBuf = ""
+	default:
+		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+			m.surfaceRole(int(key[0] - '1')) // card numbers are 1-based
+		}
 	}
 }
 
@@ -585,6 +602,15 @@ func (m *Model) focusDir(d wm.Dir) {
 }
 
 // focusRole shows role i: focuses its tile when visible, else retargets the focused tile.
+// surfaceRole focuses role i on user demand, retargeting the focused tile when it is hidden; gone roles are ignored.
+func (m *Model) surfaceRole(i int) {
+	if i < 0 || i >= len(m.panes) || m.panes[i].gone {
+		return
+	}
+	m.manual = true
+	m.focusRole(i)
+}
+
 func (m *Model) focusRole(i int) {
 	if i == m.active || i < 0 || i >= len(m.panes) {
 		return
@@ -877,6 +903,7 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.Detach, "detach (attached sessions; agents keep running)"},
 		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
 		{k.Prefix + " " + k.TaskBoard, "task board"},
+		{k.Prefix + " 1..9", "focus role by card number"},
 		{k.Prefix + " " + k.Search, "search scrollback"},
 		{k.Prefix + " " + k.Help, "this help"},
 	}
@@ -1116,6 +1143,8 @@ func overlayScrollThumb(tile string, ch, off, maxOff int) string {
 // renderCards is the left column: one status card per role, with a tail activity preview.
 func (m *Model) renderCards(width int, height int, st []roleState) string {
 	var cards []string
+	m.cardHits = m.cardHits[:0]
+	y := 0
 	for i, e := range m.panes {
 		if e.gone {
 			continue
@@ -1143,6 +1172,9 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 			BorderForeground(border).
 			Width(width - 2).
 			Render(inner)
+		hgt := lipgloss.Height(card)
+		m.cardHits = append(m.cardHits, cardHit{role: i, top: y, bot: y + hgt})
+		y += hgt
 		cards = append(cards, card)
 	}
 	col := lipgloss.JoinVertical(lipgloss.Left, cards...)

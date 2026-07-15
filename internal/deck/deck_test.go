@@ -869,6 +869,57 @@ func TestBoardEditorAndViewerConfig(t *testing.T) {
 	}
 }
 
+func TestPrefixDigitFocusesRole(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder", "reviewer"))
+	// visible role: direct focus
+	m.Update(key("ctrl+b"))
+	m.Update(key("2"))
+	if m.active != 1 {
+		t.Fatalf("prefix+2 should focus coder, active = %d", m.active)
+	}
+	// hidden role: the focused tile retargets (single tile, role 2 has none)
+	m.Update(key("ctrl+b"))
+	m.Update(key("3"))
+	if m.active != 2 || m.tree.FocusedRole() != 2 {
+		t.Fatalf("prefix+3 should surface reviewer: active=%d focused=%d", m.active, m.tree.FocusedRole())
+	}
+	// out of range and gone roles are no-ops
+	m.Update(key("ctrl+b"))
+	m.Update(key("9"))
+	if m.active != 2 {
+		t.Fatalf("prefix+9 must be a no-op, active = %d", m.active)
+	}
+	m.panes[0].gone = true
+	m.Update(key("ctrl+b"))
+	m.Update(key("1"))
+	if m.active != 2 {
+		t.Fatalf("a gone role must not take focus, active = %d", m.active)
+	}
+}
+
+func TestSidebarCardClickFocusesRole(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder", "reviewer"))
+	m.View() // populates the card extents
+	if len(m.cardHits) != 3 {
+		t.Fatalf("cardHits = %d, want 3", len(m.cardHits))
+	}
+	m.Update(tea.MouseMsg{X: 1, Y: m.cardHits[1].top + 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.active != 1 {
+		t.Fatalf("card click should focus coder, active = %d", m.active)
+	}
+	// a hidden role's card surfaces it on the focused tile
+	m.Update(tea.MouseMsg{X: 1, Y: m.cardHits[2].top + 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.active != 2 || m.tree.FocusedRole() != 2 {
+		t.Fatalf("card click should surface reviewer: active=%d focused=%d", m.active, m.tree.FocusedRole())
+	}
+	// below the cards, still in the sidebar column: no-op
+	before := m.active
+	m.Update(tea.MouseMsg{X: 1, Y: m.cardHits[2].bot + 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.active != before {
+		t.Fatal("empty sidebar space must not change focus")
+	}
+}
+
 func TestMouseClickFocusesTile(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.Update(key("ctrl+b"))
