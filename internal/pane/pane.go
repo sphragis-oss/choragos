@@ -146,6 +146,9 @@ type Pane struct {
 	tee      func(chunk []byte, seq uint64)
 	sendFn   func([]byte) error // remote pane: forwards Input over the wire
 	resizeFn func(cols, rows int)
+	tsMu     sync.Mutex // serializes transcript flushes and guards the anchor state below
+	tsTail   []string   // last flushed lines, dedup anchor for the next flush
+	tsSeq    uint64     // pane seq at the last flush; unchanged means nothing new to write
 }
 
 // Remote builds a process-less pane view: Feed drives the screen, Input forwards through send.
@@ -229,8 +232,101 @@ func (p *Pane) writeLoop() {
 	}
 }
 
-// SetLog sets the sink that receives the plain-text transcript when the pane closes.
-func (p *Pane) SetLog(w io.Writer) { p.logw = w }
+// SetLog sets the plain-text transcript sink: streamed as lines scroll off the screen, finalized on close.
+func (p *Pane) SetLog(w io.Writer) {
+	p.logw = w
+	go p.transcriptLoop()
+}
+
+// transcriptInterval paces streaming transcript flushes; one 256KB replay costs ~10ms.
+const transcriptInterval = 15 * time.Second
+
+// transcriptAnchor is how many flushed tail lines anchor the next flush's dedup.
+const transcriptAnchor = 8
+
+func (p *Pane) transcriptLoop() {
+	t := time.NewTicker(transcriptInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			p.FlushTranscript()
+		case <-p.done:
+			return
+		}
+	}
+}
+
+// FlushTranscript appends history lines that scrolled off the live screen since the last flush.
+func (p *Pane) FlushTranscript() { p.flushTranscript(false) }
+
+func (p *Pane) flushTranscript(final bool) {
+	if p.logw == nil {
+		return
+	}
+	p.tsMu.Lock()
+	defer p.tsMu.Unlock()
+	s := p.seq.Load()
+	if !final && s == p.tsSeq {
+		return
+	}
+	p.tsSeq = s
+	p.term.Lock()
+	cols, rows := p.term.Size()
+	p.term.Unlock()
+	lines := p.HistoryLines(cols)
+	if !final {
+		// the trailing screen-height rows are still live (spinners, partial output); hold them back
+		if len(lines) <= rows {
+			return
+		}
+		lines = lines[:len(lines)-rows]
+	}
+	fresh, gap := afterAnchor(lines, p.tsTail)
+	if len(fresh) == 0 {
+		return
+	}
+	if gap {
+		_, _ = io.WriteString(p.logw, "--- transcript gap ---\n")
+	}
+	for _, l := range fresh {
+		_, _ = io.WriteString(p.logw, l+"\n")
+	}
+	p.tsTail = tailStrings(lines, transcriptAnchor)
+}
+
+// afterAnchor returns the lines following the anchor's longest matched suffix;
+// gap means the anchor vanished (screen clear or ring rotation) and lines restart the stream.
+func afterAnchor(lines, anchor []string) (fresh []string, gap bool) {
+	if len(anchor) == 0 {
+		return lines, false
+	}
+	for n := len(anchor); n >= 1; n-- {
+		want := anchor[len(anchor)-n:]
+		for i := len(lines) - n; i >= 0; i-- {
+			if equalStrings(lines[i:i+n], want) {
+				return lines[i+n:], false
+			}
+		}
+	}
+	return lines, true
+}
+
+func tailStrings(s []string, n int) []string {
+	if len(s) > n {
+		s = s[len(s)-n:]
+	}
+	return append([]string(nil), s...)
+}
+
+func equalStrings(a, b []string) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
 
 // Stream copies PTY output into the emulator until read error, calling onFrame per chunk; blocks.
 func (p *Pane) Stream(onFrame func()) error {
@@ -532,17 +628,9 @@ func (p *Pane) Close() error {
 	return nil
 }
 
-// writeTranscript renders the captured history as plain text into the log sink: what the user saw, not the wire bytes.
+// writeTranscript finalizes the streamed transcript: flushes everything left, live screen included.
 func (p *Pane) writeTranscript() {
-	if p.logw == nil {
-		return
-	}
-	p.term.Lock()
-	cols, _ := p.term.Size()
-	p.term.Unlock()
-	for _, l := range p.HistoryLines(cols) {
-		_, _ = io.WriteString(p.logw, l+"\n")
-	}
+	p.flushTranscript(true)
 }
 
 // reap waits for the killed child, bounded so a wedged process can never hang shutdown.

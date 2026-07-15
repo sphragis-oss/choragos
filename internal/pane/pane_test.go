@@ -3,6 +3,7 @@
 package pane_test
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -267,6 +268,81 @@ func TestCloseDoesNotLeakGoroutines(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("goroutines leaked: before=%d after=%d", before, runtime.NumGoroutine())
+}
+
+func feedLines(p *pane.Pane, from, to int) {
+	for i := from; i <= to; i++ {
+		p.Feed([]byte(fmt.Sprintf("line-%03d\r\n", i)))
+	}
+}
+
+func TestTranscriptStreamsScrolledOffLines(t *testing.T) {
+	p := pane.Remote(40, 5, nil, nil)
+	defer p.Close()
+	var log strings.Builder
+	p.SetLog(&log)
+
+	feedLines(p, 1, 40)
+	p.FlushTranscript()
+	got := log.String()
+	if !strings.Contains(got, "line-001") || !strings.Contains(got, "line-030") {
+		t.Fatalf("first flush missing scrolled-off lines:\n%q", got)
+	}
+	if strings.Contains(got, "line-040") {
+		t.Fatalf("live screen rows must be held back:\n%q", got)
+	}
+
+	feedLines(p, 41, 50)
+	p.FlushTranscript()
+	if got := log.String(); strings.Count(got, "line-030\n") != 1 {
+		t.Fatalf("second flush duplicated lines:\n%q", got)
+	}
+
+	_ = p.Close()
+	got = log.String()
+	for i := 1; i <= 50; i++ {
+		want := fmt.Sprintf("line-%03d\n", i)
+		if strings.Count(got, want) != 1 {
+			t.Fatalf("after close, %q appears %d times:\n%q", want, strings.Count(got, want), got)
+		}
+	}
+	if strings.Contains(got, "transcript gap") {
+		t.Fatalf("continuous stream must not report a gap:\n%q", got)
+	}
+}
+
+func TestTranscriptGapAfterReset(t *testing.T) {
+	p := pane.Remote(40, 5, nil, nil)
+	defer p.Close()
+	var log strings.Builder
+	p.SetLog(&log)
+
+	feedLines(p, 1, 30)
+	p.FlushTranscript()
+	p.Reset()
+	feedLines(p, 100, 130)
+	p.FlushTranscript()
+	got := log.String()
+	if !strings.Contains(got, "--- transcript gap ---") {
+		t.Fatalf("reset should surface a gap marker:\n%q", got)
+	}
+	if !strings.Contains(got, "line-100") {
+		t.Fatalf("post-reset lines missing:\n%q", got)
+	}
+}
+
+func TestFlushTranscriptNoopWhenQuiet(t *testing.T) {
+	p := pane.Remote(40, 5, nil, nil)
+	defer p.Close()
+	var log strings.Builder
+	p.SetLog(&log)
+	feedLines(p, 1, 20)
+	p.FlushTranscript()
+	first := log.String()
+	p.FlushTranscript() // no new output: must not rewrite
+	if log.String() != first {
+		t.Fatalf("quiet flush changed the log:\n%q ->\n%q", first, log.String())
+	}
 }
 
 func TestCloseWritesPlainTranscript(t *testing.T) {

@@ -105,9 +105,12 @@ matching delegation resolved on the task board (prefix key, then `t`).
   argument) into a per-role table of tasks, completions, busy and average
   task time, first and last activity, and token usage; the token column
   reads n/a for roles the gateway never reported.
-- `.choragos/logs/<role>.log`: each role's plain-text transcript (the
-  rendered scrollback, written when the pane closes), one session per
-  header line with the working directory and start time.
+- `.choragos/logs/<role>.log`: each role's plain-text transcript, one
+  session per header line with the working directory and start time.
+  Lines are appended as they scroll off the live screen (every 15s), so
+  long sessions survive in full; the live screen itself is flushed when
+  the pane closes. A `--- transcript gap ---` marker means the screen
+  was cleared or output outran the capture buffer between flushes.
 - The task board overlay shows the live delegation history with brief and
   report filenames per entry.
 
