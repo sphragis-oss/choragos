@@ -91,6 +91,45 @@ func toRoles(in []wire.Role) []Role {
 	return out
 }
 
+// Task mirrors one board row; At/DoneAt are unix millis for JS dates.
+type Task struct {
+	At     int64  `json:"at"`
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	To     string `json:"to"`
+	Task   string `json:"task"`
+	File   string `json:"file"`
+	Done   bool   `json:"done"`
+	DoneAt int64  `json:"doneAt"`
+}
+
+func toTasks(in []wire.Task) []Task {
+	out := make([]Task, 0, len(in))
+	for _, t := range in {
+		out = append(out, Task{
+			At: t.At / 1e6, Kind: t.Kind, ID: t.ID, To: t.To,
+			Task: t.Task, File: t.File, Done: t.Done, DoneAt: t.DoneAt / 1e6,
+		})
+	}
+	return out
+}
+
+// Gate mirrors one pending approval for the modal.
+type Gate struct {
+	To    string `json:"to"`
+	Task  string `json:"task"`
+	Brief string `json:"brief"`
+	At    int64  `json:"at"`
+}
+
+func toGates(in []wire.Gate) []Gate {
+	out := make([]Gate, 0, len(in))
+	for _, g := range in {
+		out = append(out, Gate{To: g.To, Task: g.Cmd.Task, Brief: g.Cmd.Brief, At: g.At / 1e6})
+	}
+	return out
+}
+
 // uiSocket is the attach socket for a session directory (ipc.UISocketPath is cwd-bound).
 func uiSocket(dir string) string {
 	return filepath.Join(ipc.SessionDir(), ipc.SessionID(dir)+".ui.sock")
@@ -135,8 +174,14 @@ func (a *App) stream(conn *wire.Conn, gen int) {
 		switch ev.Kind {
 		case "roster":
 			runtime.EventsEmit(a.ctx, "session:roster", toRoles(ev.Roster))
+		case "board":
+			runtime.EventsEmit(a.ctx, "session:board", toTasks(ev.Board))
+		case "gates":
+			runtime.EventsEmit(a.ctx, "session:gates", toGates(ev.Gates))
 		case "status":
 			runtime.EventsEmit(a.ctx, "session:status", ev.On, ev.Up)
+		case "bell":
+			runtime.EventsEmit(a.ctx, "session:bell")
 		case "reset":
 			runtime.EventsEmit(a.ctx, "pane:reset", ev.Idx)
 		case "focus":
@@ -165,6 +210,66 @@ func (a *App) lost(gen int, err error) {
 		slog.Warn("attach lost", "err", err)
 		runtime.EventsEmit(a.ctx, "session:lost", err.Error())
 	}
+}
+
+// write ships one client event to the attached session.
+func (a *App) write(ev wire.Event) error {
+	a.mu.Lock()
+	conn := a.conn
+	a.mu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("not attached")
+	}
+	return conn.WriteEvent(ev)
+}
+
+// Input forwards keystrokes (base64 bytes from xterm onData) to a pane's PTY.
+func (a *App) Input(idx int, dataB64 string) error {
+	data, err := base64.StdEncoding.DecodeString(dataB64)
+	if err != nil {
+		return err
+	}
+	return a.write(wire.Event{Kind: "input", Idx: idx, Data: data})
+}
+
+// Resize sets a pane's PTY size, like the TUI does for visible tiles.
+func (a *App) Resize(idx, cols, rows int) error {
+	return a.write(wire.Event{Kind: "resize", Idx: idx, Cols: cols, Rows: rows})
+}
+
+// Gate resolves the oldest pending approval; the server's gates event resyncs.
+func (a *App) Gate(approve bool) error {
+	return a.write(wire.Event{Kind: "gate", Approve: approve})
+}
+
+// RestartRole respawns a role's process.
+func (a *App) RestartRole(idx int) error {
+	return a.write(wire.Event{Kind: "restart", Idx: idx})
+}
+
+// PauseRole toggles SIGSTOP/SIGCONT on a role's process group.
+func (a *App) PauseRole(idx int) error {
+	return a.write(wire.Event{Kind: "pause", Idx: idx})
+}
+
+// StopSession shuts the whole session down, agents included.
+func (a *App) StopSession() error {
+	return a.write(wire.Event{Kind: "quit"})
+}
+
+// maxBriefBytes caps brief viewing so a runaway file cannot wedge the webview.
+const maxBriefBytes = 1 << 20
+
+// FileContent reads a brief or report file for the viewer modal.
+func (a *App) FileContent(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if len(b) > maxBriefBytes {
+		b = b[:maxBriefBytes]
+	}
+	return string(b), nil
 }
 
 // Detach drops the attach connection; the session keeps running.

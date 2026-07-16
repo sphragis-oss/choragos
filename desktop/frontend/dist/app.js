@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Read-only mirror UI: session picker, role cards, one xterm per role.
+// Interactive session client: picker, role cards, xterm panes, gates, board.
 "use strict";
 
 const App = window.go.main.App;
@@ -15,14 +15,36 @@ const els = {
   terms: document.getElementById("terms"),
   conn: document.getElementById("conn-state"),
   gateway: document.getElementById("gateway"),
+  gateCount: document.getElementById("gate-count"),
+  boardBtn: document.getElementById("board-btn"),
   detach: document.getElementById("detach"),
+  stop: document.getElementById("stop"),
+  gateModal: document.getElementById("gate-modal"),
+  gateTo: document.getElementById("gate-to"),
+  gateTask: document.getElementById("gate-task"),
+  gateBrief: document.getElementById("gate-brief"),
+  gateAt: document.getElementById("gate-at"),
+  gateMore: document.getElementById("gate-more"),
+  gateApprove: document.getElementById("gate-approve"),
+  gateView: document.getElementById("gate-view"),
+  gateReject: document.getElementById("gate-reject"),
+  boardModal: document.getElementById("board-modal"),
+  boardRows: document.getElementById("board-rows"),
+  boardClose: document.getElementById("board-close"),
+  viewerModal: document.getElementById("viewer-modal"),
+  viewerTitle: document.getElementById("viewer-title"),
+  viewerBody: document.getElementById("viewer-body"),
+  viewerClose: document.getElementById("viewer-close"),
 };
 
 const state = {
   roles: [],
-  terms: new Map(), // idx -> {term, holder, lastOutput}
+  terms: new Map(), // idx -> {term, fit, holder, lastOutput}
   active: -1,
   attached: false,
+  expectStop: false,
+  gates: [],
+  board: [],
   pollTimer: 0,
 };
 
@@ -43,6 +65,13 @@ function b64Bytes(b64) {
   return out;
 }
 
+function strToB64(s) {
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
 function termFor(idx) {
   let t = state.terms.get(idx);
   if (t) return t;
@@ -52,14 +81,17 @@ function termFor(idx) {
   const term = new Terminal({
     cols: 80,
     rows: 24,
-    disableStdin: true,
     scrollback: 5000,
     theme: termTheme,
     fontFamily: "ui-monospace, Menlo, monospace",
     fontSize: 13,
   });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
   term.open(holder);
-  t = { term, holder, lastOutput: 0 };
+  term.onData((d) => App.Input(idx, strToB64(d)));
+  term.onBinary((d) => App.Input(idx, btoa(d)));
+  t = { term, fit, holder, lastOutput: 0 };
   state.terms.set(idx, t);
   if (state.active < 0) focusRole(idx);
   return t;
@@ -68,8 +100,21 @@ function termFor(idx) {
 function focusRole(idx) {
   state.active = idx;
   for (const [i, t] of state.terms) t.holder.classList.toggle("hidden", i !== idx);
+  fitActive();
+  const t = state.terms.get(idx);
+  if (t) t.term.focus();
   renderCards();
 }
+
+// fitActive sizes the visible pane to its container and pushes it to the PTY.
+function fitActive() {
+  const t = state.terms.get(state.active);
+  if (!t || !state.attached) return;
+  t.fit.fit();
+  App.Resize(state.active, t.term.cols, t.term.rows);
+}
+
+window.addEventListener("resize", () => fitActive());
 
 function roleState(idx) {
   const r = state.roles[idx] || {};
@@ -109,9 +154,127 @@ function renderCards() {
     stateLine.className = "state";
     stateLine.textContent = st.label;
     card.append(row, stateLine);
+    if (idx === state.active && !r.gone) {
+      const actions = document.createElement("div");
+      actions.className = "role-actions";
+      const restart = document.createElement("button");
+      restart.textContent = "restart";
+      restart.addEventListener("click", (e) => {
+        e.stopPropagation();
+        App.RestartRole(idx);
+      });
+      const pause = document.createElement("button");
+      pause.textContent = r.paused ? "resume" : "pause";
+      pause.addEventListener("click", (e) => {
+        e.stopPropagation();
+        App.PauseRole(idx);
+      });
+      actions.append(restart, pause);
+      card.append(actions);
+    }
     els.cards.appendChild(card);
   });
 }
+
+/* gates */
+
+function renderGate() {
+  els.gateCount.textContent = state.gates.length ? `${state.gates.length} awaiting approval` : "";
+  if (!state.gates.length) {
+    els.gateModal.classList.add("hidden");
+    return;
+  }
+  const g = state.gates[0];
+  els.gateTo.textContent = g.to;
+  els.gateTask.textContent = g.task || (g.brief ? "see brief" : "");
+  els.gateBrief.textContent = g.brief || "-";
+  els.gateAt.textContent = new Date(g.at).toLocaleTimeString();
+  els.gateMore.textContent =
+    state.gates.length > 1 ? `+${state.gates.length - 1} more waiting behind this one` : "";
+  els.gateView.classList.toggle("hidden", !g.brief);
+  els.gateModal.classList.remove("hidden");
+}
+
+els.gateApprove.addEventListener("click", () => App.Gate(true));
+els.gateReject.addEventListener("click", () => App.Gate(false));
+els.gateView.addEventListener("click", () => {
+  const g = state.gates[0];
+  if (g && g.brief) openViewer(g.brief);
+});
+
+/* task board */
+
+function renderBoard() {
+  els.boardRows.textContent = "";
+  const head = document.createElement("div");
+  head.className = "trow head";
+  for (const h of ["time", "kind", "to", "task", "status"]) {
+    const c = document.createElement("span");
+    c.textContent = h;
+    head.appendChild(c);
+  }
+  els.boardRows.appendChild(head);
+  for (const t of state.board) {
+    const row = document.createElement("div");
+    row.className = "trow";
+    const time = document.createElement("span");
+    time.textContent = new Date(t.at).toLocaleTimeString();
+    const kind = document.createElement("span");
+    kind.textContent = t.id ? `${t.kind} ${t.id}` : t.kind;
+    const to = document.createElement("span");
+    to.textContent = t.to;
+    const task = document.createElement("span");
+    task.textContent = t.task;
+    if (t.file) {
+      const file = document.createElement("span");
+      file.className = "file";
+      file.textContent = ` [${t.file.split("/").pop()}]`;
+      file.addEventListener("click", () => openViewer(t.file));
+      task.appendChild(file);
+    }
+    const status = document.createElement("span");
+    if (t.kind === "delegate" && !t.doneAt) {
+      status.className = "status pending";
+      status.textContent = "pending";
+    } else if (t.kind === "delegate") {
+      status.className = "status done";
+      status.textContent = "✓ " + Math.round((t.doneAt - t.at) / 1000) + "s";
+    } else if (t.done) {
+      status.className = "status done";
+      status.textContent = "✓";
+    }
+    row.append(time, kind, to, task, status);
+    els.boardRows.appendChild(row);
+  }
+}
+
+els.boardBtn.addEventListener("click", () => {
+  renderBoard();
+  els.boardModal.classList.remove("hidden");
+});
+els.boardClose.addEventListener("click", () => els.boardModal.classList.add("hidden"));
+
+/* file viewer */
+
+async function openViewer(path) {
+  try {
+    const body = await App.FileContent(path);
+    els.viewerTitle.textContent = path.split("/").pop();
+    els.viewerBody.textContent = body;
+    els.viewerModal.classList.remove("hidden");
+  } catch (err) {
+    showPickerError(String(err));
+  }
+}
+
+els.viewerClose.addEventListener("click", () => els.viewerModal.classList.add("hidden"));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  els.viewerModal.classList.add("hidden");
+  els.boardModal.classList.add("hidden");
+});
+
+/* session picker */
 
 async function refreshSessions() {
   try {
@@ -151,6 +314,7 @@ async function attach(dir) {
     const roster = await App.Attach(dir);
     state.roles = roster.roles || [];
     state.attached = true;
+    state.expectStop = false;
     clearInterval(state.pollTimer);
     els.picker.classList.add("hidden");
     els.mirror.classList.remove("hidden");
@@ -172,12 +336,20 @@ function toPicker() {
   for (const t of state.terms.values()) t.term.dispose();
   state.terms.clear();
   state.active = -1;
+  state.gates = [];
+  state.board = [];
   els.terms.textContent = "";
+  els.gateModal.classList.add("hidden");
+  els.boardModal.classList.add("hidden");
+  els.viewerModal.classList.add("hidden");
   els.mirror.classList.add("hidden");
   els.picker.classList.remove("hidden");
+  disarmStop();
   refreshSessions();
   state.pollTimer = setInterval(refreshSessions, 5000);
 }
+
+/* wire events */
 
 Ev.EventsOn("pane:output", (idx, b64) => {
   if (!state.attached) return;
@@ -193,11 +365,22 @@ Ev.EventsOn("pane:reset", (idx) => {
 
 Ev.EventsOn("session:ready", () => {
   els.conn.textContent = "attached · live";
+  fitActive();
 });
 
 Ev.EventsOn("session:roster", (roles) => {
   state.roles = roles || [];
   renderCards();
+});
+
+Ev.EventsOn("session:board", (board) => {
+  state.board = board || [];
+  if (!els.boardModal.classList.contains("hidden")) renderBoard();
+});
+
+Ev.EventsOn("session:gates", (gates) => {
+  state.gates = gates || [];
+  renderGate();
 });
 
 Ev.EventsOn("session:status", (on, up) => {
@@ -219,13 +402,32 @@ Ev.EventsOn("session:focus", (idx) => {
 
 Ev.EventsOn("session:lost", (msg) => {
   if (!state.attached) return;
-  showPickerError(`connection lost: ${msg}`);
+  if (!state.expectStop) showPickerError(`connection lost: ${msg}`);
   toPicker();
 });
+
+/* lifecycle buttons */
 
 els.detach.addEventListener("click", async () => {
   await App.Detach();
   toPicker();
+});
+
+// stop is two-click: arm, then confirm within 3s
+function disarmStop() {
+  els.stop.classList.remove("armed");
+  els.stop.textContent = "Stop everything";
+}
+
+els.stop.addEventListener("click", async () => {
+  if (!els.stop.classList.contains("armed")) {
+    els.stop.classList.add("armed");
+    els.stop.textContent = "Click again to stop all agents";
+    setTimeout(disarmStop, 3000);
+    return;
+  }
+  state.expectStop = true;
+  await App.StopSession();
 });
 
 setInterval(() => {
