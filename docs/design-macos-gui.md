@@ -4,7 +4,10 @@ A point-and-click deck for people who are not comfortable in a terminal,
 macOS first. The CLI and the TUI stay exactly as they are: the GUI is an
 additive frontend, not a replacement.
 
-Status: proposal. Nothing here is implemented; staging is at the end.
+Status: phase 0 (the `internal/wire` extraction and shared attach
+client, PR #111) is shipped; the protocol now lives in `internal/wire`,
+not `internal/deck/wire.go` as the inventory below says. Phases 1-3 are
+not started.
 
 ## The one-line architecture
 
