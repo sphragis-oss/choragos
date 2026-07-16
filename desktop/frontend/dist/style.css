@@ -1,0 +1,108 @@
+/* brand palette from assets/: gold #d3a15a on warm ink, text #eae7dd */
+:root {
+  --bg: #14120e;
+  --panel: #1c1913;
+  --border: #35301f;
+  --fg: #eae7dd;
+  --dim: #8f8875;
+  --accent: #d3a15a;
+  --working: #8fb573;
+  --waiting: #e0813f;
+  --danger: #d16060;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 -apple-system, "Helvetica Neue", sans-serif;
+  overflow: hidden;
+}
+
+.hidden { display: none !important; }
+
+/* session picker */
+#picker { padding: 48px; max-width: 720px; margin: 0 auto; }
+#picker .wordmark { width: 240px; margin-bottom: 12px; }
+#picker .sub { color: var(--dim); margin-bottom: 24px; }
+#picker code { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
+#session-list { list-style: none; }
+#session-list li {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+#session-list li:hover { border-color: var(--accent); }
+#session-list .name { font-weight: 600; }
+#session-list .dir { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+#session-list .meta { color: var(--dim); font-size: 12px; white-space: nowrap; margin-left: 16px; }
+.empty { color: var(--dim); }
+.error { color: var(--danger); margin-top: 12px; }
+
+/* mirror layout */
+#mirror { display: flex; flex-direction: column; height: 100vh; }
+#mirror aside {
+  position: absolute; top: 0; bottom: 24px; left: 0; width: 240px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#sidebar .wordmark { width: 160px; margin: 4px 0 8px 4px; }
+#terms {
+  position: absolute; top: 0; bottom: 24px; left: 240px; right: 0;
+  padding: 12px;
+  overflow: auto;
+}
+.term-holder { height: 100%; }
+
+/* role cards */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.card.active { border-color: var(--accent); }
+.card .row { display: flex; align-items: baseline; gap: 6px; }
+.card .name { font-weight: 600; }
+.card .model { color: var(--dim); font-size: 11px; }
+.card .state { font-size: 12px; color: var(--dim); }
+.dot { display: inline-block; width: 8px; }
+.dot.working { color: var(--working); }
+.dot.waiting { color: var(--waiting); }
+.dot.idle { color: var(--dim); }
+.dot.exited { color: var(--danger); }
+
+#detach {
+  margin-top: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 8px;
+  cursor: pointer;
+}
+#detach:hover { border-color: var(--accent); }
+
+/* status bar */
+#statusbar {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
+  display: flex; gap: 16px; align-items: center;
+  padding: 0 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 12px;
+}
+#gateway.on { color: var(--working); }
+#gateway.down { color: var(--danger); }

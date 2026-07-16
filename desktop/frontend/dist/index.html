@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Choragos</title>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="picker" class="screen">
+    <header>
+      <img class="wordmark" src="brand/logo-wordmark-dark.svg" alt="Choragos" />
+      <p class="sub">Running sessions on this machine. Start one with <code>choragos serve --detach</code>.</p>
+    </header>
+    <ul id="session-list"></ul>
+    <p id="picker-empty" class="empty hidden">No running sessions.</p>
+    <p id="picker-error" class="error hidden"></p>
+  </div>
+
+  <div id="mirror" class="screen hidden">
+    <aside id="sidebar">
+      <img class="wordmark" src="brand/logo-wordmark-dark.svg" alt="Choragos" />
+      <div id="cards"></div>
+      <button id="detach">Detach</button>
+    </aside>
+    <main id="terms"></main>
+    <footer id="statusbar">
+      <span id="conn-state">connecting…</span>
+      <span id="gateway"></span>
+      <span id="mode">read-only mirror</span>
+    </footer>
+  </div>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
