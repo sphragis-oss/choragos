@@ -5,7 +5,6 @@ package deck
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,8 +29,8 @@ type connLostMsg struct{ err error }
 func RunAttach(version string) error {
 	wc, welcome, err := wire.Dial(ipc.UISocketPath(), version)
 	if err != nil {
-		var op *net.OpError
-		if errors.As(err, &op) {
+		// only true dial failures mean "no session"; handshake errors surface as-is
+		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 			return fmt.Errorf("no session for this directory (start one with: choragos serve --detach)")
 		}
 		return err
