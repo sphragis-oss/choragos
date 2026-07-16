@@ -29,10 +29,11 @@ const state = {
 // working/idle window, mirroring the deck's 2s rule
 const WORKING_MS = 2000;
 
+// brand palette, matching style.css
 const termTheme = {
-  background: "#14161a",
-  foreground: "#d8dee9",
-  cursor: "#22d3ee",
+  background: "#14120e",
+  foreground: "#eae7dd",
+  cursor: "#d3a15a",
 };
 
 function b64Bytes(b64) {

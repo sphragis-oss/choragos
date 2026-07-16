@@ -1,13 +1,14 @@
+/* brand palette from assets/: gold #d3a15a on warm ink, text #eae7dd */
 :root {
-  --bg: #14161a;
-  --panel: #1c1f26;
-  --border: #2c313c;
-  --fg: #d8dee9;
-  --dim: #6b7280;
-  --accent: #22d3ee;
-  --working: #34d399;
-  --waiting: #fbbf24;
-  --danger: #f87171;
+  --bg: #14120e;
+  --panel: #1c1913;
+  --border: #35301f;
+  --fg: #eae7dd;
+  --dim: #8f8875;
+  --accent: #d3a15a;
+  --working: #8fb573;
+  --waiting: #e0813f;
+  --danger: #d16060;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -24,7 +25,7 @@ html, body {
 
 /* session picker */
 #picker { padding: 48px; max-width: 720px; margin: 0 auto; }
-#picker h1 { font-size: 22px; margin-bottom: 4px; }
+#picker .wordmark { width: 240px; margin-bottom: 12px; }
 #picker .sub { color: var(--dim); margin-bottom: 24px; }
 #picker code { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
 #session-list { list-style: none; }
@@ -56,6 +57,7 @@ html, body {
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 8px;
 }
+#sidebar .wordmark { width: 160px; margin: 4px 0 8px 4px; }
 #terms {
   position: absolute; top: 0; bottom: 24px; left: 240px; right: 0;
   padding: 12px;
