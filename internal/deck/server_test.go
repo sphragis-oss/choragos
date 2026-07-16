@@ -11,6 +11,7 @@ import (
 
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
+	"github.com/sphragis-oss/choragos/internal/wire"
 )
 
 const serverTestVersion = "test-proto"
@@ -73,14 +74,14 @@ approve = true
 }
 
 // dialUI connects and completes the hello handshake, returning the first response event.
-func dialUI(t *testing.T, version string) (*wireConn, wireEvent) {
+func dialUI(t *testing.T, version string) (*wire.Conn, wire.Event) {
 	t.Helper()
 	conn, err := net.Dial("unix", ipc.UISocketPath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	wc := newWireConn(conn)
-	if err := wc.WriteEvent(wireEvent{Kind: "hello", Proto: wireProto, Version: version}); err != nil {
+	wc := wire.NewConn(conn)
+	if err := wc.WriteEvent(wire.Event{Kind: "hello", Proto: wire.Proto, Version: version}); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _, ev, err := wc.Read()
@@ -91,7 +92,7 @@ func dialUI(t *testing.T, version string) (*wireConn, wireEvent) {
 }
 
 // readUntil consumes frames until an event of the wanted kind arrives, collecting pane output per idx.
-func readUntil(t *testing.T, wc *wireConn, kind string, out map[int][]byte) wireEvent {
+func readUntil(t *testing.T, wc *wire.Conn, kind string, out map[int][]byte) wire.Event {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -99,7 +100,7 @@ func readUntil(t *testing.T, wc *wireConn, kind string, out map[int][]byte) wire
 		if err != nil {
 			t.Fatalf("read: %v", err)
 		}
-		if k == kindOutput {
+		if k == wire.KindOutput {
 			if out != nil {
 				out[idx] = append(out[idx], chunk...)
 			}
@@ -110,11 +111,11 @@ func readUntil(t *testing.T, wc *wireConn, kind string, out map[int][]byte) wire
 		}
 	}
 	t.Fatalf("event %q never arrived", kind)
-	return wireEvent{}
+	return wire.Event{}
 }
 
 // waitOutput reads frames until out[idx] contains substr, accumulating all pane output on the way.
-func waitOutput(t *testing.T, wc *wireConn, out map[int][]byte, idx int, substr string) {
+func waitOutput(t *testing.T, wc *wire.Conn, out map[int][]byte, idx int, substr string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for !strings.Contains(string(out[idx]), substr) {
@@ -125,7 +126,7 @@ func waitOutput(t *testing.T, wc *wireConn, out map[int][]byte, idx int, substr 
 		if err != nil {
 			t.Fatalf("read: %v", err)
 		}
-		if k == kindOutput {
+		if k == wire.KindOutput {
 			out[i] = append(out[i], chunk...)
 		}
 	}
@@ -163,7 +164,7 @@ func TestServerAttachLifecycle(t *testing.T) {
 	waitOutput(t, wc, out, 0, "orch-banner")
 
 	// input round-trip: keystrokes reach the real PTY, the echo streams back
-	if err := wc.WriteEvent(wireEvent{Kind: "input", Idx: 0, Data: []byte("marco\r")}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "input", Idx: 0, Data: []byte("marco\r")}); err != nil {
 		t.Fatal(err)
 	}
 	waitOutput(t, wc, out, 0, "marco")
@@ -176,7 +177,7 @@ func TestServerAttachLifecycle(t *testing.T) {
 	if len(gev.Gates) != 1 || gev.Gates[0].To != "reviewer" {
 		t.Fatalf("gates = %+v", gev.Gates)
 	}
-	if err := wc.WriteEvent(wireEvent{Kind: "gate", Approve: true}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "gate", Approve: true}); err != nil {
 		t.Fatal(err)
 	}
 	bev := readUntil(t, wc, "board", nil)
@@ -185,7 +186,7 @@ func TestServerAttachLifecycle(t *testing.T) {
 	}
 
 	// a wire restart replaces the pane: a reset arrives first, then only the fresh boot output
-	if err := wc.WriteEvent(wireEvent{Kind: "restart", Idx: 0}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "restart", Idx: 0}); err != nil {
 		t.Fatal(err)
 	}
 	rev := readUntil(t, wc, "reset", out)
@@ -200,15 +201,15 @@ func TestServerAttachLifecycle(t *testing.T) {
 
 	// detach leaves the session running; re-attach returns the checkpointed layout
 	layout := []byte(`{"root":{"leaf":true,"role":1},"focused":1}`)
-	if err := wc.WriteEvent(wireEvent{Kind: "layout", Data: layout}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "layout", Data: layout}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wc.WriteEvent(wireEvent{Kind: "detach"}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "detach"}); err != nil {
 		t.Fatal(err)
 	}
 	// keep wc open: closing now can fail a server write and drop the client before layout lands
-	var w3 wireEvent
-	var wc3 *wireConn
+	var w3 wire.Event
+	var wc3 *wire.Conn
 	if !waitFor(func() bool {
 		wc3, w3 = dialUI(t, serverTestVersion)
 		if w3.Kind == "welcome" {
@@ -224,6 +225,6 @@ func TestServerAttachLifecycle(t *testing.T) {
 		t.Fatalf("layout = %s, want %s", w3.Layout, layout)
 	}
 	readUntil(t, wc3, "ready", nil)
-	_ = wc3.WriteEvent(wireEvent{Kind: "detach"})
+	_ = wc3.WriteEvent(wire.Event{Kind: "detach"})
 	_ = wc3.Close()
 }

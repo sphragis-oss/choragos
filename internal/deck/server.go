@@ -14,6 +14,7 @@ import (
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/pane"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
+	"github.com/sphragis-oss/choragos/internal/wire"
 )
 
 // outputMsg carries one teed pane chunk into the server loop for wire forwarding.
@@ -26,22 +27,22 @@ type outputMsg struct {
 
 // attachMsg hands an accepted UI connection (hello already read) to the loop.
 type attachMsg struct {
-	wc    *wireConn
-	hello wireEvent
+	wc    *wire.Conn
+	hello wire.Event
 }
 
 // clientMsg carries one event from the attached client into the loop.
-type clientMsg struct{ ev wireEvent }
+type clientMsg struct{ ev wire.Event }
 
 // clientGoneMsg reports the attached client's reader exiting.
-type clientGoneMsg struct{ wc *wireConn }
+type clientGoneMsg struct{ wc *wire.Conn }
 
 // server runs a session headless: the deck brain without a terminal, one attachable client.
 type server struct {
 	sess    *session
 	msgs    chan any
 	version string
-	client  *wireConn
+	client  *wire.Conn
 	snap    map[int]uint64 // per-role ring sequence at attach; older chunks are already replayed
 	layout  []byte         // client wm checkpoint, restored on the next attach
 	wired   map[int]*pane.Pane
@@ -53,8 +54,8 @@ func RunServer(cfg config.Config, version string) error {
 	msgs := make(chan any, 1024)
 	s.notify = func(v any) { msgs <- v }
 	srv := &server{sess: s, msgs: msgs, version: version, wired: map[int]*pane.Pane{}}
-	s.focusFn = func(i int) { srv.sendEvent(wireEvent{Kind: "focus", Idx: i}) }
-	s.bellFn = func() { srv.sendEvent(wireEvent{Kind: "bell"}) }
+	s.focusFn = func(i int) { srv.sendEvent(wire.Event{Kind: "focus", Idx: i}) }
+	s.bellFn = func() { srv.sendEvent(wire.Event{Kind: "bell"}) }
 	if err := s.start(80, 24); err != nil {
 		return err
 	}
@@ -167,7 +168,7 @@ func (srv *server) handle(v any) bool {
 }
 
 // handleClient applies one event from the attached client; true means shut down.
-func (srv *server) handleClient(ev wireEvent) bool {
+func (srv *server) handleClient(ev wire.Event) bool {
 	s := srv.sess
 	switch ev.Kind {
 	case "input":
@@ -224,10 +225,10 @@ func (srv *server) accept(ln net.Listener) {
 			return
 		}
 		go func() {
-			wc := newWireConn(conn)
-			_ = conn.SetReadDeadline(time.Now().Add(helloTimeout))
+			wc := wire.NewConn(conn)
+			_ = conn.SetReadDeadline(time.Now().Add(wire.HelloTimeout))
 			kind, _, _, ev, err := wc.Read()
-			if err != nil || kind != kindEvent || ev.Kind != "hello" {
+			if err != nil || kind != wire.KindEvent || ev.Kind != "hello" {
 				_ = wc.Close()
 				return
 			}
@@ -238,15 +239,15 @@ func (srv *server) accept(ln net.Listener) {
 }
 
 // attach admits one client: handshake checks, full state, ring replay, then live streaming.
-func (srv *server) attach(wc *wireConn, hello wireEvent) {
+func (srv *server) attach(wc *wire.Conn, hello wire.Event) {
 	s := srv.sess
 	if srv.client != nil {
-		_ = wc.WriteEvent(wireEvent{Kind: "busy", PID: os.Getpid()})
+		_ = wc.WriteEvent(wire.Event{Kind: "busy", PID: os.Getpid()})
 		_ = wc.Close()
 		return
 	}
-	if hello.Proto != wireProto || hello.Version != srv.version {
-		_ = wc.WriteEvent(wireEvent{Kind: "mismatch", Proto: wireProto, Version: srv.version})
+	if hello.Proto != wire.Proto || hello.Version != srv.version {
+		_ = wc.WriteEvent(wire.Event{Kind: "mismatch", Proto: wire.Proto, Version: srv.version})
 		_ = wc.Close()
 		return
 	}
@@ -255,7 +256,7 @@ func (srv *server) attach(wc *wireConn, hello wireEvent) {
 	for i, e := range s.panes {
 		rings[i], snap[i] = e.pane.RingBytes()
 	}
-	welcome := wireEvent{Kind: "welcome", Proto: wireProto, Version: srv.version, Cfg: &s.cfg, Layout: srv.layout}
+	welcome := wire.Event{Kind: "welcome", Proto: wire.Proto, Version: srv.version, Cfg: &s.cfg, Layout: srv.layout}
 	state := s.snapshotEvents()
 	welcome.Roster, welcome.Board, welcome.Gates = state[0].Roster, state[1].Board, state[2].Gates
 	if err := wc.WriteEvent(welcome); err != nil {
@@ -270,7 +271,7 @@ func (srv *server) attach(wc *wireConn, hello wireEvent) {
 			}
 		}
 	}
-	if err := wc.WriteEvent(wireEvent{Kind: "ready"}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "ready"}); err != nil {
 		_ = wc.Close()
 		return
 	}
@@ -283,7 +284,7 @@ func (srv *server) attach(wc *wireConn, hello wireEvent) {
 				srv.msgs <- clientGoneMsg{wc: wc}
 				return
 			}
-			if kind == kindEvent {
+			if kind == wire.KindEvent {
 				srv.msgs <- clientMsg{ev: ev}
 				if ev.Kind == "detach" || ev.Kind == "quit" {
 					return
@@ -302,7 +303,7 @@ func (srv *server) dropClient() {
 }
 
 // sendEvent ships one event to the attached client, dropping it on write failure.
-func (srv *server) sendEvent(ev wireEvent) {
+func (srv *server) sendEvent(ev wire.Event) {
 	if srv.client == nil {
 		return
 	}
@@ -347,7 +348,7 @@ func (srv *server) resetClientPane(idx int, p *pane.Pane) {
 	if srv.client == nil {
 		return
 	}
-	srv.sendEvent(wireEvent{Kind: "reset", Idx: idx})
+	srv.sendEvent(wire.Event{Kind: "reset", Idx: idx})
 	b, seq := p.RingBytes()
 	srv.snap[idx] = seq
 	if len(b) > 0 && srv.client != nil {

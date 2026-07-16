@@ -3,6 +3,7 @@
 package deck
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -15,59 +16,36 @@ import (
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/pane"
+	"github.com/sphragis-oss/choragos/internal/wire"
 	"github.com/sphragis-oss/choragos/internal/wm"
 )
 
 // remoteEvMsg carries a server state event into the client's update loop.
-type remoteEvMsg struct{ ev wireEvent }
+type remoteEvMsg struct{ ev wire.Event }
 
 // connLostMsg reports the attach connection dying; the client quits with the error.
 type connLostMsg struct{ err error }
 
-// helloTimeout bounds the attach handshake so a wedged server cannot hang the CLI.
-const helloTimeout = 5 * time.Second
-
 // RunAttach connects the TUI client to the detached session for this working directory.
 func RunAttach(version string) error {
-	conn, err := net.Dial("unix", ipc.UISocketPath())
+	wc, welcome, err := wire.Dial(ipc.UISocketPath(), version)
 	if err != nil {
-		return fmt.Errorf("no session for this directory (start one with: choragos serve --detach)")
-	}
-	wc := newWireConn(conn)
-	if err := wc.WriteEvent(wireEvent{Kind: "hello", Proto: wireProto, Version: version}); err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) {
+			return fmt.Errorf("no session for this directory (start one with: choragos serve --detach)")
+		}
 		return err
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(helloTimeout))
-	_, _, _, ev, err := wc.Read()
-	if err != nil {
-		return fmt.Errorf("attach handshake: %w", err)
-	}
-	switch ev.Kind {
-	case "busy":
-		return fmt.Errorf("a client is already attached (pid %d)", ev.PID)
-	case "mismatch":
-		return fmt.Errorf("version mismatch: server runs %s, this client is %s; finish or kill the session, then restart it", ev.Version, version)
-	case "welcome":
-	default:
-		return fmt.Errorf("attach handshake: unexpected %q", ev.Kind)
-	}
 
-	m := newClientModel(wc, ev)
+	m := newClientModel(wc, welcome)
 	// consume the ring replay synchronously; frames after "ready" flow through the program
-	for {
-		_ = conn.SetReadDeadline(time.Now().Add(helloTimeout))
-		kind, idx, chunk, rev, err := wc.Read()
-		if err != nil {
-			return fmt.Errorf("attach replay: %w", err)
-		}
-		if kind == kindEvent && rev.Kind == "ready" {
-			break
-		}
-		if kind == kindOutput && idx >= 0 && idx < len(m.panes) {
+	if err := wc.Replay(func(idx int, chunk []byte) {
+		if idx >= 0 && idx < len(m.panes) {
 			m.panes[idx].pane.Feed(chunk)
 		}
+	}); err != nil {
+		return fmt.Errorf("attach replay: %w", err)
 	}
-	_ = conn.SetReadDeadline(time.Time{})
 
 	m.prog = tea.NewProgram(m, programOptions(m.cfg)...)
 	go clientReader(m, wc)
@@ -76,7 +54,7 @@ func RunAttach(version string) error {
 	defer signal.Stop(sigCh)
 	go func() {
 		<-sigCh
-		_ = wc.WriteEvent(wireEvent{Kind: "detach"})
+		_ = wc.WriteEvent(wire.Event{Kind: "detach"})
 		m.prog.Kill()
 	}()
 	defer func() { _ = wc.Close() }()
@@ -87,7 +65,7 @@ func RunAttach(version string) error {
 }
 
 // newClientModel builds the Model from a welcome event: remote panes, synced state, restored layout.
-func newClientModel(wc *wireConn, ev wireEvent) *Model {
+func newClientModel(wc *wire.Conn, ev wire.Event) *Model {
 	cfg := config.Config{}
 	if ev.Cfg != nil {
 		cfg = *ev.Cfg
@@ -116,7 +94,7 @@ func newClientModel(wc *wireConn, ev wireEvent) *Model {
 }
 
 // rosterEntries syncs wire roster rows into entries, appending remote panes for new roles.
-func rosterEntries(wc *wireConn, roster []wireRole, existing []*entry) []*entry {
+func rosterEntries(wc *wire.Conn, roster []wire.Role, existing []*entry) []*entry {
 	now := time.Now()
 	out := existing
 	for i, wr := range roster {
@@ -128,8 +106,8 @@ func rosterEntries(wc *wireConn, roster []wireRole, existing []*entry) []*entry 
 		}
 		idx := i
 		p := pane.Remote(80, 24,
-			func(b []byte) error { return wc.WriteEvent(wireEvent{Kind: "input", Idx: idx, Data: b}) },
-			func(cols, rows int) { _ = wc.WriteEvent(wireEvent{Kind: "resize", Idx: idx, Cols: cols, Rows: rows}) })
+			func(b []byte) error { return wc.WriteEvent(wire.Event{Kind: "input", Idx: idx, Data: b}) },
+			func(cols, rows int) { _ = wc.WriteEvent(wire.Event{Kind: "resize", Idx: idx, Cols: cols, Rows: rows}) })
 		out = append(out, &entry{
 			role: wr.Role, pane: p, exited: wr.Exited, gone: wr.Gone, waiting: wr.Waiting,
 			paused: wr.Paused, restarts: wr.Restarts, startedAt: now, lastActive: now,
@@ -139,31 +117,24 @@ func rosterEntries(wc *wireConn, roster []wireRole, existing []*entry) []*entry 
 }
 
 // clientReader pumps wire frames into the running program until the connection dies.
-func clientReader(m *Model, wc *wireConn) {
-	for {
-		kind, idx, chunk, ev, err := wc.Read()
-		if err != nil {
-			m.prog.Send(connLostMsg{err: err})
-			return
+func clientReader(m *Model, wc *wire.Conn) {
+	err := wc.Pump(func(idx int, chunk []byte) {
+		if idx >= 0 && idx < len(m.panes) {
+			m.panes[idx].pane.Feed(chunk)
+			m.prog.Send(frameMsg{idx: idx, gen: m.panes[idx].gen})
 		}
-		switch kind {
-		case kindOutput:
-			if idx >= 0 && idx < len(m.panes) {
-				m.panes[idx].pane.Feed(chunk)
-				m.prog.Send(frameMsg{idx: idx, gen: m.panes[idx].gen})
-			}
-		case kindEvent:
-			// reset must land before the frames that follow it, so apply it here in wire order
-			if ev.Kind == "reset" && ev.Idx >= 0 && ev.Idx < len(m.panes) {
-				m.panes[ev.Idx].pane.Reset()
-			}
-			m.prog.Send(remoteEvMsg{ev: ev})
+	}, func(ev wire.Event) {
+		// reset must land before the frames that follow it, so apply it here in wire order
+		if ev.Kind == "reset" && ev.Idx >= 0 && ev.Idx < len(m.panes) {
+			m.panes[ev.Idx].pane.Reset()
 		}
-	}
+		m.prog.Send(remoteEvMsg{ev: ev})
+	})
+	m.prog.Send(connLostMsg{err: err})
 }
 
 // applyRemoteEvent syncs server state events into the client model.
-func (m *Model) applyRemoteEvent(ev wireEvent) {
+func (m *Model) applyRemoteEvent(ev wire.Event) {
 	switch ev.Kind {
 	case "roster":
 		m.panes = rosterEntries(m.remote, ev.Roster, m.panes)
@@ -193,7 +164,7 @@ func (m *Model) applyRemoteEvent(ev wireEvent) {
 }
 
 // fromWireTasks restores the task board from the wire.
-func fromWireTasks(in []wireTask) []taskEvent {
+func fromWireTasks(in []wire.Task) []taskEvent {
 	out := make([]taskEvent, 0, len(in))
 	for _, w := range in {
 		ev := taskEvent{at: time.Unix(0, w.At), kind: w.Kind, id: w.ID, to: w.To, task: w.Task, file: w.File, done: w.Done}
@@ -206,7 +177,7 @@ func fromWireTasks(in []wireTask) []taskEvent {
 }
 
 // fromWireGates restores the pending gates from the wire.
-func fromWireGates(in []wireGate) []pendingGate {
+func fromWireGates(in []wire.Gate) []pendingGate {
 	out := make([]pendingGate, 0, len(in))
 	for _, w := range in {
 		out = append(out, pendingGate{cmd: w.Cmd, to: w.To, at: time.Unix(0, w.At)})
