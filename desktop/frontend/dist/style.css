@@ -22,6 +22,20 @@ html, body {
 }
 
 .hidden { display: none !important; }
+.dim { color: var(--dim); }
+
+button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { border-color: var(--accent); }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button.danger:hover, button.danger.armed { border-color: var(--danger); color: var(--danger); }
 
 /* session picker */
 #picker { padding: 48px; max-width: 720px; margin: 0 auto; }
@@ -58,10 +72,10 @@ html, body {
   display: flex; flex-direction: column; gap: 8px;
 }
 #sidebar .wordmark { width: 160px; margin: 4px 0 8px 4px; }
+#detach { margin-top: auto; }
 #terms {
   position: absolute; top: 0; bottom: 24px; left: 240px; right: 0;
   padding: 12px;
-  overflow: auto;
 }
 .term-holder { height: 100%; }
 
@@ -77,22 +91,13 @@ html, body {
 .card .name { font-weight: 600; }
 .card .model { color: var(--dim); font-size: 11px; }
 .card .state { font-size: 12px; color: var(--dim); }
+.card .role-actions { display: flex; gap: 6px; margin-top: 6px; }
+.card .role-actions button { padding: 2px 8px; font-size: 11px; }
 .dot { display: inline-block; width: 8px; }
 .dot.working { color: var(--working); }
 .dot.waiting { color: var(--waiting); }
 .dot.idle { color: var(--dim); }
 .dot.exited { color: var(--danger); }
-
-#detach {
-  margin-top: auto;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg);
-  padding: 8px;
-  cursor: pointer;
-}
-#detach:hover { border-color: var(--accent); }
 
 /* status bar */
 #statusbar {
@@ -106,3 +111,49 @@ html, body {
 }
 #gateway.on { color: var(--working); }
 #gateway.down { color: var(--danger); }
+#gate-count { color: var(--waiting); font-weight: 600; }
+
+/* modals */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10;
+}
+.dialog {
+  background: var(--panel);
+  border: 1px solid var(--waiting);
+  border-radius: 10px;
+  padding: 20px 24px;
+  min-width: 420px;
+  max-width: 60vw;
+}
+.dialog.wide { border-color: var(--border); max-width: 80vw; width: 720px; }
+.dialog h2 { font-size: 15px; margin-bottom: 12px; color: var(--waiting); }
+.dialog.wide h2 { color: var(--accent); }
+.dialog dl { display: grid; grid-template-columns: 70px 1fr; gap: 4px 12px; margin-bottom: 12px; }
+.dialog dt { color: var(--accent); }
+.dialog dd { overflow-wrap: anywhere; }
+.dialog .actions { display: flex; gap: 8px; margin-top: 12px; }
+.dialog pre {
+  max-height: 60vh; overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+}
+#board-rows { max-height: 60vh; overflow: auto; font-size: 12px; }
+#board-rows .trow {
+  display: grid;
+  grid-template-columns: 64px 90px 110px 1fr 90px;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+#board-rows .trow.head { color: var(--dim); }
+#board-rows .status.done { color: var(--working); }
+#board-rows .status.pending { color: var(--waiting); }
+#board-rows .file { color: var(--accent); cursor: pointer; }

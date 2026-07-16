@@ -22,17 +22,54 @@
     <aside id="sidebar">
       <img class="wordmark" src="brand/logo-wordmark-dark.svg" alt="Choragos" />
       <div id="cards"></div>
-      <button id="detach">Detach</button>
+      <button id="board-btn">Task board</button>
+      <button id="detach">Quit, keep agents working</button>
+      <button id="stop" class="danger">Stop everything</button>
     </aside>
     <main id="terms"></main>
     <footer id="statusbar">
       <span id="conn-state">connecting…</span>
       <span id="gateway"></span>
-      <span id="mode">read-only mirror</span>
+      <span id="gate-count"></span>
     </footer>
   </div>
 
+  <div id="gate-modal" class="modal hidden">
+    <div class="dialog">
+      <h2>Delegation awaiting approval</h2>
+      <dl>
+        <dt>to</dt><dd id="gate-to"></dd>
+        <dt>task</dt><dd id="gate-task"></dd>
+        <dt>brief</dt><dd id="gate-brief"></dd>
+        <dt>queued</dt><dd id="gate-at"></dd>
+      </dl>
+      <p id="gate-more" class="dim"></p>
+      <div class="actions">
+        <button id="gate-approve" class="primary">Approve</button>
+        <button id="gate-view">View brief</button>
+        <button id="gate-reject" class="danger">Reject</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="board-modal" class="modal hidden">
+    <div class="dialog wide">
+      <h2>Task board</h2>
+      <div id="board-rows"></div>
+      <div class="actions"><button id="board-close">Close</button></div>
+    </div>
+  </div>
+
+  <div id="viewer-modal" class="modal hidden">
+    <div class="dialog wide">
+      <h2 id="viewer-title"></h2>
+      <pre id="viewer-body"></pre>
+      <div class="actions"><button id="viewer-close">Close</button></div>
+    </div>
+  </div>
+
   <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
