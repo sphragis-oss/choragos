@@ -118,7 +118,9 @@ bell = true       # terminal bell when an agent blocks on input
 Cell-motion mouse mode is on: a left click focuses the tile under the
 cursor, a click on a sidebar card focuses that role (retargeting the
 focused tile when the role has no tile), and the wheel scrolls the
-focused tile's history. The status row is not clickable.
+history of the tile under the cursor, focusing it first when needed;
+over the sidebar or status row it keeps scrolling the focused tile.
+The status row is not clickable.
 
 ## Cursor
 

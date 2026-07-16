@@ -374,25 +374,26 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMouse focuses the clicked tile and drives scrollback with the wheel.
+// handleMouse focuses the clicked or hovered tile and drives scrollback with the wheel.
 func (m *Model) handleMouse(msg tea.MouseMsg) {
 	if m.tree == nil {
 		return
 	}
 	switch {
 	case msg.Button == tea.MouseButtonWheelUp && msg.Action == tea.MouseActionPress:
+		m.focusTileAt(msg.X, msg.Y)
 		m.scrollOff += scrollStep
 	case msg.Button == tea.MouseButtonWheelDown && msg.Action == tea.MouseActionPress:
+		m.focusTileAt(msg.X, msg.Y)
 		if m.scrollOff -= scrollStep; m.scrollOff < 0 {
 			m.scrollOff = 0
 		}
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
-		leftW, mainW, contentH := m.dims()
-		x := msg.X - leftW
+		leftW, _, contentH := m.dims()
 		if msg.Y >= contentH {
 			return // the status row is not clickable
 		}
-		if x < 0 {
+		if msg.X-leftW < 0 {
 			for _, c := range m.cardHits {
 				if msg.Y >= c.top && msg.Y < c.bot {
 					m.surfaceRole(c.role)
@@ -401,14 +402,24 @@ func (m *Model) handleMouse(msg tea.MouseMsg) {
 			}
 			return
 		}
-		for _, t := range m.tree.Layout(mainW, contentH) {
-			if x >= t.X && x < t.X+t.W && msg.Y >= t.Y && msg.Y < t.Y+t.H {
-				if t.Role != m.active {
-					m.manual = true
-					m.focusRole(t.Role)
-				}
-				return
+		m.focusTileAt(msg.X, msg.Y)
+	}
+}
+
+// focusTileAt focuses the tile under the pointer; sidebar and status row are left alone.
+func (m *Model) focusTileAt(x, y int) {
+	leftW, mainW, contentH := m.dims()
+	tx := x - leftW
+	if tx < 0 || y >= contentH {
+		return
+	}
+	for _, t := range m.tree.Layout(mainW, contentH) {
+		if tx >= t.X && tx < t.X+t.W && y >= t.Y && y < t.Y+t.H {
+			if t.Role != m.active {
+				m.manual = true
+				m.focusRole(t.Role)
 			}
+			return
 		}
 	}
 }

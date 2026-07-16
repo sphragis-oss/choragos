@@ -979,6 +979,34 @@ func TestMouseClickFocusesTile(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollsHoveredTile(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.Update(key("ctrl+b"))
+	m.Update(key("v")) // two tiles; focus on coder (right)
+	if m.active != 1 {
+		t.Fatalf("setup: active = %d", m.active)
+	}
+	leftW, mainW, contentH := m.dims()
+	// wheel over the left tile focuses it and scrolls from live tail
+	m.Update(tea.MouseMsg{X: leftW + 2, Y: 2, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.active != 0 {
+		t.Fatalf("wheel should focus the hovered tile, active = %d", m.active)
+	}
+	if m.scrollOff != scrollStep {
+		t.Fatalf("wheel up on hovered tile: scrollOff = %d", m.scrollOff)
+	}
+	// wheel over the focused tile keeps scrolling it
+	m.Update(tea.MouseMsg{X: leftW + 2, Y: 2, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.active != 0 || m.scrollOff != 2*scrollStep {
+		t.Fatalf("second wheel: active=%d scrollOff=%d", m.active, m.scrollOff)
+	}
+	// wheel over the status row stays on the focused pane
+	m.Update(tea.MouseMsg{X: leftW + mainW - 2, Y: contentH, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.active != 0 || m.scrollOff != 3*scrollStep {
+		t.Fatalf("status-row wheel: active=%d scrollOff=%d", m.active, m.scrollOff)
+	}
+}
+
 func TestWaitingBellEdgeTriggered(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator"))
 	rings := 0
