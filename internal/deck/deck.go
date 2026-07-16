@@ -20,6 +20,7 @@ import (
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
+	"github.com/sphragis-oss/choragos/internal/wire"
 	"github.com/sphragis-oss/choragos/internal/wm"
 )
 
@@ -98,20 +99,20 @@ type Model struct {
 	rbOn       bool              // rollback confirm overlay visible
 	rbStore    *checkpoint.Store // pending rollback; nil once applied or when rbMsg reports
 	rbTarget   checkpoint.Entry
-	rbExtra    []string  // files the rollback will delete
-	rbFiles    int       // files the rollback will restore
-	rbMsg      string    // error or result text; any key closes
-	rbWarn     string    // unresolved-task caution shown in the overlay
-	broadcast  bool      // normal-mode keys go to every live pane
-	searching  bool      // typing a scrollback search query
-	searchBuf  string    // query being typed
-	searchQ    string    // committed query; n/N navigate while scrolled
-	usage      usageMsg  // last per-role token snapshot from the gateway metrics
-	scrollOff  int       // focused-pane scrollback offset (0 = live tail)
-	maxScroll  int       // last render's max scrollback offset, for clamping keys
-	cardHits   []cardHit // sidebar card y-extents from the last render, for click focus
-	th         deckTheme // resolved status colors ([ui.theme] over the defaults)
-	remote     *wireConn // attached to a detached session; core actions go over the wire
+	rbExtra    []string   // files the rollback will delete
+	rbFiles    int        // files the rollback will restore
+	rbMsg      string     // error or result text; any key closes
+	rbWarn     string     // unresolved-task caution shown in the overlay
+	broadcast  bool       // normal-mode keys go to every live pane
+	searching  bool       // typing a scrollback search query
+	searchBuf  string     // query being typed
+	searchQ    string     // committed query; n/N navigate while scrolled
+	usage      usageMsg   // last per-role token snapshot from the gateway metrics
+	scrollOff  int        // focused-pane scrollback offset (0 = live tail)
+	maxScroll  int        // last render's max scrollback offset, for clamping keys
+	cardHits   []cardHit  // sidebar card y-extents from the last render, for click focus
+	th         deckTheme  // resolved status colors ([ui.theme] over the defaults)
+	remote     *wire.Conn // attached to a detached session; core actions go over the wire
 	w, h       int
 	err        error
 }
@@ -270,7 +271,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlQ:
 		if m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "quit"}) // stops the detached session too
+			_ = m.remote.WriteEvent(wire.Event{Kind: "quit"}) // stops the detached session too
 			return m, tea.Quit
 		}
 		m.closeAll()
@@ -284,7 +285,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlG:
 		m.sphragisOn = !m.sphragisOn // remote: optimistic, the status event resyncs
 		if m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "sphragis"})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "sphragis"})
 		}
 		return m, nil
 	case tea.KeyPgUp:
@@ -337,12 +338,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.prefixed {
 		m.prefixed = false
 		if msg.String() == m.keys.Detach && m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "detach"}) // the session keeps running
+			_ = m.remote.WriteEvent(wire.Event{Kind: "detach"}) // the session keeps running
 			return m, tea.Quit
 		}
 		m.wmAction(msg.String())
 		if m.remote != nil && m.tree != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "layout", Data: m.tree.Marshal()}) // checkpoint for the next attach
+			_ = m.remote.WriteEvent(wire.Event{Kind: "layout", Data: m.tree.Marshal()}) // checkpoint for the next attach
 		}
 		return m, nil
 	}
@@ -502,19 +503,19 @@ func (m *Model) wmAction(key string) {
 		m.helpOn = true
 	case m.keys.RestartRole:
 		if m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "restart", Idx: m.active})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "restart", Idx: m.active})
 			break
 		}
 		m.restartRole()
 	case m.keys.PauseRole:
 		if m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "pause", Idx: m.active})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "pause", Idx: m.active})
 			break
 		}
 		m.togglePause(m.active)
 	case m.keys.Reload:
 		if m.remote != nil {
-			_ = m.remote.WriteEvent(wireEvent{Kind: "reload"})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "reload"})
 			break
 		}
 		m.reloadConfig()
@@ -746,14 +747,14 @@ func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 	case "y", "Y":
 		if m.remote != nil {
 			m.gates = m.gates[1:] // optimistic; the server's gates event resyncs
-			_ = m.remote.WriteEvent(wireEvent{Kind: "gate", Approve: true})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "gate", Approve: true})
 			return nil
 		}
 		m.approveGate()
 	case "n", "N":
 		if m.remote != nil {
 			m.gates = m.gates[1:]
-			_ = m.remote.WriteEvent(wireEvent{Kind: "gate"})
+			_ = m.remote.WriteEvent(wire.Event{Kind: "gate"})
 			return nil
 		}
 		m.rejectGate()
