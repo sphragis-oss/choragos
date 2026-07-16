@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-16
+
+### Fixed
+- The mouse wheel scrolls the tile under the cursor, focusing it first
+  when needed, instead of always driving the focused pane's history.
+  Over the sidebar or the status row it keeps scrolling the focused
+  tile. (#106)
+
 ## [0.11.0] - 2026-07-15
 
 Run visibility and runtime control, plus a standalone-first gateway
@@ -335,7 +343,9 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/sphragis-oss/choragos/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/sphragis-oss/choragos/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/sphragis-oss/choragos/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/sphragis-oss/choragos/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/sphragis-oss/choragos/compare/v0.7.5...v0.8.0
