@@ -119,8 +119,18 @@ function focusRole(idx) {
 function fitActive() {
   const t = state.terms.get(state.active);
   if (!t || !state.attached) return;
+  if (!t.fit.proposeDimensions()) return; // container not laid out yet
   t.fit.fit();
-  App.Resize(state.active, t.term.cols, t.term.rows);
+  const idx = state.active;
+  const { cols, rows } = t.term;
+  if (t.kicked) {
+    App.Resize(idx, cols, rows);
+    return;
+  }
+  // first fit: wiggle the PTY size so a full-screen child repaints (SIGWINCH)
+  t.kicked = true;
+  App.Resize(idx, cols > 2 ? cols - 1 : cols + 1, rows);
+  setTimeout(() => App.Resize(idx, cols, rows), 60);
 }
 
 window.addEventListener("resize", () => fitActive());
@@ -378,10 +388,10 @@ async function startAndAttach(dir) {
 
 async function attach(dir) {
   els.error.classList.add("hidden");
+  state.attached = true; // before Attach: the replay starts before the promise resolves
   try {
     const roster = await App.Attach(dir);
     state.roles = roster.roles || [];
-    state.attached = true;
     state.expectStop = false;
     clearInterval(state.pollTimer);
     els.picker.classList.add("hidden");
@@ -390,6 +400,7 @@ async function attach(dir) {
     state.roles.forEach((_, idx) => termFor(idx));
     focusRole(startIdx());
   } catch (err) {
+    state.attached = false;
     showPickerError(String(err));
   }
 }
@@ -435,7 +446,7 @@ Ev.EventsOn("pane:reset", (idx) => {
 
 Ev.EventsOn("session:ready", () => {
   els.conn.textContent = "attached · live";
-  fitActive();
+  requestAnimationFrame(() => fitActive());
 });
 
 Ev.EventsOn("session:roster", (roles) => {
