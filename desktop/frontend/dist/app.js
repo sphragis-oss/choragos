@@ -44,6 +44,7 @@ const els = {
   viewerTitle: document.getElementById("viewer-title"),
   viewerBody: document.getElementById("viewer-body"),
   viewerClose: document.getElementById("viewer-close"),
+  star: document.getElementById("star-link"),
 };
 
 const state = {
@@ -334,6 +335,11 @@ function showPickerStatus(msg) {
   els.status.textContent = msg;
   els.status.classList.toggle("hidden", !msg);
 }
+
+els.star.addEventListener("click", (e) => {
+  e.preventDefault();
+  Ev.BrowserOpenURL("https://github.com/sphragis-oss/choragos");
+});
 
 els.openBtn.addEventListener("click", async () => {
   els.error.classList.add("hidden");
