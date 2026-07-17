@@ -91,6 +91,13 @@ Via Homebrew (macOS / Linux):
 brew install sphragis-oss/sphragis/choragos
 ```
 
+Prefer a GUI? Choragos Desktop is a native macOS app with the matching
+CLI bundled inside, no terminal needed:
+```bash
+brew install --cask sphragis-oss/sphragis/choragos-desktop
+```
+(or grab the `.dmg` from the [`desktop/v*` releases](https://github.com/sphragis-oss/choragos/releases))
+
 Or from source:
 ```bash
 git clone https://github.com/sphragis-oss/choragos.git
