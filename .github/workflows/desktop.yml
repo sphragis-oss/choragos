@@ -38,6 +38,13 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    # secrets are not readable in step-level if; hoist them into env and test that
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -55,10 +62,7 @@ jobs:
           esac
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: import signing certificate
-        if: ${{ secrets.MACOS_CERT_P12 != '' }}
-        env:
-          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        if: env.MACOS_CERT_P12 != ''
         run: |
           keychain="$RUNNER_TEMP/sign.keychain-db"
           security create-keychain -p "" "$keychain"
@@ -74,11 +78,7 @@ jobs:
       - name: build dmg
         run: make -C desktop dmg
       - name: notarize and staple
-        if: ${{ secrets.MACOS_CERT_P12 != '' && secrets.APPLE_ID != '' }}
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        if: env.MACOS_CERT_P12 != '' && env.APPLE_ID != ''
         run: |
           xcrun notarytool submit "desktop/build/Choragos-$VERSION.dmg" \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
