@@ -38,7 +38,7 @@ button.primary { border-color: var(--accent); color: var(--accent); }
 button.danger:hover, button.danger.armed { border-color: var(--danger); color: var(--danger); }
 
 /* session picker */
-#picker { padding: 48px; max-width: 720px; margin: 0 auto; }
+#picker { padding: 48px; max-width: 720px; margin: 0 auto; overflow-y: auto; height: 100vh; }
 #picker .wordmark { width: 240px; margin-bottom: 12px; }
 #picker .sub { color: var(--dim); margin-bottom: 24px; }
 #picker code { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
@@ -60,6 +60,29 @@ button.danger:hover, button.danger.armed { border-color: var(--danger); color: v
 #session-list .meta { color: var(--dim); font-size: 12px; white-space: nowrap; margin-left: 16px; }
 .empty { color: var(--dim); }
 .error { color: var(--danger); margin-top: 12px; }
+
+/* onboarding */
+.open-row { margin-top: 16px; }
+#setup {
+  margin-top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+#setup .dir { color: var(--accent); font-family: ui-monospace, Menlo, monospace; font-size: 12px; margin-bottom: 8px; }
+#setup .sub { margin-bottom: 0; }
+.setup-controls { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-top: 8px; }
+.setup-controls .check { color: var(--fg); display: flex; gap: 8px; align-items: center; }
+.setup-controls select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.setup-controls select:disabled { color: var(--dim); }
 
 /* mirror layout */
 #mirror { display: flex; flex-direction: column; height: 100vh; }

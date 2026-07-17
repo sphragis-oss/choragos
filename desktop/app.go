@@ -5,15 +5,19 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/wire"
 )
@@ -142,7 +146,7 @@ func (a *App) Attach(dir string) (*Roster, error) {
 	a.Detach() // one attach at a time; drop any previous one first
 	conn, welcome, err := wire.Dial(uiSocket(dir), a.version)
 	if err != nil {
-		return nil, fmt.Errorf("attach: %w", err)
+		return nil, attachError(err, a.version)
 	}
 	a.mu.Lock()
 	a.conn = conn
@@ -152,6 +156,142 @@ func (a *App) Attach(dir string) (*Roster, error) {
 	slog.Info("attached", "dir", dir, "roles", len(welcome.Roster))
 	go a.stream(conn, gen)
 	return &Roster{Roles: toRoles(welcome.Roster)}, nil
+}
+
+// cliPath resolves the choragos CLI: bundled in the .app first, then PATH.
+func cliPath() (string, error) {
+	if exe, err := os.Executable(); err == nil {
+		bundled := filepath.Join(filepath.Dir(exe), "..", "Resources", "choragos")
+		if _, err := os.Stat(bundled); err == nil {
+			return bundled, nil
+		}
+	}
+	p, err := exec.LookPath("choragos")
+	if err != nil {
+		return "", fmt.Errorf("the choragos command was not found; install the CLI first, then try again")
+	}
+	return p, nil
+}
+
+// cliVersion asks the resolved CLI for its version ("choragos X.Y.Z" -> "X.Y.Z").
+func cliVersion(cli string) (string, error) {
+	out, err := exec.Command(cli, "version").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	f := strings.Fields(string(out))
+	if len(f) < 2 {
+		return "", fmt.Errorf("unexpected version output %q", strings.TrimSpace(string(out)))
+	}
+	return f[1], nil
+}
+
+// PickFolder opens the native directory picker; empty means cancelled.
+func (a *App) PickFolder() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "Choose a project folder"})
+}
+
+// HasConfig reports whether dir already carries a team config.
+func (a *App) HasConfig(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, config.DefaultFile))
+	return err == nil
+}
+
+// Templates lists the CLI's embedded config templates from init's help text.
+func (a *App) Templates() []string {
+	fallback := []string{"starter"}
+	cli, err := cliPath()
+	if err != nil {
+		return fallback
+	}
+	out, err := exec.Command(cli, "init", "--help").CombinedOutput()
+	if err != nil {
+		return fallback
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "Templates: ")
+		if !ok {
+			continue
+		}
+		var names []string
+		for _, n := range strings.Split(rest, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				names = append(names, n)
+			}
+		}
+		if len(names) > 0 {
+			return names
+		}
+	}
+	return fallback
+}
+
+// InitConfig writes a starter config in dir via the CLI: a template, or --auto detection.
+func (a *App) InitConfig(dir, template string, auto bool) (string, error) {
+	cli, err := cliPath()
+	if err != nil {
+		return "", err
+	}
+	args := []string{"init"}
+	if auto {
+		args = append(args, "--auto")
+	} else {
+		args = append(args, "--template", template)
+	}
+	cmd := exec.Command(cli, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// sessionSocket is the control socket for a session directory.
+func sessionSocket(dir string) string {
+	return filepath.Join(ipc.SessionDir(), ipc.SessionID(dir)+".sock")
+}
+
+// StartSession launches `choragos serve --detach` in dir and waits for its ui socket.
+func (a *App) StartSession(dir string) error {
+	if ipc.Send(sessionSocket(dir), ipc.Command{Cmd: "ping"}) == nil {
+		return nil // already running; the caller attaches
+	}
+	cli, err := cliPath()
+	if err != nil {
+		return err
+	}
+	if v, err := cliVersion(cli); err == nil && v != a.version {
+		return fmt.Errorf("the installed choragos is %s but this app matches %s; update one of them first", v, a.version)
+	}
+	cmd := exec.Command(cli, "serve", "--detach")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	slog.Info("session started", "dir", dir)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(uiSocket(dir)); err == nil {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("the session started but never came up; check %s", filepath.Join(dir, ".choragos", "logs", "server.log"))
+}
+
+// attachError words a refusal for people who never saw a wire protocol.
+func attachError(err error, version string) error {
+	var me *wire.MismatchError
+	if errors.As(err, &me) {
+		return fmt.Errorf("this session was started by choragos %s, but this app matches %s. Update choragos and restart the session, or rebuild the app with VERSION=%s", me.Server, version, me.Server)
+	}
+	var be *wire.BusyError
+	if errors.As(err, &be) {
+		return fmt.Errorf("someone is already attached to this session, probably a terminal (pid %d). Detach there first, then click the session again", be.PID)
+	}
+	return fmt.Errorf("attach: %w", err)
 }
 
 // stream replays the rings and pumps live frames into frontend events until the

@@ -11,10 +11,24 @@
   <div id="picker" class="screen">
     <header>
       <img class="wordmark" src="brand/logo-wordmark-dark.svg" alt="Choragos" />
-      <p class="sub">Running sessions on this machine. Start one with <code>choragos serve --detach</code>.</p>
+      <p class="sub">Attach to a running session, or open a project folder to start one.</p>
     </header>
     <ul id="session-list"></ul>
     <p id="picker-empty" class="empty hidden">No running sessions.</p>
+    <div class="open-row">
+      <button id="open-project" class="primary">Open project folder…</button>
+    </div>
+    <div id="setup" class="hidden">
+      <p class="dir" id="setup-dir"></p>
+      <p class="sub">No team here yet. Pick a starting team:</p>
+      <div class="setup-controls">
+        <label class="check"><input type="checkbox" id="setup-auto" checked /> Detect the project type automatically</label>
+        <select id="setup-template" disabled></select>
+        <button id="setup-create" class="primary">Create team and start</button>
+      </div>
+      <p id="setup-note" class="dim"></p>
+    </div>
+    <p id="picker-status" class="dim hidden"></p>
     <p id="picker-error" class="error hidden"></p>
   </div>
 
