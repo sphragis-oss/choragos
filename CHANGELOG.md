@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-17
+
+### Added
+- Choragos Desktop, a native macOS app: attach to running sessions or
+  start one from a project folder, live terminal panes, approval
+  gates, task board, restart/pause per role. Ships separately as
+  `desktop/vX.Y.Z` tags with the version-matched CLI bundled inside
+  the `.app`; this release pairs with `desktop/v0.11.2`.
+  (#113, #114, #115, #116, #117, #120, #121, #122)
+
+### Changed
+- The attach wire protocol client moved from `internal/deck` to
+  `internal/wire` (`Dial`/`Replay`/`Pump`, typed busy and mismatch
+  errors) so any client, TUI or GUI, speaks the same protocol.
+  Behavior-neutral for the CLI. (#111)
+
+### Fixed
+- `choragos attach` only says "no session is running here" for a
+  missing or dead socket (ENOENT/ECONNREFUSED); other mid-handshake
+  failures now surface as themselves instead of hiding behind that
+  hint. (#112)
+
 ## [0.11.1] - 2026-07-16
 
 ### Fixed
@@ -343,7 +365,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/sphragis-oss/choragos/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/sphragis-oss/choragos/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/sphragis-oss/choragos/compare/v0.9.0...v0.10.0
