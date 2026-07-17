@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Interactive session client: picker, role cards, xterm panes, gates, board.
+// Interactive session client: picker/onboarding, role cards, xterm panes, gates, board.
 "use strict";
 
 const App = window.go.main.App;
@@ -9,7 +9,15 @@ const els = {
   picker: document.getElementById("picker"),
   list: document.getElementById("session-list"),
   empty: document.getElementById("picker-empty"),
+  status: document.getElementById("picker-status"),
   error: document.getElementById("picker-error"),
+  openBtn: document.getElementById("open-project"),
+  setup: document.getElementById("setup"),
+  setupDir: document.getElementById("setup-dir"),
+  setupAuto: document.getElementById("setup-auto"),
+  setupTemplate: document.getElementById("setup-template"),
+  setupCreate: document.getElementById("setup-create"),
+  setupNote: document.getElementById("setup-note"),
   mirror: document.getElementById("mirror"),
   cards: document.getElementById("cards"),
   terms: document.getElementById("terms"),
@@ -46,6 +54,7 @@ const state = {
   gates: [],
   board: [],
   pollTimer: 0,
+  setupDir: "",
 };
 
 // working/idle window, mirroring the deck's 2s rule
@@ -274,7 +283,7 @@ document.addEventListener("keydown", (e) => {
   els.boardModal.classList.add("hidden");
 });
 
-/* session picker */
+/* session picker + onboarding */
 
 async function refreshSessions() {
   try {
@@ -304,8 +313,67 @@ async function refreshSessions() {
 }
 
 function showPickerError(msg) {
+  els.status.classList.add("hidden");
   els.error.textContent = msg;
   els.error.classList.remove("hidden");
+}
+
+function showPickerStatus(msg) {
+  els.error.classList.add("hidden");
+  els.status.textContent = msg;
+  els.status.classList.toggle("hidden", !msg);
+}
+
+els.openBtn.addEventListener("click", async () => {
+  els.error.classList.add("hidden");
+  const dir = await App.PickFolder();
+  if (!dir) return;
+  if (await App.HasConfig(dir)) {
+    els.setup.classList.add("hidden");
+    await startAndAttach(dir);
+    return;
+  }
+  state.setupDir = dir;
+  els.setupDir.textContent = dir;
+  els.setupNote.textContent = "";
+  if (!els.setupTemplate.options.length) {
+    for (const name of await App.Templates()) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      els.setupTemplate.appendChild(opt);
+    }
+  }
+  els.setup.classList.remove("hidden");
+});
+
+els.setupAuto.addEventListener("change", () => {
+  els.setupTemplate.disabled = els.setupAuto.checked;
+});
+
+els.setupCreate.addEventListener("click", async () => {
+  els.setupCreate.disabled = true;
+  try {
+    const note = await App.InitConfig(state.setupDir, els.setupTemplate.value, els.setupAuto.checked);
+    els.setupNote.textContent = note;
+    els.setup.classList.add("hidden");
+    await startAndAttach(state.setupDir);
+  } catch (err) {
+    showPickerError(String(err));
+  } finally {
+    els.setupCreate.disabled = false;
+  }
+});
+
+async function startAndAttach(dir) {
+  showPickerStatus(`starting session in ${dir}…`);
+  try {
+    await App.StartSession(dir);
+    showPickerStatus("");
+    await attach(dir);
+  } catch (err) {
+    showPickerError(String(err));
+  }
 }
 
 async function attach(dir) {
@@ -342,6 +410,8 @@ function toPicker() {
   els.gateModal.classList.add("hidden");
   els.boardModal.classList.add("hidden");
   els.viewerModal.classList.add("hidden");
+  els.setup.classList.add("hidden");
+  els.status.classList.add("hidden");
   els.mirror.classList.add("hidden");
   els.picker.classList.remove("hidden");
   disarmStop();

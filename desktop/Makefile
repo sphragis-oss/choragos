@@ -1,6 +1,10 @@
 # UniformTypeIdentifiers: wails v2.13 references UTType; plain go build does not link it by default
 CGO_LDFLAGS := -framework UniformTypeIdentifiers
-VERSION ?= dev
+# default to the installed CLI's version so attach handshakes match out of the box
+VERSION ?= $(shell choragos version 2>&1 | awk '/^choragos/{print $$2}')
+ifeq ($(VERSION),)
+VERSION := dev
+endif
 
 .PHONY: build
 build:

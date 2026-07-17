@@ -1,29 +1,32 @@
 # Choragos Desktop
 
 The macOS GUI from [docs/design-macos-gui.md](../docs/design-macos-gui.md).
-It lists live sessions, attaches over the same wire protocol as
-`choragos attach` (`internal/wire`), and renders the roster cards plus each
-role's live terminal with xterm.js. Interactive since phase 2: typing goes
-to the focused pane's PTY, panes resize with the window, approval gates pop
-a dialog (approve / view brief / reject), the task board lists delegations,
-and roles can be restarted or paused per card. "Quit, keep agents working"
-detaches; "Stop everything" shuts the session down.
+It attaches to running sessions over the same wire protocol as
+`choragos attach` (`internal/wire`) and renders roster cards plus each
+role's live terminal with xterm.js. Typing goes to the focused pane's PTY,
+panes resize with the window, approval gates pop a dialog (approve / view
+brief / reject), the task board lists delegations, and roles can be
+restarted or paused per card. "Quit, keep agents working" detaches; "Stop
+everything" shuts the session down.
+
+Onboarding (phase 3): "Open project folder…" picks a directory, offers a
+starting team when no `.choragos.toml` exists (auto-detect or a template,
+via the CLI's `init`), starts `choragos serve --detach` there, and
+attaches. The CLI is resolved from the app bundle's Resources first, then
+PATH.
 
 ## Build and run
 
 ```sh
 cd desktop && make build      # build/choragos-desktop
-choragos serve --detach       # in some project directory
-./build/choragos-desktop      # pick the session, or double-click it later
+./build/choragos-desktop
 ```
 
-The hello handshake requires the exact server version. `make build` produces
-a `dev` client, matching sessions started by a dev-built `choragos`. To
-attach to sessions started by a released install (e.g. Homebrew), build
-with the same version string:
+The hello handshake requires the exact server version, so `make build`
+defaults VERSION to the installed CLI's version (falling back to `dev`
+when none is found). Override it explicitly when needed:
 
 ```sh
-choragos version              # e.g. "choragos 0.11.1"
 make build VERSION=0.11.1
 ```
 
