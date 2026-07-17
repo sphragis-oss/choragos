@@ -4,6 +4,7 @@
 
 const App = window.go.main.App;
 const Ev = window.runtime;
+const FitAddon = window.FitAddon.FitAddon; // the fit UMD exports a namespace, not the class
 
 const els = {
   picker: document.getElementById("picker"),
