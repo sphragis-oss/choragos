@@ -8,6 +8,8 @@ import (
 	"embed"
 	"log/slog"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -21,7 +23,25 @@ var assets embed.FS
 // version must match the session server's; set via -ldflags "-X main.version=...".
 var version = "dev"
 
+// adoptLoginPath swaps in the login shell's PATH; Finder gives apps a minimal one
+func adoptLoginPath() {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	out, err := exec.Command(shell, "-l", "-c", "echo -n \"$PATH\"").Output()
+	if err != nil {
+		slog.Warn("login shell PATH lookup failed", "shell", shell, "err", err)
+		return
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if p := lines[len(lines)-1]; strings.Contains(p, "/") {
+		os.Setenv("PATH", p)
+	}
+}
+
 func main() {
+	adoptLoginPath()
 	app := newApp(version)
 	err := wails.Run(&options.App{
 		Title:  "Choragos",

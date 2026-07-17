@@ -76,3 +76,18 @@ start = true
 		t.Fatalf("StartSession on a running session: %v", err)
 	}
 }
+
+// TestAdoptLoginPath fakes the login shell to avoid depending on real dotfiles.
+func TestAdoptLoginPath(t *testing.T) {
+	fake := filepath.Join(t.TempDir(), "shell")
+	script := "#!/bin/sh\necho profile noise\nprintf '/fake/bin:/usr/bin'\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", fake)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	adoptLoginPath()
+	if got := os.Getenv("PATH"); got != "/fake/bin:/usr/bin" {
+		t.Fatalf("PATH = %q, want /fake/bin:/usr/bin", got)
+	}
+}
