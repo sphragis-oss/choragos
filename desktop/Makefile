@@ -11,6 +11,14 @@ build:
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" go build -tags desktop,production \
 		-ldflags "-X main.version=$(VERSION)" -o build/choragos-desktop .
 
+.PHONY: bundle
+bundle:
+	VERSION=$(VERSION) ./packaging/bundle.sh app
+
+.PHONY: dmg
+dmg:
+	VERSION=$(VERSION) ./packaging/bundle.sh dmg
+
 .PHONY: vet
 vet:
 	go vet ./...
