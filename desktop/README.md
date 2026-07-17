@@ -30,6 +30,18 @@ when none is found). Override it explicitly when needed:
 make build VERSION=0.11.1
 ```
 
+## Install
+
+```sh
+brew install --cask sphragis-oss/sphragis/choragos-desktop
+```
+
+or the `.dmg` from a `desktop/v*` GitHub release. The matching CLI is
+bundled inside the app; no separate install needed. The cask strips the
+quarantine flag in postflight, so unsigned builds open without the
+Gatekeeper detour; the raw dmg needs System Settings > Privacy &
+Security > Open Anyway (until releases are notarized).
+
 ## Package
 
 `make bundle` builds a universal (arm64 + x86_64) `build/Choragos.app`
