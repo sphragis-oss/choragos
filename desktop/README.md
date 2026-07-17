@@ -30,6 +30,37 @@ when none is found). Override it explicitly when needed:
 make build VERSION=0.11.1
 ```
 
+## Package
+
+`make bundle` builds a universal (arm64 + x86_64) `build/Choragos.app`
+with the matching CLI bundled at `Contents/Resources/choragos`, and
+`make dmg` wraps it in `build/Choragos-<version>.dmg`. Signing is ad-hoc
+by default; set `CODESIGN_IDENTITY="Developer ID Application: ..."` for
+a real signature. Both call `packaging/bundle.sh`.
+
+Releases: push a `desktop/vX.Y.Z` tag, where X.Y.Z matches the CLI
+release the app is built from (the attach handshake requires the exact
+version). The `desktop` workflow then builds the dmg, signs it when the
+`MACOS_CERT_P12`/`MACOS_CERT_PASSWORD` secrets exist, notarizes and
+staples when `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD` also
+exist, and attaches it to a GitHub release. Without secrets the dmg is
+ad-hoc signed and Gatekeeper needs right-click then Open on first
+launch. The same workflow smoke-builds an unsigned bundle on PRs that
+touch `desktop/**`.
+
+App icon: `packaging/choragos-icon.svg` is the source. Regenerate
+`packaging/choragos.icns` with rsvg-convert, sips, and iconutil:
+
+```sh
+rsvg-convert -w 1024 -h 1024 packaging/choragos-icon.svg -o /tmp/i1024.png
+mkdir -p /tmp/choragos.iconset
+for s in 16 32 128 256 512; do
+  sips -z "$s" "$s" /tmp/i1024.png --out "/tmp/choragos.iconset/icon_${s}x${s}.png"
+  sips -z "$((s*2))" "$((s*2))" /tmp/i1024.png --out "/tmp/choragos.iconset/icon_${s}x${s}@2x.png"
+done
+iconutil -c icns /tmp/choragos.iconset -o packaging/choragos.icns
+```
+
 ## Layout
 
 - `main.go`, `app.go`: Wails v2 backend; the only protocol logic is

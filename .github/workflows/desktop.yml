@@ -1,0 +1,104 @@
+name: desktop
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  push:
+    tags:
+      - "desktop/v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+          cache: false
+      - run: make -C desktop vet
+      - run: cd desktop && go test ./...
+      - name: bundle unsigned universal app
+        run: make -C desktop bundle VERSION=0.0.0-ci
+
+  release:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+          cache: false
+      - name: resolve version from tag
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/desktop/v*) version="${GITHUB_REF#refs/tags/desktop/v}" ;;
+            *) version="0.0.0-ci" ;;
+          esac
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: import signing certificate
+        if: ${{ secrets.MACOS_CERT_P12 != '' }}
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/sign.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 1800 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          printf '%s' "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      - name: build dmg
+        run: make -C desktop dmg
+      - name: notarize and staple
+        if: ${{ secrets.MACOS_CERT_P12 != '' && secrets.APPLE_ID != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "desktop/build/Choragos-$VERSION.dmg" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "desktop/build/Choragos-$VERSION.dmg"
+      - name: attest dmg provenance
+        if: startsWith(github.ref, 'refs/tags/desktop/v')
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: desktop/build/Choragos-*.dmg
+      - name: publish release
+        if: startsWith(github.ref, 'refs/tags/desktop/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "desktop/build/Choragos-$VERSION.dmg" \
+            --verify-tag --title "Choragos Desktop $VERSION" \
+            --notes "macOS app for choragos $VERSION. Drag Choragos.app to Applications; the matching CLI is bundled inside."
+      - name: upload dmg artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: choragos-dmg
+          path: desktop/build/Choragos-*.dmg
