@@ -40,8 +40,19 @@ func adoptLoginPath() {
 	}
 }
 
+// ensureTermEnv fills in TERM/COLORTERM, absent under Finder; agents go no-color without them
+func ensureTermEnv() {
+	if os.Getenv("TERM") == "" {
+		os.Setenv("TERM", "xterm-256color")
+	}
+	if os.Getenv("COLORTERM") == "" {
+		os.Setenv("COLORTERM", "truecolor")
+	}
+}
+
 func main() {
 	adoptLoginPath()
+	ensureTermEnv()
 	app := newApp(version)
 	err := wails.Run(&options.App{
 		Title:  "Choragos",
