@@ -1,10 +1,14 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/desktop"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     groups:
       all-go-dependencies:
         patterns:
@@ -15,6 +19,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     groups:
       all-actions:
         patterns:
