@@ -91,3 +91,20 @@ func TestAdoptLoginPath(t *testing.T) {
 		t.Fatalf("PATH = %q, want /fake/bin:/usr/bin", got)
 	}
 }
+
+func TestEnsureTermEnv(t *testing.T) {
+	t.Setenv("TERM", "")
+	t.Setenv("COLORTERM", "")
+	ensureTermEnv()
+	if got := os.Getenv("TERM"); got != "xterm-256color" {
+		t.Fatalf("TERM = %q", got)
+	}
+	if got := os.Getenv("COLORTERM"); got != "truecolor" {
+		t.Fatalf("COLORTERM = %q", got)
+	}
+	t.Setenv("TERM", "screen")
+	ensureTermEnv()
+	if got := os.Getenv("TERM"); got != "screen" {
+		t.Fatalf("existing TERM clobbered: %q", got)
+	}
+}
