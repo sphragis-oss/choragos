@@ -3,6 +3,7 @@ version: "2"
 linters:
   enable:
     - depguard
+    - gosec
   settings:
     depguard:
       rules:
@@ -12,6 +13,13 @@ linters:
               desc: hosted cloud client with a critical advisory; use pure TUI libs only
             - pkg: github.com/charmbracelet/soft-serve
               desc: SSH git server with known CVEs; out of scope for choragos
+    gosec:
+      excludes:
+        - G204 # spawning user-configured agent commands, hooks, and editors is the product
+        - G304 # briefs, reports, and transcripts are read from user-supplied paths by design
+        - G301 # .choragos workspace artifacts are deliberately 0755/0644,
+        - G302 # same-user project files the owner inspects with other tools
+        - G306
     errcheck:
       exclude-functions:
         - (io.Closer).Close
@@ -26,3 +34,4 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - gosec

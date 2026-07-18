@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in choragos misbehaves
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you see, what did you expect?
+      placeholder: Steps to reproduce, actual behavior, expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `choragos version` and `choragos doctor`, plus your OS and terminal.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Config
+      description: The relevant parts of your `.choragos.toml` (redact anything sensitive).
+      render: toml
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from `.choragos/logs/events.log` or a role transcript.
+      render: text
+    validations:
+      required: false

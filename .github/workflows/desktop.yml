@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# never cancel a tag-driven release mid-flight, only stale PR runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     if: github.event_name == 'pull_request'

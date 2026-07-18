@@ -42,3 +42,18 @@ jobs:
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/choragos_*.tar.gz
+      # run the same verification SECURITY.md asks of users, so a signing regression fails the release
+      - name: Verify checksums, signature, and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum --check --ignore-missing checksums.txt
+          cosign verify-blob \
+            --bundle checksums.txt.bundle \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+            checksums.txt
+          for f in choragos_*.tar.gz; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"
+          done

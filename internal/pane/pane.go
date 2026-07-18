@@ -640,7 +640,7 @@ func (p *Pane) reap() {
 	select {
 	case <-done:
 		if st := p.cmd.ProcessState; st != nil {
-			p.exitCode.Store(int32(st.ExitCode()))
+			p.exitCode.Store(int32(st.ExitCode())) // #nosec G115 -- unix exit codes fit int32
 		}
 	case <-time.After(reapTimeout):
 	}
@@ -688,12 +688,15 @@ func (p *Pane) exited() bool {
 
 // winsize builds a PTY window size, clamping to at least 1 so a non-positive dim never wraps uint16.
 func winsize(cols, rows int) *pty.Winsize {
-	return &pty.Winsize{Cols: uint16(clampDim(cols)), Rows: uint16(clampDim(rows))}
+	return &pty.Winsize{Cols: uint16(clampDim(cols)), Rows: uint16(clampDim(rows))} // #nosec G115 -- clampDim bounds to [1,0xFFFF]
 }
 
 func clampDim(v int) int {
 	if v < 1 {
 		return 1
+	}
+	if v > 0xFFFF {
+		return 0xFFFF
 	}
 	return v
 }
