@@ -37,6 +37,10 @@ type Role struct {
 	RestartRetries int    `toml:"restart_retries"`
 	// human gate: delegations to this role pause in the deck until the user approves
 	Approve bool `toml:"approve"`
+	// machine gate: delegations to this role are scored by the judge role and retried until judge_pass or judge_rounds
+	Judge       string `toml:"judge"`
+	JudgePass   int    `toml:"judge_pass"`
+	JudgeRounds int    `toml:"judge_rounds"`
 	// wall-clock limit per delegation ("45m"); empty = disabled. Action: "notify" (default) or "restart"
 	Timeout       string `toml:"timeout"`
 	TimeoutAction string `toml:"timeout_action"`
@@ -50,6 +54,22 @@ func (r Role) TimeoutDuration() time.Duration {
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
 func (r Role) RestartOnFailure() bool { return r.Restart == "on-failure" }
+
+// JudgeCap returns the max builder->judge rounds (default 3), so a failing loop cannot run forever.
+func (r Role) JudgeCap() int {
+	if r.JudgeRounds > 0 {
+		return r.JudgeRounds
+	}
+	return 3
+}
+
+// JudgePassScore returns the minimum passing score out of 10 (default 7).
+func (r Role) JudgePassScore() int {
+	if r.JudgePass > 0 {
+		return r.JudgePass
+	}
+	return 7
+}
 
 // RestartCap returns the auto-restart limit (default 3), so a broken command cannot crash-loop.
 func (r Role) RestartCap() int {
@@ -326,6 +346,10 @@ func Load(path string) (Config, error) {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
 		}
 	}
+	roleNames := make(map[string]bool, len(c.Roles))
+	for _, r := range c.Roles {
+		roleNames[r.Name] = true
+	}
 	for i := range c.Roles {
 		r := &c.Roles[i]
 		if r.Timeout != "" {
@@ -337,6 +361,23 @@ func Load(path string) (Config, error) {
 		if a := r.TimeoutAction; a != "" && a != "notify" && a != "restart" {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown timeout_action %q (notify or restart); using notify", path, r.Name, a))
 			r.TimeoutAction = ""
+		}
+		if r.Judge != "" {
+			if r.Judge == r.Name {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: cannot judge itself; judge disabled", path, r.Name))
+				r.Judge = ""
+			} else if !roleNames[r.Judge] {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: judge %q is not a configured role; judge disabled", path, r.Name, r.Judge))
+				r.Judge = ""
+			}
+		}
+		if p := r.JudgePass; p != 0 && (p < 1 || p > 10) {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: judge_pass %d out of range (1-10); using the default %d", path, r.Name, p, Role{}.JudgePassScore()))
+			r.JudgePass = 0
+		}
+		if r.JudgeRounds < 0 {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: negative judge_rounds; using the default %d", path, r.Name, Role{}.JudgeCap()))
+			r.JudgeRounds = 0
 		}
 	}
 	th := &c.UI.Theme

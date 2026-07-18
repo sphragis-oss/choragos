@@ -128,6 +128,37 @@ and approvals and rejections land in `events.log`. Use it on the roles
 whose mistakes are expensive (implementation, release), and leave
 read-only reporters ungated.
 
+## Judge loops: a machine between attempt and acceptance
+
+The autonomous counterpart to `approve`, for runs nobody is watching:
+`judge = "<role>"` on a builder makes the deck score every delegation
+through that role and retry with the judge's critique until the score
+reaches `judge_pass` (default 7) or `judge_rounds` (default 3) runs
+out. Anything ambiguous, a verdict that does not parse, a judge that
+times out or dies, an exhausted cap, stops the loop and waits for a
+human; there is no silent pass.
+
+```toml
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+judge = "reviewer"
+judge_pass = 8
+
+[[roles]]
+name = "reviewer"
+command = "agy"
+timeout = "20m"   # a stuck judge fails closed instead of blocking the loop
+```
+
+The model policy above applies doubly here: a judge running the same
+command and model as its builder tends to agree with it, so give the
+judge another vendor or at least another model (`choragos doctor`
+warns when they match). Every round is a full agent run and shows up
+in the per-role token and cost accounting; keep `judge_rounds` low and
+let the human gate absorb the hard cases.
+
 ## Checkpoints: undo what a worker did
 
 Gates guard the plan before it runs; checkpoints recover the workspace

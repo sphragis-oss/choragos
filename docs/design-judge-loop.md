@@ -6,7 +6,8 @@ out. The human `approve` gate stays exactly as it is; the judge loop is
 the autonomous alternative for unattended runs, and every ambiguous or
 failed outcome falls back to a human gate. Never a silent pass.
 
-Status: proposal. Nothing here is implemented.
+Status: implemented as designed; the verdict contract and failure modes
+below are the behavior reference, docs/configuration.md has the keys.
 
 ## Configuration
 

@@ -436,3 +436,64 @@ func TestLoadWarnsUnknownRestartMode(t *testing.T) {
 		t.Fatalf("expected restart-mode warning, got %v", c.Warnings)
 	}
 }
+
+func TestLoadJudgeValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "sh"
+start = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+judge = "coder"
+
+[[roles]]
+name = "tester"
+command = "sh"
+judge = "ghost"
+
+[[roles]]
+name = "writer"
+command = "sh"
+judge = "orchestrator"
+judge_pass = 15
+judge_rounds = -2
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Roles[1].Judge; got != "" {
+		t.Errorf("self-judge kept: %q", got)
+	}
+	if got := c.Roles[2].Judge; got != "" {
+		t.Errorf("unknown judge kept: %q", got)
+	}
+	w := c.Roles[3]
+	if w.Judge != "orchestrator" {
+		t.Errorf("valid judge dropped: %q", w.Judge)
+	}
+	if w.JudgePassScore() != 7 || w.JudgeCap() != 3 {
+		t.Errorf("out-of-range judge_pass/judge_rounds not defaulted: pass=%d cap=%d", w.JudgePassScore(), w.JudgeCap())
+	}
+	if len(c.Warnings) != 4 {
+		t.Errorf("want 4 warnings (self, unknown, pass range, negative rounds), got %d: %v", len(c.Warnings), c.Warnings)
+	}
+}
+
+func TestJudgeDefaults(t *testing.T) {
+	r := config.Role{JudgePass: 9, JudgeRounds: 5}
+	if r.JudgePassScore() != 9 || r.JudgeCap() != 5 {
+		t.Fatalf("explicit values not honored: pass=%d cap=%d", r.JudgePassScore(), r.JudgeCap())
+	}
+	z := config.Role{}
+	if z.JudgePassScore() != 7 || z.JudgeCap() != 3 {
+		t.Fatalf("defaults wrong: pass=%d cap=%d", z.JudgePassScore(), z.JudgeCap())
+	}
+}

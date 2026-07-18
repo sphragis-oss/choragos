@@ -207,12 +207,12 @@ function renderGate() {
   }
   const g = state.gates[0];
   els.gateTo.textContent = g.to;
-  els.gateTask.textContent = g.task || (g.brief ? "see brief" : "");
-  els.gateBrief.textContent = g.brief || "-";
+  els.gateTask.textContent = (g.reason ? `[${g.reason}] ` : "") + (g.task || (g.brief ? "see brief" : ""));
+  els.gateBrief.textContent = g.reason ? g.report || "-" : g.brief || "-";
   els.gateAt.textContent = new Date(g.at).toLocaleTimeString();
   els.gateMore.textContent =
     state.gates.length > 1 ? `+${state.gates.length - 1} more waiting behind this one` : "";
-  els.gateView.classList.toggle("hidden", !g.brief);
+  els.gateView.classList.toggle("hidden", !(g.reason ? g.report : g.brief));
   els.gateModal.classList.remove("hidden");
 }
 
@@ -220,7 +220,9 @@ els.gateApprove.addEventListener("click", () => App.Gate(true));
 els.gateReject.addEventListener("click", () => App.Gate(false));
 els.gateView.addEventListener("click", () => {
   const g = state.gates[0];
-  if (g && g.brief) openViewer(g.brief);
+  if (!g) return;
+  const f = g.reason ? g.report : g.brief;
+  if (f) openViewer(f);
 });
 
 /* task board */
@@ -241,7 +243,7 @@ function renderBoard() {
     const time = document.createElement("span");
     time.textContent = new Date(t.at).toLocaleTimeString();
     const kind = document.createElement("span");
-    kind.textContent = t.id ? `${t.kind} ${t.id}` : t.kind;
+    kind.textContent = (t.id ? `${t.kind} ${t.id}` : t.kind) + (t.round ? ` r${t.round}` : "");
     const to = document.createElement("span");
     to.textContent = t.to;
     const task = document.createElement("span");
@@ -264,6 +266,7 @@ function renderBoard() {
       status.className = "status done";
       status.textContent = "✓";
     }
+    if (t.score) status.textContent += ` ${t.score}`;
     row.append(time, kind, to, task, status);
     els.boardRows.appendChild(row);
   }

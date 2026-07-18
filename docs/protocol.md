@@ -95,6 +95,31 @@ Routes it to the `start` role: `A worker reports: <summary>` plus
 `Full report: read <report>` when a report path was sent. The `id` marks the
 matching delegation resolved on the task board (prefix key, then `t`).
 
+## The judge loop (roles with `judge` set)
+
+When the delegated role declares a `judge`, the deck runs the loop
+itself and the orchestrator hears only outcomes:
+
+1. The builder's `work-done` does not reach the orchestrator; the deck
+   delegates a judge round instead (`delegate` logged with
+   `from=choragos` and the loop id) whose task file carries the
+   original task, the builder's report path, and the verdict contract.
+2. The judge writes its critique to the named verdict file, whose
+   FIRST non-empty line must be exactly `VERDICT: <n>/10` (integer
+   0-10), and reports with `work-done --id <id> --report <file>`. The
+   deck parses the file, never the judge's terminal.
+3. Score at or above `judge_pass`: the orchestrator is told the task
+   passed, with round, score, and verdict path.
+   Below: the deck re-delegates to the builder with the critique
+   (`judge retry` in the event log) until `judge_rounds` runs out.
+4. Fail closed, always to a human gate: cap exhausted, unparseable or
+   missing verdict, judge timeout (its role `timeout`, regardless of
+   `timeout_action`), or judge exit. The gate shows the reason and the
+   last report; approve hands the last result to the orchestrator,
+   reject asks it to revise. Rounds and scores are stamped on the task
+   board (`r2`, `6/10`), and `judge` lines in `events.log` carry
+   loop id, round, score, and verdict.
+
 ## Observability
 
 - `.choragos/logs/events.log`: every delegate, work-done, boot injection,

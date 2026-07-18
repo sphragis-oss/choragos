@@ -74,13 +74,17 @@ type Task struct {
 	File   string `json:"f,omitempty"`
 	Done   bool   `json:"d,omitempty"`
 	DoneAt int64  `json:"da,omitempty"`
+	Round  int    `json:"r,omitempty"`  // judge loop round; 0 = unjudged
+	Score  string `json:"sc,omitempty"` // judge verdict once parsed, e.g. "6/10"
 }
 
 // Gate mirrors one pending approval gate.
 type Gate struct {
-	Cmd ipc.Command `json:"cmd"`
-	To  string      `json:"to"`
-	At  int64       `json:"at"`
+	Cmd    ipc.Command `json:"cmd"`
+	To     string      `json:"to"`
+	At     int64       `json:"at"`
+	Reason string      `json:"reason,omitempty"` // judge fallback gates: approve accepts, reject revises
+	Report string      `json:"report,omitempty"` // last report attached to a fallback gate
 }
 
 // Conn frames messages on the UI socket: [uint32 len][kind byte][payload].

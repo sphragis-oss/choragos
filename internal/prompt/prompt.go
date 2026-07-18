@@ -50,6 +50,23 @@ func WorkerBrief(role config.Role) string {
 	return b.String()
 }
 
+// JudgeTask is a judge round's prompt: score the builder's work with a strict machine-readable verdict.
+func JudgeTask(role config.Role, task, builderReport, verdictFile, id string, pass int) string {
+	var b strings.Builder
+	if role.Prompt != "" {
+		b.WriteString(role.Prompt)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("## Judge task\n\nTask id: " + id + "\n\nYou are the judge for this delegated task:\n\n" + task + "\n\n")
+	if builderReport != "" {
+		b.WriteString("The worker's report: read " + builderReport + "\n\n")
+	}
+	b.WriteString("Review the actual work against the task, not just the report.\n\n")
+	fmt.Fprintf(&b, "## Verdict (strict format)\n\nWrite your review to %s. The FIRST line of that file must be exactly:\n\n```\nVERDICT: <n>/10\n```\n\nwhere <n> is an integer 0-10; %d or higher passes. After that line, write the critique: what is wrong, what to change, ordered by importance.\n\n", verdictFile, pass)
+	b.WriteString("Then report:\n\n```bash\nchoragos work-done --id " + id + " --report " + verdictFile + " --task \"Judged: one-line verdict summary.\"\n```\n")
+	return b.String()
+}
+
 // WorkerTask is a worker's task prompt: role brief, the task, and the work-done instruction.
 func WorkerTask(role config.Role, task, id string) string {
 	var b strings.Builder

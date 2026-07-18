@@ -105,6 +105,8 @@ type Task struct {
 	File   string `json:"file"`
 	Done   bool   `json:"done"`
 	DoneAt int64  `json:"doneAt"`
+	Round  int    `json:"round"`
+	Score  string `json:"score"`
 }
 
 func toTasks(in []wire.Task) []Task {
@@ -113,6 +115,7 @@ func toTasks(in []wire.Task) []Task {
 		out = append(out, Task{
 			At: t.At / 1e6, Kind: t.Kind, ID: t.ID, To: t.To,
 			Task: t.Task, File: t.File, Done: t.Done, DoneAt: t.DoneAt / 1e6,
+			Round: t.Round, Score: t.Score,
 		})
 	}
 	return out
@@ -120,16 +123,18 @@ func toTasks(in []wire.Task) []Task {
 
 // Gate mirrors one pending approval for the modal.
 type Gate struct {
-	To    string `json:"to"`
-	Task  string `json:"task"`
-	Brief string `json:"brief"`
-	At    int64  `json:"at"`
+	To     string `json:"to"`
+	Task   string `json:"task"`
+	Brief  string `json:"brief"`
+	At     int64  `json:"at"`
+	Reason string `json:"reason"`
+	Report string `json:"report"`
 }
 
 func toGates(in []wire.Gate) []Gate {
 	out := make([]Gate, 0, len(in))
 	for _, g := range in {
-		out = append(out, Gate{To: g.To, Task: g.Cmd.Task, Brief: g.Cmd.Brief, At: g.At / 1e6})
+		out = append(out, Gate{To: g.To, Task: g.Cmd.Task, Brief: g.Cmd.Brief, At: g.At / 1e6, Reason: g.Reason, Report: g.Report})
 	}
 	return out
 }
