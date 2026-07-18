@@ -457,8 +457,13 @@ Ev.EventsOn("session:ready", () => {
 });
 
 Ev.EventsOn("session:roster", (roles) => {
+  const wasWaiting = new Set(state.roles.filter((r) => r.waiting).map((r) => r.name));
   state.roles = roles || [];
   renderCards();
+  const fresh = state.roles.filter((r) => r.waiting && !r.gone && !wasWaiting.has(r.name));
+  if (fresh.length && !document.hasFocus()) {
+    App.Notify("Waiting for input", fresh.map((r) => r.name).join(", "));
+  }
 });
 
 Ev.EventsOn("session:board", (board) => {
@@ -467,8 +472,13 @@ Ev.EventsOn("session:board", (board) => {
 });
 
 Ev.EventsOn("session:gates", (gates) => {
+  const had = state.gates.length;
   state.gates = gates || [];
   renderGate();
+  if (state.gates.length > had && !document.hasFocus()) {
+    const g = state.gates[state.gates.length - 1];
+    App.Notify("Approval needed", `${g.to}: ${g.task || "see brief"}`);
+  }
 });
 
 Ev.EventsOn("session:status", (on, up) => {

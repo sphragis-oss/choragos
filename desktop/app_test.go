@@ -108,3 +108,17 @@ func TestEnsureTermEnv(t *testing.T) {
 		t.Fatalf("existing TERM clobbered: %q", got)
 	}
 }
+
+func TestAppleScriptString(t *testing.T) {
+	cases := map[string]string{
+		`plain`:        `"plain"`,
+		`say "hi"`:     `"say \"hi\""`,
+		`back\slash`:   `"back\\slash"`,
+		`both \ and "`: `"both \\ and \""`,
+	}
+	for in, want := range cases {
+		if got := appleScriptString(in); got != want {
+			t.Fatalf("appleScriptString(%q) = %s, want %s", in, got, want)
+		}
+	}
+}

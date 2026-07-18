@@ -7,7 +7,10 @@ role's live terminal with xterm.js. Typing goes to the focused pane's PTY,
 panes resize with the window, approval gates pop a dialog (approve / view
 brief / reject), the task board lists delegations, and roles can be
 restarted or paused per card. "Quit, keep agents working" detaches; "Stop
-everything" shuts the session down.
+everything" shuts the session down. While the window is in the background,
+a new approval gate or an agent blocking on input raises a native macOS
+notification (posted via osascript, so macOS attributes it to Script
+Editor and may ask for notification permission once).
 
 Onboarding (phase 3): "Open project folder…" picks a directory, offers a
 starting team when no `.choragos.toml` exists (auto-detect or a template,

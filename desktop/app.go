@@ -412,6 +412,21 @@ func (a *App) FileContent(path string) (string, error) {
 	return string(b), nil
 }
 
+// Notify posts a native macOS notification via osascript; failures only log.
+func (a *App) Notify(title, body string) {
+	script := "display notification " + appleScriptString(body) + " with title " + appleScriptString(title)
+	go func() {
+		if err := exec.Command("osascript", "-e", script).Run(); err != nil {
+			slog.Warn("notification failed", "err", err)
+		}
+	}()
+}
+
+// appleScriptString quotes s as an AppleScript string literal.
+func appleScriptString(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+}
+
 // Detach drops the attach connection; the session keeps running.
 func (a *App) Detach() {
 	a.mu.Lock()
