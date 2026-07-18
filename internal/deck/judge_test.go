@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
@@ -204,5 +205,99 @@ func TestJudgeWireRoundTrip(t *testing.T) {
 	back := fromWireGates(toWireGates(gates))
 	if back[0].reason != "judge cap exhausted" || back[0].report != "/tmp/r.md" {
 		t.Errorf("gate reason/report lost on the wire: %+v", back[0])
+	}
+}
+
+func TestJudgeUnavailableFailsClosed(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer"})
+	m := newTestModel(panes)
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "JUDGED-5"})
+	panes[2].exited = true // reviewer died before the build finished
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1"})
+	if len(m.gates) != 1 || !strings.Contains(m.gates[0].reason, "judge unavailable") {
+		t.Fatalf("dead judge did not gate: %+v", m.gates)
+	}
+	if len(m.loops) != 0 {
+		t.Errorf("loop leaked: %v", m.loops)
+	}
+}
+
+func TestJudgeExitFailsLoopsClosed(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer"})
+	m := newTestModel(panes)
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "JUDGED-6"})
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1"}) // loop now waits on the judge
+	panes[2].exited = true
+	m.autoRestart(panes[2], 2) // no restart config: the exit fails the loop closed
+	if len(m.gates) != 1 || !strings.Contains(m.gates[0].reason, "judge exited") {
+		t.Fatalf("judge exit did not gate: %+v", m.gates)
+	}
+	if len(m.loops) != 0 {
+		t.Errorf("loop leaked: %v", m.loops)
+	}
+}
+
+func TestJudgeTimeoutFailsClosed(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer"})
+	panes[2].role.Timeout = "1ms"
+	panes[2].role.TimeoutAction = "restart" // must be ignored for judge rounds
+	m := newTestModel(panes)
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "JUDGED-7"})
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1"})
+	time.Sleep(5 * time.Millisecond)
+	m.checkTimeouts()
+	if len(m.gates) != 1 || !strings.Contains(m.gates[0].reason, "judge timed out") {
+		t.Fatalf("judge timeout did not gate: %+v", m.gates)
+	}
+	if len(m.loops) != 0 {
+		t.Errorf("loop leaked: %v", m.loops)
+	}
+	if !panes[2].exited && panes[2].pane == nil {
+		t.Error("judge pane must not be restarted by a judge-round timeout")
+	}
+}
+
+func TestJudgeBuilderGoneFailsClosed(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer"})
+	m := newTestModel(panes)
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "JUDGED-8"})
+	panes[1].gone = true // builder tombstoned by a reload
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1"})
+	if len(m.gates) != 1 || !strings.Contains(m.gates[0].reason, "builder role is gone") {
+		t.Fatalf("gone builder did not gate: %+v", m.gates)
+	}
+}
+
+func TestJudgeBuilderUnavailableForRetry(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer", JudgePass: 8})
+	m := newTestModel(panes)
+
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "JUDGED-9"})
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1"})
+	panes[1].exited = true // builder died while the judge was scoring
+	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T2", Report: verdictFile(t, "2/10")})
+	if len(m.gates) != 1 || !strings.Contains(m.gates[0].reason, "builder unavailable for retry") {
+		t.Fatalf("dead builder retry did not gate: %+v", m.gates)
+	}
+}
+
+func TestRenderJudgeGateAndBoard(t *testing.T) {
+	panes := startJudgePanes(t, config.Role{Name: "coder", Command: "cat", Judge: "reviewer"})
+	m := newTestModel(panes)
+	m.gates = []pendingGate{{to: "coder", reason: "judge cap exhausted after round 3, last score 4/10", report: "/tmp/verdict.md", at: time.Now()}}
+	got := m.renderGate(80, 24)
+	for _, want := range []string{"judge loop needs a decision", "judge cap exhausted", "/tmp/verdict.md", "[y] accept the result", "[v] view report"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("judge gate overlay missing %q:\n%q", want, got)
+		}
+	}
+	m.board = []taskEvent{{at: time.Now(), kind: "delegate", id: "T2", to: "reviewer", task: "judge T1 round 2", round: 2, score: "6/10", doneAt: time.Now()}}
+	board := m.renderBoard(100, 20)
+	if !strings.Contains(board, "r2") || !strings.Contains(board, "6/10") {
+		t.Errorf("board missing round/score:\n%q", board)
 	}
 }
