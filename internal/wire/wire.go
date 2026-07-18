@@ -118,7 +118,7 @@ func (w *Conn) writeFrame(kind byte, payload ...[]byte) error {
 
 // WriteOutput ships one pane chunk: payload is [idx byte][raw bytes].
 func (w *Conn) WriteOutput(idx int, chunk []byte) error {
-	return w.writeFrame(KindOutput, []byte{byte(idx)}, chunk)
+	return w.writeFrame(KindOutput, []byte{byte(idx)}, chunk) // #nosec G115 -- one-byte pane index by frame contract; rosters stay far below 255
 }
 
 // WriteEvent ships one JSON event.
