@@ -16,3 +16,13 @@ func TestWinsizeClampsNonPositive(t *testing.T) {
 		t.Fatalf("winsize(80,24) = %dx%d, want 80x24", ws.Cols, ws.Rows)
 	}
 }
+
+func TestWinsizeClampsOversized(t *testing.T) {
+	// dims past uint16 must saturate at 65535, not wrap (uint16(1<<16) == 0)
+	if ws := winsize(1<<16, 1<<20); ws.Cols != 0xFFFF || ws.Rows != 0xFFFF {
+		t.Fatalf("winsize(1<<16,1<<20) = %dx%d, want 65535x65535", ws.Cols, ws.Rows)
+	}
+	if ws := winsize(0xFFFF, 0xFFFF); ws.Cols != 0xFFFF || ws.Rows != 0xFFFF {
+		t.Fatalf("winsize at the cap = %dx%d, want 65535x65535", ws.Cols, ws.Rows)
+	}
+}
