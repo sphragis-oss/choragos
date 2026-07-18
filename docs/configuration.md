@@ -159,6 +159,28 @@ on_gate  = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE: delegat
 on_input = "terminal-notifier -title choragos -message \"$CHORAGOS_ROLE is waiting for input\""
 ```
 
+The same hooks cover team channels and headless servers; no extra
+config surface needed. Hooks inherit the `choragos serve` environment,
+so export webhook URLs there instead of committing them to the config
+file. TOML literal strings (single quotes) keep the shell quoting sane:
+
+```toml
+[ui]
+# Slack incoming webhook
+on_gate = 'curl -sf -X POST -H "Content-type: application/json" --data "{\"text\":\"choragos: $CHORAGOS_ROLE awaits approval: $CHORAGOS_TASK\"}" "$SLACK_WEBHOOK_URL"'
+
+# Discord webhook
+on_timeout = 'curl -sf -X POST -H "Content-type: application/json" --data "{\"content\":\"choragos: $CHORAGOS_ROLE timed out on: $CHORAGOS_TASK\"}" "$DISCORD_WEBHOOK_URL"'
+
+# ntfy.sh push to your phone
+on_input = 'curl -sf -d "$CHORAGOS_ROLE is waiting for input" "ntfy.sh/$NTFY_TOPIC"'
+```
+
+A `$CHORAGOS_TASK` containing double quotes will break the naive JSON
+above; pipe through `jq -Rn` if your tasks carry punctuation. Choragos
+Desktop needs none of this: it posts native macOS notifications for
+gates and waiting agents on its own.
+
 ## `[checkpoints]`
 
 Per-delegation workspace snapshots (git repositories only; see
