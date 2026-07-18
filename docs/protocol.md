@@ -111,6 +111,14 @@ matching delegation resolved on the task board (prefix key, then `t`).
   long sessions survive in full; the live screen itself is flushed when
   the pane closes. A `--- transcript gap ---` marker means the screen
   was cleared or output outran the capture buffer between flushes.
+  The contract is PTY-visible output: choragos records the bytes the
+  agent writes to its terminal, nothing else. Full-screen agent TUIs
+  (claude-code among them) repaint their viewport in place and never
+  emit past content to the PTY, so their transcript is only what was
+  last on screen, however long the session ran. That is not capture
+  loss, the narrative never existed in the byte stream; for those
+  roles the durable record is `events.log`, `choragos report`, and
+  the per-task `--brief`/`--report` files.
 - The task board overlay shows the live delegation history with brief and
   report filenames per entry.
 

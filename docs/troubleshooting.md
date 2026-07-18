@@ -11,6 +11,17 @@ The role's command failed to start or crashed. Check
 written there when it closes. Shell aliases do not resolve; set `command`
 to the real binary. Restart the role in place with `prefix+R`.
 
+## A claude role's transcript is tiny after a long session
+
+Expected. Transcripts record PTY-visible output, and full-screen agent
+TUIs like claude-code repaint in place without ever writing their
+history to the terminal, so `.choragos/logs/<role>.log` holds roughly
+the last screen no matter how long the role ran. Roles whose output
+scrolls (shells, plain CLIs) get complete streamed transcripts. For
+agent-TUI roles, audit from `.choragos/logs/events.log`,
+`choragos report`, and the delegation `--brief`/`--report` files, or
+have workers write their summaries into the report file.
+
 ## `delegate failed (is the deck running?)`
 
 The CLI resolves the socket via `$CHORAGOS_SOCK`, then `$XDG_RUNTIME_DIR`,
