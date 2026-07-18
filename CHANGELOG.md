@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-18
+
+### Added
+- Autonomous judge loop, the machine gate beside the human `approve`
+  gate: set `judge = "<role>"` (plus `judge_pass`, `judge_rounds`) on
+  a role and the deck scores each delegation through the judge role
+  and retries with the critique until the score passes or the round
+  cap runs out. The verdict is a strict `VERDICT: <n>/10` first line
+  in the judge's `work-done --report` file; any ambiguity (invalid
+  verdict, judge timeout or exit, exhausted cap) fails closed into
+  the human gate queue with a reason. Rounds and scores show on the
+  task board in the TUI and the desktop app, `judge` events land in
+  `events.log`, and `choragos doctor` warns when a role and its judge
+  run the same command and model. Design note in
+  `docs/design-judge-loop.md`. (#129, #130)
+- Choragos Desktop: native macOS notifications when the window is in
+  the background and a delegation awaits approval or an agent blocks
+  waiting for input. (#125)
+
+### Changed
+- Role transcripts' contract is now documented: they record
+  PTY-visible output, so full-screen agent TUIs (claude-code among
+  them) leave only their last screen by design; audit those roles
+  from `events.log`, `choragos report`, and the delegation report
+  files. Closes the transcript-size investigation. (#91, #128)
+- `docs/configuration.md` gained Slack, Discord, and ntfy recipes for
+  the existing `on_gate`/`on_input`/`on_timeout` hooks. (#126)
+
 ## [0.11.2] - 2026-07-17
 
 ### Added
@@ -365,7 +393,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/sphragis-oss/choragos/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/sphragis-oss/choragos/compare/v0.10.0...v0.11.0
