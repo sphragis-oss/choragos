@@ -123,8 +123,9 @@ type session struct {
 	cfg        config.Config
 	panes      []*entry
 	board      []taskEvent
-	gates      []pendingGate // delegations awaiting user approval, oldest first
-	taskSeq    int           // task id counter for delegations
+	gates      []pendingGate         // delegations awaiting user approval, oldest first
+	loops      map[string]*judgeLoop // judge loops keyed by their in-flight task id
+	taskSeq    int                   // task id counter for delegations
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -160,6 +161,10 @@ type pendingGate struct {
 	cmd ipc.Command
 	to  string
 	at  time.Time
+	// judge fallback gates: reason set means approve accepts the result, reject asks for a revise
+	reason string
+	report string // last report attached to a fallback gate
+	loopID string
 }
 
 // taskEvent is one delegation-protocol event, shown on the task board.
@@ -173,6 +178,8 @@ type taskEvent struct {
 	done     bool
 	doneAt   time.Time // delegate rows: when the matching work-done arrived
 	timedOut bool      // delegate rows: outlived the role's timeout before any work-done
+	round    int       // judge loop round this event belongs to; 0 = unjudged
+	score    string    // judge verdict ("6/10") once parsed
 }
 
 // boardCap bounds the in-memory task history.
@@ -292,9 +299,13 @@ func (s *session) dispatch(cmd ipc.Command) {
 				s.runHook(s.cfg.UI.OnGate, name, singleLine(cmd.Task))
 				continue
 			}
-			s.deliverDelegate(e, i, cmd)
+			id := s.deliverDelegate(e, i, cmd)
+			s.maybeStartLoop(id, e, cmd)
 		}
 	case "work-done":
+		if s.handleJudgedDone(cmd) {
+			return // a judge loop owns this id; the orchestrator hears only loop outcomes
+		}
 		i := s.startIdx()
 		if i >= 0 && i < len(s.panes) && !s.panes[i].exited {
 			summary := singleLine(cmd.Task)
@@ -348,7 +359,7 @@ func (s *session) snapshotTask(id, role, label string) {
 }
 
 // deliverDelegate hands an (approved) delegation to a worker: task file, board entry, PTY injection.
-func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) {
+func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	s.taskSeq++
 	id := fmt.Sprintf("T%d", s.taskSeq)
 	task := cmd.Task
@@ -367,18 +378,24 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) {
 	s.snapshotTask(id, e.role.Name, label)
 	injectLine(e, line)
 	s.focus(i)
+	return id
 }
 
-// approveGate resolves the oldest pending gate by delivering it to its worker.
+// approveGate resolves the oldest pending gate: delivery for entry gates, acceptance for judge fallbacks.
 func (s *session) approveGate() {
 	if len(s.gates) == 0 {
 		return
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	if g.reason != "" {
+		s.resolveFallback(g, true)
+		return
+	}
 	if e, i := s.findRole(g.to); e != nil && !e.exited {
 		s.log().Info("delegate approved", "to", g.to, "waited", time.Since(g.at).Round(time.Second))
-		s.deliverDelegate(e, i, g.cmd)
+		id := s.deliverDelegate(e, i, g.cmd)
+		s.maybeStartLoop(id, e, g.cmd)
 	} else {
 		s.log().Warn("delegate target unavailable", "to", g.to)
 	}
@@ -391,6 +408,10 @@ func (s *session) rejectGate() {
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	if g.reason != "" {
+		s.resolveFallback(g, false)
+		return
+	}
 	s.log().Warn("delegate rejected", "to", g.to, "task", singleLine(g.cmd.Task), "brief", g.cmd.Brief)
 	if i := s.startIdx(); i >= 0 && i < len(s.panes) && !s.panes[i].exited {
 		injectLine(s.panes[i], "[choragos] The user rejected your delegation to "+g.to+". Revise the plan or the brief and delegate again if still needed.")
@@ -492,6 +513,12 @@ func (s *session) checkTimeouts() {
 			continue
 		}
 		ev.timedOut = true
+		if loop, ok := s.loops[ev.id]; ok && loop.phase == "judge" {
+			delete(s.loops, ev.id)
+			s.log().Warn("delegate timeout", "id", ev.id, "to", ev.to, "after", d.String(), "action", "judge-gate")
+			s.fallbackGate(loop, "judge timed out after "+d.String())
+			continue // judge rounds always fail closed to a human, never notify-and-wait
+		}
 		action := e.role.TimeoutAction
 		if action == "" {
 			action = "notify"
@@ -690,14 +717,19 @@ func (s *session) restart(e *entry, idx, cols, rows int) {
 // autoRestart respawns a role that exited non-zero when its config asks for it, capped so a broken command cannot crash-loop.
 func (s *session) autoRestart(e *entry, idx int) {
 	if s.closed || e.gone || !e.role.RestartOnFailure() {
+		if !s.closed && !e.gone {
+			s.failLoopsFor(e.role.Name) // a judge that dies without supervision fails its loops closed
+		}
 		return
 	}
 	_ = e.pane.Close() // reap the child to capture its exit status
 	if e.pane.ExitCode() == 0 {
+		s.failLoopsFor(e.role.Name)
 		return // clean exit is respected
 	}
 	if e.restarts >= e.role.RestartCap() {
 		s.log().Warn("auto-restart cap reached", "role", e.role.Name, "restarts", e.restarts)
+		s.failLoopsFor(e.role.Name)
 		return
 	}
 	e.restarts++

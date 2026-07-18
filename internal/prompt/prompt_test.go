@@ -59,3 +59,21 @@ func TestWorkerBriefIdle(t *testing.T) {
 		t.Errorf("worker brief should tell the agent to stay idle:\n%s", c)
 	}
 }
+
+func TestJudgeTaskContract(t *testing.T) {
+	role := config.Role{Name: "reviewer", Prompt: "You review code."}
+	out := prompt.JudgeTask(role, "Build the widget", "/tmp/build-report.md", "/tmp/verdict.md", "T7", 8)
+	for _, want := range []string{
+		"VERDICT: <n>/10",
+		"8 or higher passes",
+		"/tmp/verdict.md",
+		"read /tmp/build-report.md",
+		"choragos work-done --id T7 --report /tmp/verdict.md",
+		"Build the widget",
+		"You review code.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JudgeTask missing %q:\n%s", want, out)
+		}
+	}
+}

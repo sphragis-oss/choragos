@@ -31,6 +31,34 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `timeout` | string | `""` | Wall-clock limit per delegation to this role (Go duration, e.g. `"45m"`); empty disables. The timer starts when the task is delivered (after any approval gate) and clears on the matching work-done |
 | `timeout_action` | string | `"notify"` | What a timeout does: `notify` (bell, board `timeout` mark, `on_timeout` hook; the worker keeps running) or `restart` (SIGTERM the role; auto-restart takes over with `restart = "on-failure"`) |
 | `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); `v` pages the attached brief in-app, `e` opens it in `$VISUAL`/`$EDITOR`, and a rejection is reported back to the orchestrator |
+| `judge` | string | `""` | Machine gate: name of the role that scores this role's completed work. Each delegation loops builder -> judge -> builder until the judge's score reaches `judge_pass` or `judge_rounds` runs out; any ambiguity (unparseable verdict, judge timeout, judge exit, cap) falls closed to a human gate. Empty disables the loop entirely |
+| `judge_pass` | int | `7` | Minimum judge score (1-10) that passes |
+| `judge_rounds` | int | `3` | Maximum builder -> judge rounds before the loop stops and asks a human |
+
+Judge loop example: the coder's work is scored by the reviewer and
+retried with the critique until it earns an 8, at most three rounds.
+`approve` composes: the human approves the first delivery, retries run
+without re-approval, and every non-pass outcome comes back as a human
+gate (accept the last result or reject). The judge writes its verdict
+to a file whose first line must be exactly `VERDICT: <n>/10` (the
+injected judge prompt spells this out) and reports it with
+`work-done --report`; the deck never parses the judge's terminal. Set
+a `timeout` on the judged role's judge so a stuck judge fails closed
+instead of waiting forever, and see `docs/design-judge-loop.md` for
+the full state model.
+
+```toml
+[[roles]]
+name = "coder"
+command = "claude"
+judge = "reviewer"
+judge_pass = 8
+
+[[roles]]
+name = "reviewer"
+command = "agy"     # cross-vendor judging; choragos doctor warns on same-vendor pairs
+timeout = "20m"
+```
 
 Environment isolation example: a reviewer that never sees cloud credentials.
 

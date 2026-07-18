@@ -166,7 +166,7 @@ func (m *Model) applyRemoteEvent(ev wire.Event) {
 func fromWireTasks(in []wire.Task) []taskEvent {
 	out := make([]taskEvent, 0, len(in))
 	for _, w := range in {
-		ev := taskEvent{at: time.Unix(0, w.At), kind: w.Kind, id: w.ID, to: w.To, task: w.Task, file: w.File, done: w.Done}
+		ev := taskEvent{at: time.Unix(0, w.At), kind: w.Kind, id: w.ID, to: w.To, task: w.Task, file: w.File, done: w.Done, round: w.Round, score: w.Score}
 		if w.DoneAt != 0 {
 			ev.doneAt = time.Unix(0, w.DoneAt)
 		}
@@ -179,7 +179,7 @@ func fromWireTasks(in []wire.Task) []taskEvent {
 func fromWireGates(in []wire.Gate) []pendingGate {
 	out := make([]pendingGate, 0, len(in))
 	for _, w := range in {
-		out = append(out, pendingGate{cmd: w.Cmd, to: w.To, at: time.Unix(0, w.At)})
+		out = append(out, pendingGate{cmd: w.Cmd, to: w.To, at: time.Unix(0, w.At), reason: w.Reason, report: w.Report})
 	}
 	return out
 }

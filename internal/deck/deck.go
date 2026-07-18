@@ -759,12 +759,15 @@ func (m *Model) gateKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.rejectGate()
 	case "e", "E":
-		if g.cmd.Brief == "" {
+		if g.cmd.Brief == "" || g.reason != "" {
 			return nil // nothing to edit; the gate stays
 		}
 		m.log().Info("gate brief edit", "to", g.to, "brief", g.cmd.Brief)
 		return editBrief(g.cmd.Brief)
 	case "v", "V":
+		if g.reason != "" && g.report != "" {
+			return m.viewFile("report: "+filepath.Base(g.report), g.report) // the gate stays
+		}
 		if g.cmd.Brief != "" {
 			return m.viewFile("brief: "+filepath.Base(g.cmd.Brief), g.cmd.Brief) // the gate stays
 		}
@@ -961,12 +964,22 @@ func (m *Model) renderGate(w, h int) string {
 		label = "brief: " + filepath.Base(g.cmd.Brief)
 	}
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.waiting).Render("delegation awaiting approval") + "\n\n")
+	title := "delegation awaiting approval"
+	if g.reason != "" {
+		title = "judge loop needs a decision"
+	}
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.waiting).Render(title) + "\n\n")
 	row := func(k, v string) {
 		b.WriteString(lipgloss.NewStyle().Foreground(m.th.accent).Width(10).Render(k) + " " + v + "\n")
 	}
 	row("to", g.to)
 	row("task", truncate(label, w-14))
+	if g.reason != "" {
+		row("reason", truncate(g.reason, w-14))
+		if g.report != "" {
+			row("report", truncate(g.report, w-14))
+		}
+	}
 	if g.cmd.Brief != "" {
 		row("brief", truncate(g.cmd.Brief, w-14))
 	}
@@ -975,7 +988,14 @@ func (m *Model) renderGate(w, h int) string {
 		b.WriteString("\n" + lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf("+%d more waiting behind this one", n)) + "\n")
 	}
 	keys, hint := "[y] approve   [n] reject", "to amend it, edit the brief file first, then approve"
-	if g.cmd.Brief != "" {
+	switch {
+	case g.reason != "":
+		keys = "[y] accept the result   [n] reject"
+		hint = "the autonomous loop stopped; accept hands the last result to the orchestrator"
+		if g.report != "" {
+			keys = "[y] accept the result   [v] view report   [n] reject"
+		}
+	case g.cmd.Brief != "":
 		keys = "[y] approve   [v] view brief   [e] edit brief   [n] reject"
 		hint = "v pages the brief in-app, e opens your $EDITOR; the gate stays until y or n"
 		if m.cfg.UI.IsEditorViewer() {
@@ -1025,6 +1045,12 @@ func (m *Model) renderBoard(w, h int) string {
 			status = lipgloss.NewStyle().Foreground(m.th.working).Render(" ✓ " + ev.doneAt.Sub(ev.at).Round(time.Second).String())
 		case ev.kind == "work-done" && ev.done:
 			kind = "work-done ✓"
+		}
+		if ev.round > 0 {
+			kind += fmt.Sprintf(" r%d", ev.round)
+		}
+		if ev.score != "" {
+			status += lipgloss.NewStyle().Foreground(m.th.scroll).Render(" " + ev.score)
 		}
 		id := ""
 		if ev.id != "" {

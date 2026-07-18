@@ -65,6 +65,14 @@ func runDoctor(out io.Writer, cfgPath string) int {
 		} else {
 			report("OK", "role:"+r.Name, r.Command)
 		}
+		if r.Judge == "" {
+			continue
+		}
+		for _, j := range cfg.Roles {
+			if j.Name == r.Judge && j.Command == r.Command && j.Model == r.Model {
+				report("WARN", "judge:"+r.Name, fmt.Sprintf("judge %q runs the same command and model as the role it scores; same-vendor judging tends to self-agree, consider another agent or model", r.Judge))
+			}
+		}
 	}
 
 	sock := ipc.SocketPath()
