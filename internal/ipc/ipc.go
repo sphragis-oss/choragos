@@ -47,7 +47,7 @@ func SessionDir() string {
 		dir = os.TempDir()
 	}
 	dir = filepath.Join(dir, fmt.Sprintf("choragos-%d", os.Getuid()))
-	_ = os.MkdirAll(dir, 0o700)
+	_ = os.MkdirAll(dir, 0o700) // #nosec G703 -- XDG_RUNTIME_DIR/TempDir plus a fixed uid-suffixed name
 	return dir
 }
 
