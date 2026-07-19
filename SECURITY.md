@@ -34,7 +34,8 @@ What Choragos explicitly does not prevent:
 OS-level isolation belongs to the OS. A role's `command` is arbitrary, so it
 can be a wrapper such as `docker run`, `sandbox-exec`, or `bwrap`, and the
 whole deck can run inside a container or VM. Choragos composes with those
-layers instead of reimplementing them.
+layers instead of reimplementing them; working setups are collected in
+[docs/sandboxing.md](docs/sandboxing.md).
 
 ## Reporting a vulnerability
 
