@@ -79,11 +79,14 @@ func detachServe(cmd *cobra.Command, cfgPath string, sphragis, sphragisSet bool)
 	if sphragisSet {
 		args = append(args, fmt.Sprintf("--sphragis=%t", sphragis))
 	}
-	if err := os.MkdirAll(filepath.Join(".choragos", "logs"), 0o755); err != nil {
+	if err := os.MkdirAll(".choragos", 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(".choragos", "logs"), 0o700); err != nil {
 		return err
 	}
 	logPath := filepath.Join(".choragos", "logs", "server.log")
-	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
