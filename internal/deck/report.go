@@ -21,6 +21,10 @@ type reportRow struct {
 	first, last time.Time
 	usage       roleUsage
 	hasTokens   bool
+	costUSD     float64
+	hasCost     bool
+	budgetUSD   float64
+	exceeded    bool
 }
 
 // Report summarizes an events.log into a per-role activity table on w.
@@ -116,6 +120,15 @@ func aggregateReport(log, path string) (reportData, error) {
 				CacheRead:     parseCount(kv["cache_read"]),
 			}
 			r.hasTokens = true
+			if c, err := strconv.ParseFloat(kv["cost"], 64); err == nil {
+				r.costUSD, r.hasCost = c, true
+			}
+		case "budget exceeded":
+			r := row(kv["role"])
+			touch(r, t)
+			if b, err := strconv.ParseFloat(kv["budget"], 64); err == nil {
+				r.budgetUSD, r.exceeded = b, true
+			}
 		default:
 			if name := kv["role"]; name != "" {
 				touch(row(name), t)
@@ -140,14 +153,14 @@ func writeReport(w io.Writer, log, path string) error {
 	}
 	fmt.Fprintln(w)
 	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ROLE\tTASKS\tDONE\tBUSY\tAVG\tFIRST\tLAST\tTOKENS")
+	fmt.Fprintln(tw, "ROLE\tTASKS\tDONE\tBUSY\tAVG\tFIRST\tLAST\tTOKENS\tCOST")
 	open := 0
 	for _, name := range d.order {
 		r := d.rows[name]
 		open += r.tasks - r.done
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.role, r.tasks, r.done, reportDur(r.busy, r.done > 0), reportAvg(r.busy, r.done),
-			reportClock(r.first), reportClock(r.last), reportTokens(r))
+			reportClock(r.first), reportClock(r.last), reportTokens(r), reportCost(r))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -155,7 +168,20 @@ func writeReport(w io.Writer, log, path string) error {
 	if open > 0 {
 		fmt.Fprintf(w, "%d task(s) never reported work-done\n", open)
 	}
+	for _, name := range d.order {
+		if r := d.rows[name]; r.exceeded {
+			fmt.Fprintf(w, "budget exceeded: %s ($%.2f)\n", r.role, r.budgetUSD)
+		}
+	}
 	return nil
+}
+
+// reportCost renders the last priced cost snapshot, or - when pricing never applied.
+func reportCost(r *reportRow) string {
+	if !r.hasCost {
+		return "-"
+	}
+	return fmt.Sprintf("$%.2f", r.costUSD)
 }
 
 // jsonReport is the stable schema of report --json; fields with no data are explicit nulls.
@@ -177,6 +203,8 @@ type jsonRole struct {
 	First       *time.Time  `json:"first"`
 	Last        *time.Time  `json:"last"`
 	Tokens      *jsonTokens `json:"tokens"`
+	CostUSD     *float64    `json:"cost_usd"`
+	BudgetUSD   *float64    `json:"budget_usd"`
 }
 
 type jsonTokens struct {
@@ -216,6 +244,14 @@ func writeReportJSON(w io.Writer, log, path string) error {
 		if r.hasTokens {
 			jr.Tokens = &jsonTokens{In: r.usage.In, Out: r.usage.Out,
 				CacheCreation: r.usage.CacheCreation, CacheRead: r.usage.CacheRead}
+		}
+		if r.hasCost {
+			c := r.costUSD
+			jr.CostUSD = &c
+		}
+		if r.exceeded {
+			b := r.budgetUSD
+			jr.BudgetUSD = &b
 		}
 		out.Roles = append(out.Roles, jr)
 	}

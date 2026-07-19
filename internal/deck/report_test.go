@@ -96,6 +96,43 @@ func TestWriteReportJSON(t *testing.T) {
 	}
 }
 
+func TestWriteReportBudget(t *testing.T) {
+	log := sampleEvents +
+		`time=2026-07-13T13:16:01.000+03:00 level=INFO msg=tokens role=coder in=2000 out=300 cache_creation=0 cache_read=900000 cost=5.1000
+time=2026-07-13T13:16:02.000+03:00 level=WARN msg="budget exceeded" role=coder budget=5.00 cost=5.10 action=notify
+`
+	var sb strings.Builder
+	if err := writeReport(&sb, log, "events.log"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"COST", "$5.10", "budget exceeded: coder ($5.00)"} {
+		if !strings.Contains(sb.String(), want) {
+			t.Errorf("report missing %q:\n%s", want, sb.String())
+		}
+	}
+
+	sb.Reset()
+	if err := writeReportJSON(&sb, log, "events.log"); err != nil {
+		t.Fatal(err)
+	}
+	var got jsonReport
+	if err := json.Unmarshal([]byte(sb.String()), &got); err != nil {
+		t.Fatal(err)
+	}
+	byRole := map[string]jsonRole{}
+	for _, r := range got.Roles {
+		byRole[r.Role] = r
+	}
+	coder := byRole["coder"]
+	if coder.CostUSD == nil || *coder.CostUSD != 5.1 || coder.BudgetUSD == nil || *coder.BudgetUSD != 5 {
+		t.Fatalf("coder cost/budget = %v/%v, want 5.1/5", coder.CostUSD, coder.BudgetUSD)
+	}
+	orch := byRole["orchestrator"]
+	if orch.CostUSD != nil || orch.BudgetUSD != nil {
+		t.Fatal("unpriced role must have null cost and budget")
+	}
+}
+
 func TestParseLogfmt(t *testing.T) {
 	kv := parseLogfmt(`time=2026-07-13T13:13:40.000+03:00 level=INFO msg=delegate id=T1 to=coder task="fix the \"thing\"" brief=""`)
 	cases := map[string]string{

@@ -101,6 +101,7 @@ func rosterEntries(wc *wire.Conn, roster []wire.Role, existing []*entry) []*entr
 			e := out[i]
 			e.role = wr.Role
 			e.exited, e.gone, e.waiting, e.paused, e.restarts = wr.Exited, wr.Gone, wr.Waiting, wr.Paused, wr.Restarts
+			e.overBudget = wr.OverBudget
 			continue
 		}
 		idx := i
@@ -109,7 +110,7 @@ func rosterEntries(wc *wire.Conn, roster []wire.Role, existing []*entry) []*entr
 			func(cols, rows int) { _ = wc.WriteEvent(wire.Event{Kind: "resize", Idx: idx, Cols: cols, Rows: rows}) })
 		out = append(out, &entry{
 			role: wr.Role, pane: p, exited: wr.Exited, gone: wr.Gone, waiting: wr.Waiting,
-			paused: wr.Paused, restarts: wr.Restarts, startedAt: now, lastActive: now,
+			paused: wr.Paused, overBudget: wr.OverBudget, restarts: wr.Restarts, startedAt: now, lastActive: now,
 		})
 	}
 	return out

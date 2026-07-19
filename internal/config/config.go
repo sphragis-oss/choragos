@@ -46,6 +46,15 @@ type Role struct {
 	// wall-clock limit per delegation ("45m"); empty = disabled. Action: "notify" (default) or "restart"
 	Timeout       string `toml:"timeout"`
 	TimeoutAction string `toml:"timeout_action"`
+	// session cost cap in USD ("5.00"); empty = disabled. Action: "notify" (default) or "pause"
+	Budget       string `toml:"budget"`
+	BudgetAction string `toml:"budget_action"`
+}
+
+// BudgetUSD returns the role's session cost cap; zero means disabled. Load validated the format.
+func (r Role) BudgetUSD() float64 {
+	v, _ := strconv.ParseFloat(r.Budget, 64)
+	return v
 }
 
 // TimeoutDuration returns the per-delegation wall-clock limit; zero means disabled. Load validated the format.
@@ -190,6 +199,7 @@ type UI struct {
 	OnGate    string `toml:"on_gate"`
 	OnInput   string `toml:"on_input"`
 	OnTimeout string `toml:"on_timeout"`
+	OnBudget  string `toml:"on_budget"`
 	Viewer    string `toml:"viewer"` // how v opens briefs/reports: "pager" (default) or "editor"
 	Theme     Theme  `toml:"theme"`
 }
@@ -391,6 +401,16 @@ func Load(path string) (Config, error) {
 				r.BaseURLEnv = nil
 				break
 			}
+		}
+		if r.Budget != "" {
+			if v, err := strconv.ParseFloat(r.Budget, 64); err != nil || v <= 0 {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: invalid budget %q (use a positive USD amount like \"5.00\"); budget disabled", path, r.Name, r.Budget))
+				r.Budget = ""
+			}
+		}
+		if a := r.BudgetAction; a != "" && a != "notify" && a != "pause" {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown budget_action %q (notify or pause); using notify", path, r.Name, a))
+			r.BudgetAction = ""
 		}
 		if r.Judge != "" {
 			if r.Judge == r.Name {

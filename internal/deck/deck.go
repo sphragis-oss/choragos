@@ -242,6 +242,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case usageMsg:
 		m.usage = msg
+	case budgetMsg:
+		m.checkBudgets(msg)
 	case tickMsg:
 		if m.remote != nil {
 			// the server boots, probes, and rings; the client only refreshes usage
@@ -1227,6 +1229,9 @@ func (m *Model) renderCards(width int, height int, st []roleState) string {
 		}
 		if u := m.usage[e.role.Name].usageLabel(); u != "" {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(u, width-4))
+		}
+		if e.overBudget {
+			inner += "\n" + lipgloss.NewStyle().Foreground(m.th.waiting).Render("over budget")
 		}
 		for _, l := range activityTail(e.tailCached(), cardActivityLines, e.role.ChromeMarkers) {
 			inner += "\n" + lipgloss.NewStyle().Faint(true).Render(truncate(singleLine(l), width-4))
