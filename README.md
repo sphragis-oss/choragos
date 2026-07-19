@@ -32,7 +32,7 @@
 
 ---
 
-Choragos is a secure multi-agent development orchestrator. It runs a team of AI coding agents in its own TUI and PTY panes, and can route every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), the EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log. The gateway is optional: choragos works standalone, and every feature degrades cleanly without it.
+Choragos is a multi-agent development orchestrator. You define the team in a single config file, the roles, the CLI agent each one runs, and the model behind it, and choragos runs the chorus: owned PTY panes per agent, a delegate/work-done protocol over a local socket, approval and judge gates, checkpoints, and live telemetry. It can also route every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), an EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log. The gateway is optional: choragos works standalone, and every feature degrades cleanly without it.
 
 > The name is the Greek χορηγός (*choragos*), the one who led and funded the chorus. Here it leads a chorus of agents.
 
