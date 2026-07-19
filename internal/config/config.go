@@ -34,6 +34,8 @@ type Role struct {
 	EnvDeny  []string `toml:"env_deny"`
 	// gateway wiring: env var name(s) that receive this role's agent URL (default ANTHROPIC_BASE_URL)
 	BaseURLEnv []string `toml:"base_url_env"`
+	// fresh respawns the role before every delegation, so each task starts with clean agent context
+	Fresh bool `toml:"fresh"`
 	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
 	Restart        string `toml:"restart"`
 	RestartRetries int    `toml:"restart_retries"`
@@ -374,9 +376,13 @@ func Load(path string) (Config, error) {
 	if len(c.Roles) == 0 {
 		return Config{}, fmt.Errorf("config %s defines no roles", path)
 	}
-	for _, r := range c.Roles {
+	for i, r := range c.Roles {
 		if r.Restart != "" && !r.RestartOnFailure() {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown restart mode %q (only \"on-failure\")", path, r.Name, r.Restart))
+		}
+		if r.Fresh && r.Start {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: fresh is for workers; the orchestrator keeps its context; fresh disabled", path, r.Name))
+			c.Roles[i].Fresh = false
 		}
 	}
 	roleNames := make(map[string]bool, len(c.Roles))

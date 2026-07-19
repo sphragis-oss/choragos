@@ -57,23 +57,24 @@ type paneClosedMsg struct{ idx, gen int }
 type ipcMsg struct{ cmd ipc.Command }
 
 type entry struct {
-	role       config.Role
-	pane       *pane.Pane
-	exited     bool
-	gone       bool // tombstoned by a config reload; the index stays valid and is never reused
-	booted     bool
-	waiting    bool // last observed waiting-for-input state, for bell edge detection
-	gen        int  // bumped on restart; stale stream messages are dropped
-	startedAt  time.Time
-	lastActive time.Time
-	bootLine   string // injected one-liner, kept for on-screen verification
-	bootSentAt time.Time
-	bootTries  int
-	bootOK     bool
-	restarts   int  // auto-restarts consumed; reset by a manual restart
-	paused     bool // process group SIGSTOPped via prefix+p; resume credits timeouts
-	pausedAt   time.Time
-	overBudget bool // budget action fired; re-arms when a reload raises the cap
+	role          config.Role
+	pane          *pane.Pane
+	exited        bool
+	gone          bool // tombstoned by a config reload; the index stays valid and is never reused
+	booted        bool
+	waiting       bool // last observed waiting-for-input state, for bell edge detection
+	gen           int  // bumped on restart; stale stream messages are dropped
+	startedAt     time.Time
+	lastActive    time.Time
+	bootLine      string // injected one-liner, kept for on-screen verification
+	bootSentAt    time.Time
+	bootTries     int
+	bootOK        bool
+	restarts      int  // auto-restarts consumed; reset by a manual restart
+	paused        bool // process group SIGSTOPped via prefix+p; resume credits timeouts
+	pausedAt      time.Time
+	pendingInject string // task line held until a fresh-respawned pane finishes booting
+	overBudget    bool   // budget action fired; re-arms when a reload raises the cap
 	// screen caches keyed by the pane's write sequence, so idle panes cost nothing per frame
 	renderSeq   uint64
 	renderPane  *pane.Pane
@@ -381,7 +382,17 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	s.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
 	s.snapshotTask(id, e.role.Name, label)
-	injectLine(e, line)
+	if e.role.Fresh {
+		// clean context per task: respawn first, inject once the fresh pane boots
+		s.log().Info("fresh respawn", "id", id, "role", e.role.Name)
+		_ = e.pane.Close()
+		e.restarts = 0
+		pcw, pch := e.pane.Size()
+		s.respawn(e, i, pcw, pch)
+		e.pendingInject = line
+	} else {
+		injectLine(e, line)
+	}
 	s.focus(i)
 	return id
 }
@@ -679,6 +690,11 @@ func (s *session) bootPanes() {
 	now := time.Now()
 	for _, e := range s.panes {
 		if e.exited {
+			continue
+		}
+		if e.booted && e.bootOK && e.pendingInject != "" {
+			injectLine(e, e.pendingInject)
+			e.pendingInject = ""
 			continue
 		}
 		if !e.booted {
