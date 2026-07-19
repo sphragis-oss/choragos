@@ -968,6 +968,9 @@ func (m *Model) renderGate(w, h int) string {
 	if g.reason != "" {
 		title = "judge loop needs a decision"
 	}
+	if g.cmd.Cmd == "roster-add" {
+		title = "roster proposal awaiting approval"
+	}
 	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.waiting).Render(title) + "\n\n")
 	row := func(k, v string) {
 		b.WriteString(lipgloss.NewStyle().Foreground(m.th.accent).Width(10).Render(k) + " " + v + "\n")

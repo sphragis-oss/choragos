@@ -1772,6 +1772,103 @@ func TestReloadStartRoleGateGuard(t *testing.T) {
 	}
 }
 
+func TestRosterAddGatedFlow(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase)
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if len(m.gates) != 1 || m.gates[0].to != "tester" || m.gates[0].cmd.Cmd != "roster-add" {
+		t.Fatalf("gates = %+v, want one roster gate for tester", m.gates)
+	}
+	m.approveGate()
+	if len(m.gates) != 0 {
+		t.Fatal("gate not consumed")
+	}
+	e, _ := m.findRole("tester")
+	if e == nil || e.exited {
+		t.Fatal("approved role not spawned")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "added at runtime via choragos roster add") ||
+		!strings.Contains(string(b), `name = "tester"`) {
+		t.Fatalf("config file missing the appended block:\n%s", b)
+	}
+	// the file stays loadable, so the next manual reload cannot break
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("config no longer loads after append: %v", err)
+	}
+}
+
+func TestRosterAddReject(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase)
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if len(m.gates) != 1 {
+		t.Fatalf("gates = %d, want 1", len(m.gates))
+	}
+	m.rejectGate()
+	if e, _ := m.findRole("tester"); e != nil {
+		t.Fatal("rejected role was spawned")
+	}
+	// the pane is 40 cols; match inside the first wrapped row
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[0].pane.Render(), "The user rejected your roster")
+	}) {
+		t.Fatal("rejection not injected into the orchestrator")
+	}
+}
+
+func TestRosterAddAutoApply(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase+"\n[roster]\napprove = false\n")
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat", RoleModel: "sonnet",
+		RoleArgs: []string{"-u"}, RolePrompt: "test brief"})
+	if len(m.gates) != 0 {
+		t.Fatal("auto-apply must not gate")
+	}
+	e, _ := m.findRole("tester")
+	if e == nil {
+		t.Fatal("auto-approved role not spawned")
+	}
+	if e.role.Model != "sonnet" || len(e.role.Args) != 1 || e.role.Args[0] != "-u" || e.role.Prompt != "test brief" {
+		t.Fatalf("spec fields lost on the round trip: %+v", e.role)
+	}
+}
+
+func TestRosterAddRefusals(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase)
+	for name, cmd := range map[string]ipc.Command{
+		"duplicate name":  {Cmd: "roster-add", RoleName: "coder", RoleCommand: "cat"},
+		"invalid name":    {Cmd: "roster-add", RoleName: "bad name!", RoleCommand: "cat"},
+		"missing command": {Cmd: "roster-add", RoleName: "x"},
+		"absent command":  {Cmd: "roster-add", RoleName: "x", RoleCommand: "definitely-not-a-binary-xyz"},
+	} {
+		m.dispatch(cmd)
+		if len(m.gates) != 0 {
+			t.Fatalf("%s: proposal was gated instead of refused", name)
+		}
+	}
+	if e, _ := m.findRole("x"); e != nil {
+		t.Fatal("refused role exists")
+	}
+	// the pane is 40 cols; match inside the first wrapped row
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[0].pane.Render(), "Roster proposal refused")
+	}) {
+		t.Fatal("refusal not injected into the orchestrator")
+	}
+}
+
+func TestRosterAddDisabled(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase+"\n[roster]\npropose = false\n")
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if len(m.gates) != 0 {
+		t.Fatal("disabled roster still gated a proposal")
+	}
+	if e, _ := m.findRole("tester"); e != nil {
+		t.Fatal("disabled roster spawned a role")
+	}
+}
+
 func TestRecapNote(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator"))
 	if m.recapNote() != "" {

@@ -254,6 +254,25 @@ moves HEAD, branches, the index, the stash, or commits a worker made;
 ignored files are never touched. It checkpoints the current state
 first, so `choragos rollback pre-rollback-T3` undoes it.
 
+## `[roster]`
+
+Orchestrator-driven roster proposals: the orchestrator can ask for a
+role the team lacks with `choragos roster add --name <role> --command
+<cli> [--arg ...] [--model <model>] [--prompt-template "..."]`.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `propose` | bool | `true` | Allow the orchestrator to propose roster additions; off removes the ability from its boot context and refuses the verb |
+| `approve` | bool | `true` | Pause every proposal at a human gate (`y` applies, `n` rejects with a notice back to the orchestrator); `false` auto-applies, for unattended runs |
+
+An applied proposal is appended to the config file as a `[[roles]]`
+block with a marker comment, then the normal reload convergence spawns
+it: the file stays the single source of truth, and a later `prefix+C`
+cannot silently retire the new role. Proposals are refused on the
+built-in config (no file to extend). Add-only by design: removing a
+role stays a human decision (edit the file, reload). Every proposal,
+approval, rejection, and refusal lands in `events.log`.
+
 ## Reloading the config at runtime
 
 Edit the config file, then `choragos reload` (or `prefix+C` in the deck):

@@ -47,6 +47,7 @@ func rootCmd() *cobra.Command {
 		reportCmd(),
 		delegateCmd(),
 		workDoneCmd(),
+		rosterCmd(),
 		reloadCmd(),
 		versionCmd(),
 		genManCmd(),

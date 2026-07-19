@@ -49,13 +49,18 @@ happens asynchronously in the UI loop.
 
 | Field | Type | Used by | Meaning |
 |-------|------|---------|---------|
-| `cmd` | string | all | `"delegate"`, `"work-done"`, or `"reload"` |
+| `cmd` | string | all | `"delegate"`, `"work-done"`, `"roster-add"`, or `"reload"` |
 | `to` | string array | delegate | Target role names; one injection per role |
 | `task` | string | both | Task text (delegate) or one-line summary (work-done) |
 | `brief` | string | delegate | Absolute path to a brief file holding the full task |
 | `report` | string | work-done | Absolute path to a report file with the full outcome |
 | `done` | bool | work-done | Marks the whole assignment complete |
 | `id` | string | work-done | Task id echoed from the delegation, resolves the task-board entry |
+| `role_name` | string | roster-add | Proposed role name (letters, digits, `-`, `_`) |
+| `role_command` | string | roster-add | Agent CLI the role runs; must resolve on PATH |
+| `role_args` | string array | roster-add | Arguments for the command, in order |
+| `role_model` | string | roster-add | Model for the role, optional |
+| `role_prompt` | string | roster-add | `prompt_template` for the role, optional |
 
 The CLI verbs validate `brief` / `report` (non-empty regular file) and
 absolutize them before sending, so they resolve from any working directory.
@@ -66,6 +71,16 @@ file and converge the team on it (see
 [configuration.md](configuration.md#reloading-the-config-at-runtime)).
 It is accepted even while the gateway is down, because it changes the
 team, not the work.
+
+`roster-add` (sent by `choragos roster add`) proposes a new role. The
+deck validates it (unique sanitized name, command on PATH, a config file
+to extend, `[roster] propose` not disabled) and refuses invalid
+proposals with an injected reason. Valid ones pause at a human gate
+unless `[roster] approve = false`; on approval the deck appends the
+`[[roles]]` block to the config file and runs the reload convergence,
+so the file stays the single source of truth. The orchestrator hears
+the outcome either way. Add-only by design for now: removals stay a
+human edit plus `reload`.
 
 Two more field-less verbs exist for session lifecycle: `ping` (liveness,
 the ack is the answer; used by `choragos ls`) and `shutdown` (stop the

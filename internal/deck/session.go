@@ -7,6 +7,7 @@
 package deck
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -302,6 +304,8 @@ func (s *session) dispatch(cmd ipc.Command) {
 			id := s.deliverDelegate(e, i, cmd)
 			s.maybeStartLoop(id, e, cmd)
 		}
+	case "roster-add":
+		s.rosterAdd(cmd)
 	case "work-done":
 		if s.handleJudgedDone(cmd) {
 			return // a judge loop owns this id; the orchestrator hears only loop outcomes
@@ -381,6 +385,91 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	return id
 }
 
+// injectOrchestrator types one line into the start role, when it is alive.
+func (s *session) injectOrchestrator(line string) {
+	if i := s.startIdx(); i >= 0 && i < len(s.panes) && !s.panes[i].exited {
+		injectLine(s.panes[i], line)
+	}
+}
+
+// rosterAdd validates an orchestrator roster proposal and gates or applies it.
+func (s *session) rosterAdd(cmd ipc.Command) {
+	name := strings.TrimSpace(cmd.RoleName)
+	reject := func(why string) {
+		s.log().Warn("roster add refused", "role", name, "why", why)
+		s.injectOrchestrator("[choragos] Roster proposal refused: " + why + ". Continue with the current team.")
+	}
+	switch {
+	case !s.cfg.Roster.CanPropose():
+		reject("roster proposals are disabled ([roster] propose)")
+	case s.cfg.Path == "":
+		reject("running on the built-in config; no file to extend")
+	case name == "" || sanitize(name) != name:
+		reject("invalid role name " + strconv.Quote(cmd.RoleName))
+	case func() bool { e, _ := s.findRole(name); return e != nil }():
+		reject("role " + name + " already exists")
+	case cmd.RoleCommand == "":
+		reject("missing command")
+	default:
+		if _, err := exec.LookPath(cmd.RoleCommand); err != nil {
+			reject("command not found in PATH: " + cmd.RoleCommand)
+			return
+		}
+		cmd.Task = "add role " + name + " (command " + cmd.RoleCommand + ", model " + cmp.Or(cmd.RoleModel, "default") + ")"
+		if s.cfg.Roster.NeedsApprove() {
+			s.gates = append(s.gates, pendingGate{cmd: cmd, to: name, at: time.Now()})
+			s.log().Info("roster add gated", "role", name, "command", cmd.RoleCommand, "model", cmd.RoleModel)
+			if s.bellFn != nil {
+				s.bellFn()
+			}
+			s.runHook(s.cfg.UI.OnGate, name, singleLine(cmd.Task))
+			return
+		}
+		s.log().Info("roster add auto-approved", "role", name, "command", cmd.RoleCommand, "model", cmd.RoleModel)
+		s.applyRosterAdd(cmd)
+	}
+}
+
+// applyRosterAdd appends the approved role to the config file and converges the roster on it.
+func (s *session) applyRosterAdd(cmd ipc.Command) {
+	if err := appendRoleBlock(s.cfg.Path, cmd); err != nil {
+		s.log().Error("roster add: config append failed", "role", cmd.RoleName, "err", err)
+		s.injectOrchestrator("[choragos] Roster add for " + cmd.RoleName + " failed: " + err.Error())
+		return
+	}
+	pcw, pch := s.panes[s.startIdx()].pane.Size()
+	s.reload(pcw, pch)
+}
+
+// appendRoleBlock appends the proposed [[roles]] block to the config file; reload picks it up.
+func appendRoleBlock(path string, cmd ipc.Command) error {
+	var b strings.Builder
+	b.WriteString("\n# added at runtime via choragos roster add\n[[roles]]\n")
+	fmt.Fprintf(&b, "name = %q\ncommand = %q\n", cmd.RoleName, cmd.RoleCommand)
+	if len(cmd.RoleArgs) > 0 {
+		quoted := make([]string, len(cmd.RoleArgs))
+		for i, a := range cmd.RoleArgs {
+			quoted[i] = strconv.Quote(a)
+		}
+		fmt.Fprintf(&b, "args = [%s]\n", strings.Join(quoted, ", "))
+	}
+	if cmd.RoleModel != "" {
+		fmt.Fprintf(&b, "model = %q\n", cmd.RoleModel)
+	}
+	if cmd.RolePrompt != "" {
+		fmt.Fprintf(&b, "prompt_template = %q\n", cmd.RolePrompt)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // approveGate resolves the oldest pending gate: delivery for entry gates, acceptance for judge fallbacks.
 func (s *session) approveGate() {
 	if len(s.gates) == 0 {
@@ -390,6 +479,11 @@ func (s *session) approveGate() {
 	s.gates = s.gates[1:]
 	if g.reason != "" {
 		s.resolveFallback(g, true)
+		return
+	}
+	if g.cmd.Cmd == "roster-add" {
+		s.log().Info("roster add approved", "role", g.to, "waited", time.Since(g.at).Round(time.Second))
+		s.applyRosterAdd(g.cmd)
 		return
 	}
 	if e, i := s.findRole(g.to); e != nil && !e.exited {
@@ -410,6 +504,11 @@ func (s *session) rejectGate() {
 	s.gates = s.gates[1:]
 	if g.reason != "" {
 		s.resolveFallback(g, false)
+		return
+	}
+	if g.cmd.Cmd == "roster-add" {
+		s.log().Warn("roster add rejected", "role", g.to)
+		s.injectOrchestrator("[choragos] The user rejected your roster proposal for " + g.to + ". Continue with the current team.")
 		return
 	}
 	s.log().Warn("delegate rejected", "to", g.to, "task", singleLine(g.cmd.Task), "brief", g.cmd.Brief)

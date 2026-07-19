@@ -31,13 +31,19 @@ const EnvSocket = "CHORAGOS_SOCK"
 
 // Command is one control message.
 type Command struct {
-	Cmd    string   `json:"cmd"` // "delegate", "work-done", or "reload"
+	Cmd    string   `json:"cmd"` // "delegate", "work-done", "roster-add", or "reload"
 	To     []string `json:"to,omitempty"`
 	Task   string   `json:"task,omitempty"`
 	Brief  string   `json:"brief,omitempty"`  // absolute path to a delegation brief file
 	Report string   `json:"report,omitempty"` // absolute path to a work-done report file
 	Done   bool     `json:"done,omitempty"`
 	ID     string   `json:"id,omitempty"` // task id assigned by the deck on delegate, echoed by work-done
+	// roster-add proposal: the role spec the orchestrator asks to add
+	RoleName    string   `json:"role_name,omitempty"`
+	RoleCommand string   `json:"role_command,omitempty"`
+	RoleArgs    []string `json:"role_args,omitempty"`
+	RoleModel   string   `json:"role_model,omitempty"`
+	RolePrompt  string   `json:"role_prompt,omitempty"`
 }
 
 // SessionDir is the per-user directory holding session sockets and metadata (0700).

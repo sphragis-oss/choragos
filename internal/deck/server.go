@@ -182,6 +182,7 @@ func (srv *server) handleClient(ev wire.Event) bool {
 	case "gate":
 		if ev.Approve {
 			s.approveGate()
+			srv.ensureTees() // an approved roster proposal may have spawned a pane
 		} else {
 			s.rejectGate()
 		}
