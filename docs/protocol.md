@@ -197,8 +197,10 @@ itself and the orchestrator hears only outcomes:
 Every role's process is started with:
 
 - `CHORAGOS_SOCK`: the deck's control socket (see above).
-- `ANTHROPIC_BASE_URL`: only when the gateway is enabled; carries an
-  `/agent/<role>` suffix so token usage is attributed per role.
+- The role's agent URL, only when the gateway is enabled, in the env
+  var(s) named by the role's `base_url_env` (default
+  `ANTHROPIC_BASE_URL`); it carries an `/agent/<role>` suffix so token
+  usage is attributed per role.
 
-Roles with `env_allow` / `env_deny` still receive both; see
+Roles with `env_allow` / `env_deny` still receive these; see
 [configuration.md](configuration.md) for the isolation rules.
