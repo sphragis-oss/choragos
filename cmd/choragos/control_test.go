@@ -172,6 +172,18 @@ func TestRosterAddCmd(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("deck never received roster-add")
 	}
+
+	// no deck on the socket: the send error surfaces with the running hint
+	t.Setenv(ipc.EnvSocket, filepath.Join(shortRuntimeDir(t), "absent.sock"))
+	dead := rosterAddCmd()
+	for flag, val := range map[string]string{"name": "tester", "command": "cat"} {
+		if err := dead.Flags().Set(flag, val); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runCLI(t, dead, nil); err == nil || !strings.Contains(err.Error(), "is the deck running") {
+		t.Errorf("dead socket should fail with the hint, got: %v", err)
+	}
 }
 
 func TestSessionsLifecycle(t *testing.T) {

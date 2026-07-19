@@ -1858,6 +1858,47 @@ func TestRosterAddRefusals(t *testing.T) {
 	}
 }
 
+func TestRosterAddGateRenderAndBell(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase)
+	rang := false
+	m.bellFn = func() { rang = true }
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if !rang {
+		t.Fatal("gated proposal must ring the bell")
+	}
+	got := m.renderGate(60, 20)
+	if !strings.Contains(got, "roster proposal awaiting approval") || !strings.Contains(got, "tester") {
+		t.Fatalf("roster gate render:\n%s", got)
+	}
+}
+
+func TestRosterAddNoConfigFile(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	m.cfg.Path = ""
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if len(m.gates) != 0 {
+		t.Fatal("built-in config must refuse roster proposals")
+	}
+	if e, _ := m.findRole("tester"); e != nil {
+		t.Fatal("role spawned without a config file")
+	}
+}
+
+func TestRosterAddApplyFailure(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase+"\n[roster]\napprove = false\n")
+	// point the config at an unwritable path so the append fails after validation
+	m.cfg.Path = filepath.Join(t.TempDir(), "missing", "c.toml")
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
+	if e, _ := m.findRole("tester"); e != nil {
+		t.Fatal("role spawned despite the failed append")
+	}
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[0].pane.Render(), "Roster add for tester failed")
+	}) {
+		t.Fatal("append failure not injected into the orchestrator")
+	}
+}
+
 func TestRosterAddDisabled(t *testing.T) {
 	m, _ := reloadFixture(t, reloadBase+"\n[roster]\npropose = false\n")
 	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "tester", RoleCommand: "cat"})
