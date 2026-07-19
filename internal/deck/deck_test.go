@@ -92,6 +92,24 @@ func TestLogsAreOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestLogsDirFailureIsBestEffort(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(contextDir, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if f := openLog("coder"); f != nil {
+		_ = f.Close()
+		t.Fatal("openLog should fail when contextDir is a file")
+	}
+	if _, c := newEventLog(); c != nil {
+		_ = c.Close()
+		t.Fatal("newEventLog should discard when contextDir is a file")
+	}
+	if got := writeCrashLog("boom"); got != "stderr" {
+		t.Fatalf("writeCrashLog fallback = %q, want stderr", got)
+	}
+}
+
 func TestRoleArgsAppendsModel(t *testing.T) {
 	got := roleArgs(config.Role{Command: "claude", Args: []string{"-p"}, Model: "opus"})
 	if strings.Join(got, " ") != "-p --model opus" {
