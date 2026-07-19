@@ -25,6 +25,9 @@
   <a href="https://codecov.io/gh/sphragis-oss/choragos">
     <img alt="Coverage" src="https://img.shields.io/codecov/c/github/sphragis-oss/choragos?style=for-the-badge">
   </a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/sphragis-oss/choragos">
+    <img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/sphragis-oss/choragos?label=openssf%20scorecard&style=for-the-badge">
+  </a>
   <a href="LICENSE">
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge">
   </a>
