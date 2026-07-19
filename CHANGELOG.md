@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-19
+
+Team evolution, cost control, and clean context per task.
+
+### Added
+- Fresh workers: `fresh = true` respawns a role before every delegation
+  (judge retry rounds included), so each task starts with clean agent
+  context instead of accumulating every earlier ticket. Tasks travel as
+  files, so nothing is lost across the respawn. (#153, #154)
+- Orchestrator handoff for fresh roles: the orchestrator is asked to
+  keep a short per-role handoff in `.choragos/handoff-<role>.md`
+  (decisions, files touched, gotchas), and the deck attaches it to a
+  fresh role's next task automatically when it exists. (#163)
+- Team evolution: on `choragos reload` the orchestrator itself can swap
+  command or model, respawning with a deck-built session recap so
+  nothing is lost, and the orchestrator can propose new roles with
+  `choragos roster add`, applied to the config file after a human gate.
+  Design note in `docs/design-team-evolution.md`. (#141, #146, #147,
+  #148)
+- Per-role cost budgets: `budget = "5.00"` plus `budget_action`
+  (`notify` or `pause`) cap a role's session spend; needs the gateway
+  metrics and a `[pricing]` table for the cost signal. `choragos
+  report` gained a COST column and `--json` for machine-readable
+  run summaries. (#142, #143, #150, #152)
+- Per-role `base_url_env` routes a role's gateway URL into any env
+  var name(s), so non-Anthropic CLIs (`OPENAI_BASE_URL`, ...) work
+  behind the gateway. (#140, #145)
+- Per-role `model_flag` renames or drops the `--model` argument for
+  commands that do not accept it; `choragos doctor` warns when a model
+  is set for a command not known to take one. (#149, #156)
+- `docs/sandboxing.md`: wrapper-script recipes for running workers
+  inside Docker, bubblewrap, or macOS sandbox-exec, and SECURITY.md
+  now states the threat model explicitly. (#138, #139, #157)
+
+### Changed
+- `.choragos/logs` is now 0700 and everything in it (role transcripts,
+  `events.log`, crash and server logs) 0600: transcripts can contain
+  whatever agents print, including secrets. Existing log directories
+  are tightened on the next run. (#158)
+- CI/supply chain hardened: harden-runner egress moved from audit to
+  block with per-job allowlists, gosec and actionlint jobs, wire
+  protocol fuzz tests, OpenSSF Scorecard badge, and patch coverage is
+  now a required check. (#133, #134, #136, #159, #160, #161)
+
+### Fixed
+- Every `choragos` command leaked an OSC 11 terminal reply
+  (`^[]11;rgb:...`) into the shell after `serve --detach` and stalled
+  up to ~5s on non-answering terminals: bubbletea v1 queries the
+  terminal background at init in every linking binary. The dependency
+  now points at a fork with the init-time query removed; a regression
+  test asserts no query bytes are emitted. (#132, #155)
+- Choragos Desktop now shows delegation timeouts on the task board
+  (the timeout mark previously never reached the wire protocol) and
+  "over budget" on role cards, matching the TUI. This release pairs
+  with `desktop/v0.13.0`. (#164)
+
 ## [0.12.0] - 2026-07-18
 
 ### Added
@@ -393,7 +449,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/sphragis-oss/choragos/compare/v0.11.0...v0.11.1
