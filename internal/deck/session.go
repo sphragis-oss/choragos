@@ -1261,14 +1261,27 @@ func startPanes(cfg config.Config, cols, rows int, socket, baseURL string) ([]*e
 	return entries, nil
 }
 
+// logsDir ensures contextDir/logs exists owner-only (transcripts can carry secrets agents echoed).
+func logsDir() (string, error) {
+	if err := os.MkdirAll(contextDir, 0o755); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(contextDir, "logs")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(dir, 0o700) // tighten dirs created 0755 by older versions
+	return dir, nil
+}
+
 // openLog opens a per-role transcript log under contextDir/logs; logging is best-effort so failures are silent.
 // Append mode with a session header, so a role restart does not truncate the previous session's transcript.
 func openLog(role string) *os.File {
-	dir := filepath.Join(contextDir, "logs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := logsDir()
+	if err != nil {
 		return nil
 	}
-	f, err := os.OpenFile(filepath.Join(dir, sanitize(role)+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, sanitize(role)+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil
 	}
@@ -1279,14 +1292,14 @@ func openLog(role string) *os.File {
 
 // writeCrashLog dumps the panic and stack to contextDir/logs; returns where it landed.
 func writeCrashLog(r any) string {
-	dir := filepath.Join(contextDir, "logs")
 	body := fmt.Sprintf("time: %s\npanic: %v\n\n%s", time.Now().Format(time.RFC3339), r, debug.Stack())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := logsDir()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, body)
 		return "stderr"
 	}
 	path := filepath.Join(dir, "crash.log")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, body)
 		return "stderr"
 	}
@@ -1295,11 +1308,11 @@ func writeCrashLog(r any) string {
 
 // newEventLog opens the control-plane event log (delegate/work-done/boot/lifecycle); on failure it discards.
 func newEventLog() (*slog.Logger, io.Closer) {
-	dir := filepath.Join(contextDir, "logs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := logsDir()
+	if err != nil {
 		return discardLog, nil
 	}
-	f, err := os.Create(filepath.Join(dir, "events.log"))
+	f, err := os.OpenFile(filepath.Join(dir, "events.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return discardLog, nil
 	}

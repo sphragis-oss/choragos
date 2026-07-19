@@ -63,6 +63,35 @@ func TestStartPanesSpawnsAllRoles(t *testing.T) {
 	}
 }
 
+func TestLogsAreOwnerOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	f := openLog("coder")
+	if f == nil {
+		t.Fatal("openLog returned nil")
+	}
+	defer func() { _ = f.Close() }()
+	_, c := newEventLog()
+	if c != nil {
+		defer func() { _ = c.Close() }()
+	}
+	di, err := os.Stat(filepath.Join(contextDir, "logs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := di.Mode().Perm(); got != 0o700 {
+		t.Errorf("logs dir mode = %o, want 700", got)
+	}
+	for _, name := range []string{"coder.log", "events.log"} {
+		fi, err := os.Stat(filepath.Join(contextDir, "logs", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("%s mode = %o, want 600", name, got)
+		}
+	}
+}
+
 func TestRoleArgsAppendsModel(t *testing.T) {
 	got := roleArgs(config.Role{Command: "claude", Args: []string{"-p"}, Model: "opus"})
 	if strings.Join(got, " ") != "-p --model opus" {
