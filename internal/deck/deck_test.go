@@ -1703,9 +1703,9 @@ func TestReloadSoftChangeKeepsProcess(t *testing.T) {
 	}
 }
 
-func TestReloadProtectsStartRoleAndInFlight(t *testing.T) {
+func TestReloadRespawnsStartRoleAndProtectsInFlight(t *testing.T) {
 	m, path := reloadFixture(t, reloadBase)
-	// an unresolved delegation to coder blocks its respawn
+	// an unresolved delegation to coder blocks its respawn; the orchestrator's is allowed
 	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "INFLIGHT-1"})
 	next := `[[roles]]
 name = "orchestrator"
@@ -1723,14 +1723,81 @@ args = ["-c", "exec cat"]
 	}
 	genO, genC := m.panes[0].gen, m.panes[1].gen
 	m.reloadConfig()
-	if m.panes[0].gen != genO {
-		t.Fatal("start role was respawned by reload")
+	if m.panes[0].gen != genO+1 {
+		t.Fatalf("orchestrator gen = %d, want %d (spec change must respawn it)", m.panes[0].gen, genO+1)
 	}
-	if m.panes[0].role.Command != "cat" {
-		t.Fatalf("start role spec replaced: %q", m.panes[0].role.Command)
+	if m.panes[0].role.Command != "sh" || !m.panes[0].role.Start {
+		t.Fatalf("orchestrator spec not replaced or start lost: %+v", m.panes[0].role)
 	}
 	if m.panes[1].gen != genC {
 		t.Fatal("in-flight role was respawned by reload")
+	}
+	// the fresh boot brief carries the recap so the new process knows about INFLIGHT-1
+	m.injectBoot(m.panes[0])
+	b, err := os.ReadFile(filepath.Join(".choragos", "orchestrator-context.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "Session in progress") || !strings.Contains(string(b), "-> coder") {
+		t.Fatalf("recap missing from orchestrator context:\n%s", b)
+	}
+}
+
+func TestReloadStartRoleGateGuard(t *testing.T) {
+	m, path := reloadFixture(t, reloadBase+"approve = true\n")
+	// pending gate: its verdict must land in the process that asked for it
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "GATED-1"})
+	if len(m.gates) != 1 {
+		t.Fatalf("gates = %d, want 1", len(m.gates))
+	}
+	next := strings.Replace(reloadBase+"approve = true\n", "name = \"orchestrator\"\ncommand = \"cat\"",
+		"name = \"orchestrator\"\ncommand = \"sh\"\nargs = [\"-c\", \"exec cat\"]", 1)
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gen := m.panes[0].gen
+	m.reloadConfig()
+	if m.panes[0].gen != gen {
+		t.Fatal("orchestrator respawned while a gate was pending")
+	}
+	if m.panes[0].role.Command != "cat" {
+		t.Fatalf("orchestrator spec replaced under gate guard: %q", m.panes[0].role.Command)
+	}
+	// gate resolved: the next reload applies the swap
+	m.approveGate()
+	m.resolveTask("T1")
+	m.reloadConfig()
+	if m.panes[0].gen != gen+1 {
+		t.Fatalf("orchestrator gen = %d, want %d after the gate cleared", m.panes[0].gen, gen+1)
+	}
+}
+
+func TestRecapNote(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator"))
+	if m.recapNote() != "" {
+		t.Fatal("fresh deck must have an empty recap")
+	}
+	now := time.Now()
+	m.board = append(m.board,
+		taskEvent{kind: "delegate", id: "T1", to: "coder", at: now},
+		taskEvent{kind: "delegate", id: "T2", to: "reviewer", at: now, doneAt: now},
+		taskEvent{kind: "work-done", id: "T1", to: "orchestrator", at: now},
+	)
+	got := m.recapNote()
+	for _, want := range []string{"Session in progress", "T1 -> coder", "Completed this session: 1"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("recap missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "T2") {
+		t.Fatalf("completed task listed as in flight:\n%s", got)
+	}
+	// the in-flight list is capped, the overflow is summarized
+	for i := 0; i < recapMax+3; i++ {
+		m.board = append(m.board, taskEvent{kind: "delegate", id: fmt.Sprintf("X%d", i), to: "coder", at: now})
+	}
+	if got := m.recapNote(); !strings.Contains(got, "and 4 more") {
+		t.Fatalf("overflow not summarized:\n%s", got)
 	}
 }
 
