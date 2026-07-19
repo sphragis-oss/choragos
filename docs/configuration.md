@@ -26,6 +26,7 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `chrome_markers` | array | `[]` | Extra markers for TUI chrome lines to drop from the sidebar activity preview |
 | `env_allow` | array | `[]` | Switch the role to an env allowlist: baseline vars (`PATH`, `HOME`, `TERM`, `SHELL`, `LANG`, `LC_*`, `XDG_*`, ...) plus these names or `PREFIX_*` patterns |
 | `env_deny` | array | `[]` | Strip matching vars (exact or `PREFIX_*`) in either mode; wins over `env_allow` |
+| `base_url_env` | array | `["ANTHROPIC_BASE_URL"]` | Env var name(s) that receive this role's gateway URL when the gateway is on; set for non-Anthropic CLIs, e.g. `["OPENAI_BASE_URL"]` |
 | `restart` | string | `""` | `"on-failure"` respawns the role in place when its process exits non-zero (or dies by signal); clean exits and deck shutdown are respected |
 | `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
 | `timeout` | string | `""` | Wall-clock limit per delegation to this role (Go duration, e.g. `"45m"`); empty disables. The timer starts when the task is delivered (after any approval gate) and clears on the matching work-done |
@@ -70,8 +71,24 @@ model = "sonnet"
 env_deny = ["AWS_*", "GITHUB_TOKEN"]
 ```
 
-`CHORAGOS_SOCK` (control socket) and, when the gateway is enabled,
-`ANTHROPIC_BASE_URL` are always injected by choragos itself.
+`CHORAGOS_SOCK` (control socket) is always injected by choragos itself. When
+the gateway is enabled, each role also gets its agent URL in the env var(s)
+named by `base_url_env` (default `ANTHROPIC_BASE_URL`), so non-Anthropic CLIs
+can be pointed at the same gateway:
+
+```toml
+[[roles]]
+name = "reviewer"
+command = "codex"
+base_url_env = ["OPENAI_BASE_URL"]
+
+[[roles]]
+name = "researcher"
+command = "gemini"
+base_url_env = ["GOOGLE_GEMINI_BASE_URL"]
+```
+
+With the gateway off nothing is injected, exactly as before.
 
 ## `[sphragis]`
 

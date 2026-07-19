@@ -151,6 +151,39 @@ timeout_action = "explode"
 	}
 }
 
+func TestBaseURLEnvValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "openai"
+command = "sh"
+start = true
+base_url_env = ["OPENAI_BASE_URL", "OPENAI_API_BASE"]
+
+[[roles]]
+name = "bad"
+command = "sh"
+base_url_env = ["NOT=A_NAME"]
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Roles[0].BaseURLEnvNames(); len(got) != 2 || got[0] != "OPENAI_BASE_URL" {
+		t.Fatalf("names = %v", got)
+	}
+	// invalid names reset to the default and warn
+	if got := c.Roles[1].BaseURLEnvNames(); len(got) != 1 || got[0] != "ANTHROPIC_BASE_URL" {
+		t.Fatalf("invalid base_url_env must fall back to the default, got %v", got)
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("want 1 warning, got %v", c.Warnings)
+	}
+}
+
 func TestSphragisDisableViaTOML(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")
