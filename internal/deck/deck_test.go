@@ -1850,9 +1850,11 @@ func TestRosterAddRefusals(t *testing.T) {
 	if e, _ := m.findRole("x"); e != nil {
 		t.Fatal("refused role exists")
 	}
-	// the pane is 40 cols; match inside the first wrapped row
+	// four rapid injections concatenate and wrap arbitrarily on the 40-col
+	// pane, so match on the rows joined back together, not on one row
 	if !waitFor(func() bool {
-		return strings.Contains(m.panes[0].pane.Render(), "Roster proposal refused")
+		joined := strings.ReplaceAll(m.panes[0].pane.Render(), "\n", "")
+		return strings.Contains(joined, "Roster proposal refused")
 	}) {
 		t.Fatal("refusal not injected into the orchestrator")
 	}
