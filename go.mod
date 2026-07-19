@@ -47,3 +47,5 @@ require (
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 )
+
+replace github.com/charmbracelet/bubbletea => github.com/sphragis-oss/bubbletea v1.3.11-0.20260719114544-30d65f6655c2
