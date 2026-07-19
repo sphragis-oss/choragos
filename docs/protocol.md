@@ -107,7 +107,10 @@ session and its agents; used by `choragos kill`).
 For roles with `fresh = true` the deck respawns the role between steps 4
 and 5 and holds the injection until the fresh pane finishes booting, so
 every task (including judge retry rounds) starts with clean agent
-context; the task file carries everything the new process needs.
+context; the task file carries everything the new process needs. If the
+orchestrator maintains `.choragos/handoff-<role>.md` (its boot context
+asks it to, per fresh role), the task file also points the fresh worker
+at that handoff, carrying decisions and gotchas across respawns.
 
 ## What the deck does with a work-done
 

@@ -376,6 +376,13 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	if label == "" {
 		label = "brief: " + filepath.Base(cmd.Brief)
 	}
+	if e.role.Fresh {
+		// fresh roles start clean; attach the orchestrator's handoff when it exists
+		handoff := filepath.Join(contextDir, "handoff-"+sanitize(e.role.Name)+".md")
+		if _, err := os.Stat(handoff); err == nil {
+			task += "\n\nRead " + handoff + " for the orchestrator's handoff from earlier tasks."
+		}
+	}
 	file := "worker-task-" + sanitize(e.role.Name) + ".md"
 	line := writeContext(file, prompt.WorkerTask(e.role, task, id),
 		"Read "+filepath.Join(contextDir, file)+" for your task.")

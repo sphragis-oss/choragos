@@ -21,8 +21,14 @@ func OrchestratorContext(cfg config.Config) string {
 		}
 	}
 	b.WriteString("## Available agents\n\n")
+	fresh := false
 	for _, r := range cfg.Roles {
 		if r.Start {
+			continue
+		}
+		if r.Fresh {
+			fresh = true
+			fmt.Fprintf(&b, "- **%s** (fresh: clean context every task)\n", r.Name)
 			continue
 		}
 		fmt.Fprintf(&b, "- **%s**\n", r.Name)
@@ -34,6 +40,9 @@ func OrchestratorContext(cfg config.Config) string {
 	b.WriteString("```bash\nchoragos delegate --to <role> --brief /abs/path/to/brief.md --task \"Short label.\"\n```\n\n")
 	b.WriteString("Delegate to several agents in parallel by making one call each. Never delegate to a role not listed above. Wait for a worker's work-done before delegating to it again. When the whole assignment is validated:\n\n")
 	b.WriteString("```bash\nchoragos work-done --done --task \"Final summary.\"\n```\n\n")
+	if fresh {
+		b.WriteString("## Handoff for fresh agents\n\nFresh agents remember nothing between tasks. Keep a short handoff per fresh role in .choragos/handoff-<role>.md: decisions made, files touched, gotchas. Update it after each of their work-done reports; it is attached to their next task automatically.\n\n")
+	}
 	if cfg.Roster.CanPropose() {
 		b.WriteString("## Team changes\n\nIf the assignment needs a role the team lacks, propose one; the user approves it before it joins, and you will be told the outcome:\n\n")
 		b.WriteString("```bash\nchoragos roster add --name <role> --command <agent-cli> [--model <model>] [--prompt-template \"role brief\"]\n```\n\n")
