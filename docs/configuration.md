@@ -264,13 +264,22 @@ targets; a changed `command`/`args`/`model`/`env_*` respawns that role
 with the new spec; changed `prompt_template`/`approve`/`restart*` apply
 without a restart, on the next task.
 
+The start role (the orchestrator) swaps spec too: it respawns with the
+new `command`/`model` and its fresh boot context carries a session recap
+(in-flight task ids, pending gates, completed count) built from deck
+state, so nothing is lost server-side. To let the agent itself resume
+its conversation, add its resume flag (e.g. `--continue`) to `args` in
+the same edit. Removing the orchestrator or moving `start = true` is
+never applied: the orchestrator always exists.
+
 Guardrails, all reported in `events.log`:
 
-- The start role's process is never touched: its spec changes and removal
-  are ignored until a deck restart (prompt-only changes still land).
-- A role with a pending approval gate or an unresolved delegation is not
-  respawned; rerun the reload once its work resolves. Removing such a
-  role outright is honored (that is an explicit decision).
+- The orchestrator is not respawned while approval gates are pending
+  (their verdicts must land in the process that asked); rerun the
+  reload once they resolve.
+- A worker with a pending approval gate or an unresolved delegation is
+  not respawned; rerun the reload once its work resolves. Removing such
+  a role outright is honored (that is an explicit decision).
 - Running on the built-in team (no config file) there is nothing to
   re-read, so reload is refused.
 - `[keys]`, `[ui]`, and `[sphragis]` changes need a deck restart; only

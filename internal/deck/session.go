@@ -593,7 +593,7 @@ func bootLanded(e *entry) bool {
 func (s *session) injectBoot(e *entry) {
 	if e.role.Start {
 		file := "orchestrator-context.md"
-		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg),
+		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg)+s.recapNote(),
 			"Read "+filepath.Join(contextDir, file)+" for your role, available agents, and the delegation protocol. Acknowledge your role and wait for instructions.")
 		injectLine(e, e.bootLine)
 		return
@@ -602,6 +602,45 @@ func (s *session) injectBoot(e *entry) {
 	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role),
 		"Read "+filepath.Join(contextDir, file)+" for your role, then stay idle until a task is delegated to you.")
 	injectLine(e, e.bootLine)
+}
+
+// recapMax caps the in-flight ids listed in a recap so a large board cannot flood the context file.
+const recapMax = 10
+
+// recapNote summarizes live session state for an orchestrator (re)spawned mid-run; empty on a fresh deck.
+func (s *session) recapNote() string {
+	var inflight []string
+	done := 0
+	for _, ev := range s.board {
+		if ev.kind != "delegate" {
+			continue
+		}
+		if ev.doneAt.IsZero() {
+			inflight = append(inflight, ev.id+" -> "+ev.to)
+		} else {
+			done++
+		}
+	}
+	if len(inflight) == 0 && done == 0 && len(s.gates) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n## Session in progress\n\nYou were started mid-session; the deck kept the team state.\n")
+	if n := len(inflight); n > 0 {
+		extra := ""
+		if n > recapMax {
+			extra = fmt.Sprintf(" and %d more", n-recapMax)
+			inflight = inflight[:recapMax]
+		}
+		b.WriteString("- In flight: " + strings.Join(inflight, ", ") + extra + ". Do not re-delegate; their work-done reports arrive normally.\n")
+	}
+	if n := len(s.gates); n > 0 {
+		fmt.Fprintf(&b, "- Delegations awaiting user approval: %d.\n", n)
+	}
+	if done > 0 {
+		fmt.Fprintf(&b, "- Completed this session: %d.\n", done)
+	}
+	return b.String()
 }
 
 // writeContext writes content to contextDir/name; on failure it returns a diagnostic to inject instead of pointing the agent at a missing file.
@@ -761,9 +800,10 @@ func (s *session) respawn(e *entry, idx, cols, rows int) {
 }
 
 // reload re-reads the config file and converges the roster on it: spawn added roles, tombstone
-// removed ones, respawn changed specs. New panes spawn at cw x ch. The start role's process is
-// never touched. It returns the tombstoned indices (the UI closes their tiles) and whether
-// anything changed (the UI resizes).
+// removed ones, respawn changed specs. New panes spawn at cw x ch. The start role respawns on
+// spec change too (rebriefed via its context-file recap) unless gates are pending; it is never
+// removed or reassigned. It returns the tombstoned indices (the UI closes their tiles) and
+// whether anything changed (the UI resizes).
 func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 	if s.cfg.Path == "" {
 		s.log().Warn("reload refused: running on the built-in config (no file to reload)")
@@ -787,6 +827,7 @@ func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 	}
 
 	var added, removed, respawned []string
+	startRespawned := false
 	// retire roles the file dropped; removal is the user's explicit decision, in-flight or not
 	for i, e := range s.panes {
 		if e.gone || next[e.role.Name] {
@@ -812,10 +853,27 @@ func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 			s.spawnRole(r, cw, ch)
 			added = append(added, r.Name)
 		case r.Name == startName:
-			if specChanged(e.role, r) {
-				s.log().Warn("reload: start role spec changes ignored (restart the deck to apply)", "role", startName)
+			r.Start = true // reassignment stays ignored; the orchestrator always exists
+			switch {
+			case !specChanged(e.role, r):
+				e.role = r
+			case len(s.gates) > 0:
+				// a pending gate's verdict must land in the process that asked for it
+				s.log().Warn("reload: orchestrator respawn skipped, gates pending (rerun once resolved)", "role", startName)
+				e.role = softMerge(e.role, r)
+			default:
+				if _, err := exec.LookPath(r.Command); err != nil {
+					s.log().Error("reload: changed command not found, keeping the old process", "role", r.Name, "command", r.Command)
+					continue
+				}
+				e.role = r
+				_ = e.pane.Close()
+				e.restarts = 0
+				pcw, pch := e.pane.Size()
+				s.respawn(e, i, pcw, pch)
+				respawned = append(respawned, r.Name)
+				startRespawned = true
 			}
-			e.role = softMerge(e.role, r) // prompt/approve/restart changes still land
 		case !specChanged(e.role, r):
 			r.Start = false
 			e.role = r // no process identity change; takes effect on the next task
@@ -860,7 +918,8 @@ func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 	for _, n := range removed {
 		parts = append(parts, "-"+n)
 	}
-	if len(parts) > 0 {
+	// a just-respawned orchestrator learns the roster from its fresh context file instead
+	if len(parts) > 0 && !startRespawned {
 		if st := s.panes[s.startIdx()]; !st.exited {
 			injectLine(st, "[choragos] Team changed: "+strings.Join(parts, ", ")+". Delegate accordingly.")
 		}

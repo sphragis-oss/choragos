@@ -1,6 +1,9 @@
 # Design: live team evolution
 
-Status: proposal (issue #141). Extends the shipped roles-at-runtime
+Status: Part A implemented (orchestrator swap on reload, with the
+recap carried in the boot context file rather than a separate
+injection); Part B is a proposal (issue #141). Extends the shipped
+roles-at-runtime
 mechanism (`choragos reload` / `prefix+C`, v0.6.0, #24): workers can
 already be added, removed, and respawned live by editing the config
 and reloading. Two gaps remain, and one principle frames both:
