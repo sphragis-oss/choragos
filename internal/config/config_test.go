@@ -151,6 +151,37 @@ timeout_action = "explode"
 	}
 }
 
+func TestRosterDefaults(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "solo"
+command = "sh"
+start = true
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Roster.CanPropose() || !c.Roster.NeedsApprove() {
+		t.Fatal("roster defaults must be propose on, approve on")
+	}
+	body += "\n[roster]\npropose = false\napprove = false\n"
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err = config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roster.CanPropose() || c.Roster.NeedsApprove() {
+		t.Fatal("explicit false must disable both")
+	}
+}
+
 func TestBaseURLEnvValidation(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

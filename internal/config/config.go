@@ -96,6 +96,7 @@ type Config struct {
 	Keys        Keys        `toml:"keys"`
 	UI          UI          `toml:"ui"`
 	Checkpoints Checkpoints `toml:"checkpoints"`
+	Roster      Roster      `toml:"roster"`
 	// Pricing maps a model-name prefix to USD per million tokens, for the cost display.
 	Pricing map[string]Price `toml:"pricing"`
 	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
@@ -226,6 +227,18 @@ type Checkpoints struct {
 
 // IsEnabled reports whether delegations snapshot the workspace (default true).
 func (c Checkpoints) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// Roster controls orchestrator-driven roster proposals.
+type Roster struct {
+	Propose *bool `toml:"propose"`
+	Approve *bool `toml:"approve"`
+}
+
+// CanPropose reports whether the orchestrator may propose roster changes (default true).
+func (r Roster) CanPropose() bool { return r.Propose == nil || *r.Propose }
+
+// NeedsApprove reports whether roster proposals pause at a human gate (default true).
+func (r Roster) NeedsApprove() bool { return r.Approve == nil || *r.Approve }
 
 // KeepCount returns how many checkpoints to retain (default 20).
 func (c Checkpoints) KeepCount() int {

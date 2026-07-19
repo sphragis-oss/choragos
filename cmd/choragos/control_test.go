@@ -126,6 +126,66 @@ func TestWorkDoneCmd(t *testing.T) {
 	}
 }
 
+func TestRosterAddCmd(t *testing.T) {
+	if _, err := runCLI(t, rosterAddCmd(), nil); err == nil || !strings.Contains(err.Error(), "--name") {
+		t.Errorf("roster add without flags should demand --name, got: %v", err)
+	}
+	noCmd := rosterAddCmd()
+	if err := noCmd.Flags().Set("name", "tester"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCLI(t, noCmd, nil); err == nil || !strings.Contains(err.Error(), "--command") {
+		t.Errorf("roster add without --command should fail, got: %v", err)
+	}
+
+	sock := filepath.Join(shortRuntimeDir(t), "r.sock")
+	t.Setenv(ipc.EnvSocket, sock)
+	got := fakeDeck(t, sock)
+
+	cmd := rosterAddCmd()
+	for flag, val := range map[string]string{
+		"name": "tester", "command": "cat", "model": "sonnet", "prompt-template": "brief",
+	} {
+		if err := cmd.Flags().Set(flag, val); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range []string{"-u", "-b"} {
+		if err := cmd.Flags().Set("arg", a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := runCLI(t, cmd, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "proposed role tester") {
+		t.Errorf("roster add output = %q", out)
+	}
+	select {
+	case c := <-got:
+		if c.Cmd != "roster-add" || c.RoleName != "tester" || c.RoleCommand != "cat" ||
+			c.RoleModel != "sonnet" || c.RolePrompt != "brief" ||
+			len(c.RoleArgs) != 2 || c.RoleArgs[0] != "-u" || c.RoleArgs[1] != "-b" {
+			t.Errorf("deck received %+v", c)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("deck never received roster-add")
+	}
+
+	// no deck on the socket: the send error surfaces with the running hint
+	t.Setenv(ipc.EnvSocket, filepath.Join(shortRuntimeDir(t), "absent.sock"))
+	dead := rosterAddCmd()
+	for flag, val := range map[string]string{"name": "tester", "command": "cat"} {
+		if err := dead.Flags().Set(flag, val); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runCLI(t, dead, nil); err == nil || !strings.Contains(err.Error(), "is the deck running") {
+		t.Errorf("dead socket should fail with the hint, got: %v", err)
+	}
+}
+
 func TestSessionsLifecycle(t *testing.T) {
 	shortRuntimeDir(t)
 	t.Chdir(t.TempDir())
