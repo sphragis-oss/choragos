@@ -1917,6 +1917,57 @@ func TestRosterAddDisabled(t *testing.T) {
 	}
 }
 
+func TestCheckBudgets(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.panes[1].role.Budget = "0.10"
+	bells := 0
+	m.bellFn = func() { bells++ }
+	m.checkBudgets(budgetMsg{"coder": 0.05})
+	if m.panes[1].overBudget || bells != 0 {
+		t.Fatal("fired below the cap")
+	}
+	m.checkBudgets(budgetMsg{"coder": 0.15})
+	if !m.panes[1].overBudget || bells != 1 {
+		t.Fatalf("overBudget=%v bells=%d, want true/1", m.panes[1].overBudget, bells)
+	}
+	// once per session: a higher cost must not refire
+	m.checkBudgets(budgetMsg{"coder": 0.20})
+	if bells != 1 {
+		t.Fatalf("refired: bells=%d", bells)
+	}
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[0].pane.Render(), "exceeded its budget")
+	}) {
+		t.Fatal("breach not injected into the orchestrator")
+	}
+	// a reload that raises the cap re-arms the trigger
+	m.panes[1].role.Budget = "1.00"
+	m.checkBudgets(budgetMsg{"coder": 0.20})
+	if m.panes[1].overBudget {
+		t.Fatal("raised cap must re-arm")
+	}
+	m.checkBudgets(budgetMsg{"coder": 1.50})
+	if !m.panes[1].overBudget || bells != 2 {
+		t.Fatalf("second breach: overBudget=%v bells=%d, want true/2", m.panes[1].overBudget, bells)
+	}
+}
+
+func TestCheckBudgetsPause(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.panes[1].role.Budget = "0.10"
+	m.panes[1].role.BudgetAction = "pause"
+	m.checkBudgets(budgetMsg{"coder": 0.20})
+	if !m.panes[1].paused {
+		t.Fatal("pause action did not pause the role")
+	}
+	// the user resumes; without a re-arm the same breach must not re-pause
+	m.togglePause(1)
+	m.checkBudgets(budgetMsg{"coder": 0.30})
+	if m.panes[1].paused {
+		t.Fatal("resumed role re-paused without a re-arm")
+	}
+}
+
 func TestRecapNote(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator"))
 	if m.recapNote() != "" {

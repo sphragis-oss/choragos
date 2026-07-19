@@ -33,7 +33,7 @@ func toWireGates(gates []pendingGate) []wire.Gate {
 func (s *session) snapshotEvents() []wire.Event {
 	roster := make([]wire.Role, 0, len(s.panes))
 	for _, e := range s.panes {
-		roster = append(roster, wire.Role{Role: e.role, Exited: e.exited, Gone: e.gone, Waiting: e.waiting, Paused: e.paused, Restarts: e.restarts})
+		roster = append(roster, wire.Role{Role: e.role, Exited: e.exited, Gone: e.gone, Waiting: e.waiting, Paused: e.paused, OverBudget: e.overBudget, Restarts: e.restarts})
 	}
 	return []wire.Event{
 		{Kind: "roster", Roster: roster},
