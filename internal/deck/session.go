@@ -74,6 +74,7 @@ type entry struct {
 	paused        bool // process group SIGSTOPped via prefix+p; resume credits timeouts
 	pausedAt      time.Time
 	pendingInject string // task line held until a fresh-respawned pane finishes booting
+	overBudget    bool   // budget action fired; re-arms when a reload raises the cap
 	// screen caches keyed by the pane's write sequence, so idle panes cost nothing per frame
 	renderSeq   uint64
 	renderPane  *pane.Pane
@@ -541,6 +542,46 @@ func (s *session) runHook(hook, role, task string) {
 			logger.Error("notification hook failed", "role", role, "err", err)
 		}
 	}()
+}
+
+// budgetMsg carries per-role session cost from a gateway snapshot into the loop thread.
+type budgetMsg map[string]float64
+
+// checkBudgets fires each role's budget action once when its session cost crosses the cap.
+func (s *session) checkBudgets(costs budgetMsg) {
+	for i, e := range s.panes {
+		limit := e.role.BudgetUSD()
+		if e.gone || limit <= 0 {
+			continue
+		}
+		c, ok := costs[e.role.Name]
+		if e.overBudget {
+			if ok && c < limit {
+				e.overBudget = false // a reload raised the cap; re-arm
+			}
+			continue
+		}
+		if !ok || c < limit {
+			continue
+		}
+		e.overBudget = true
+		action := e.role.BudgetAction
+		if action == "" {
+			action = "notify"
+		}
+		s.log().Warn("budget exceeded", "role", e.role.Name,
+			"budget", fmt.Sprintf("%.2f", limit), "cost", fmt.Sprintf("%.2f", c), "action", action)
+		if s.bellFn != nil {
+			s.bellFn()
+		}
+		s.runHook(s.cfg.UI.OnBudget, e.role.Name, fmt.Sprintf("$%.2f of $%.2f", c, limit))
+		line := fmt.Sprintf("[choragos] %s exceeded its budget ($%.2f). Wrap up its work, or raise the budget and reload.", e.role.Name, limit)
+		if action == "pause" && !e.paused && !e.exited {
+			s.togglePause(i)
+			line = fmt.Sprintf("[choragos] %s exceeded its budget ($%.2f) and was paused. The user can resume it after deciding.", e.role.Name, limit)
+		}
+		s.injectOrchestrator(line)
+	}
 }
 
 // checkWaiting rings the bell once per transition into waiting-for-input.

@@ -58,7 +58,8 @@ func (s *session) maybeLogTokens() {
 	go s.logTokens()
 }
 
-// logTokens writes one cumulative token line per role so the report survives quit.
+// logTokens writes one cumulative token line per role so the report survives quit,
+// and feeds the priced costs back to the loop thread for budget enforcement.
 func (s *session) logTokens() {
 	client := http.Client{Timeout: time.Second}
 	resp, err := client.Get(s.cfg.Sphragis.BaseURL() + "/metrics")
@@ -70,9 +71,20 @@ func (s *session) logTokens() {
 	if err != nil {
 		return
 	}
-	for role, u := range parseUsage(string(body), nil) {
-		s.log().Info("tokens", "role", role, "in", u.In, "out", u.Out,
-			"cache_creation", u.CacheCreation, "cache_read", u.CacheRead)
+	costs := budgetMsg{}
+	for role, u := range parseUsage(string(body), s.cfg.Pricing) {
+		if u.Cost > 0 {
+			s.log().Info("tokens", "role", role, "in", u.In, "out", u.Out,
+				"cache_creation", u.CacheCreation, "cache_read", u.CacheRead,
+				"cost", fmt.Sprintf("%.4f", u.Cost))
+		} else {
+			s.log().Info("tokens", "role", role, "in", u.In, "out", u.Out,
+				"cache_creation", u.CacheCreation, "cache_read", u.CacheRead)
+		}
+		costs[role] = u.Cost
+	}
+	if len(costs) > 0 {
+		s.send(costs)
 	}
 }
 

@@ -183,6 +183,43 @@ fresh = true
 	}
 }
 
+func TestBudgetValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "ok"
+command = "sh"
+start = true
+budget = "5.00"
+budget_action = "pause"
+
+[[roles]]
+name = "bad"
+command = "sh"
+budget = "-1"
+budget_action = "explode"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roles[0].BudgetUSD() != 5 || c.Roles[0].BudgetAction != "pause" {
+		t.Fatalf("valid budget lost: %+v", c.Roles[0])
+	}
+	if c.Roles[1].Budget != "" || c.Roles[1].BudgetAction != "" {
+		t.Fatalf("invalid values must reset: %+v", c.Roles[1])
+	}
+	if c.Roles[1].BudgetUSD() != 0 {
+		t.Fatal("disabled budget must read as zero")
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("want 2 warnings, got %v", c.Warnings)
+	}
+}
+
 func TestRosterDefaults(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

@@ -145,7 +145,9 @@ itself and the orchestrator hears only outcomes:
 - `.choragos/logs/events.log`: every delegate, work-done, boot injection,
   gateway refusal, and pane exit, as structured slog lines. With the
   gateway on, cumulative per-role token counters are snapshotted into the
-  log every 30s and on quit.
+  log every 30s and on quit; with a `[pricing]` table the snapshots
+  carry the priced `cost`, and a role crossing its `budget` logs one
+  `budget exceeded` event with the cap and the action taken.
 - `choragos report`: aggregates that log (or a saved copy passed as an
   argument) into a per-role table of tasks, completions, busy and average
   task time, first and last activity, and token usage; the token column
@@ -170,7 +172,9 @@ itself and the orchestrator hears only outcomes:
         "avg_seconds": 60,
         "first": "2026-07-13T13:13:39.636+03:00",
         "last": "2026-07-13T13:14:40+03:00",
-        "tokens": {"in": 2000, "out": 300, "cache_creation": 0, "cache_read": 900000}
+        "tokens": {"in": 2000, "out": 300, "cache_creation": 0, "cache_read": 900000},
+        "cost_usd": 1.23,
+        "budget_usd": null
       }
     ]
   }
@@ -179,7 +183,10 @@ itself and the orchestrator hears only outcomes:
   `tokens` is null for roles the gateway never reported (or with the
   gateway off), `busy_seconds`/`avg_seconds` are null with no completed
   tasks, `first`/`last` are null for roles that never showed activity,
-  and `dir` is null when the log predates the deck-starting line.
+  `dir` is null when the log predates the deck-starting line,
+  `cost_usd` is null unless a `[pricing]` table priced the snapshots,
+  and `budget_usd` is null unless the run logged a budget-exceeded
+  event for the role.
 - `.choragos/logs/<role>.log`: each role's plain-text transcript, one
   session per header line with the working directory and start time.
   Lines are appended as they scroll off the live screen (every 15s), so

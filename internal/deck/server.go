@@ -142,6 +142,9 @@ func (srv *server) handle(v any) bool {
 			s.dispatch(msg.cmd)
 		}
 		srv.syncClient()
+	case budgetMsg:
+		s.checkBudgets(msg)
+		srv.syncClient()
 	case gatewayReadyMsg:
 		if msg.err == nil {
 			s.gateway = msg.sup

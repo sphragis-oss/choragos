@@ -32,6 +32,8 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
 | `timeout` | string | `""` | Wall-clock limit per delegation to this role (Go duration, e.g. `"45m"`); empty disables. The timer starts when the task is delivered (after any approval gate) and clears on the matching work-done |
 | `timeout_action` | string | `"notify"` | What a timeout does: `notify` (bell, board `timeout` mark, `on_timeout` hook; the worker keeps running) or `restart` (SIGTERM the role; auto-restart takes over with `restart = "on-failure"`) |
+| `budget` | string | `""` | Session cost cap in USD (e.g. `"5.00"`); needs the gateway and a `[pricing]` table for a cost signal, inert without them. Fires once per session; a reload that raises the cap re-arms it |
+| `budget_action` | string | `"notify"` | What a breach does: `notify` (bell, `over budget` on the card, `on_budget` hook, a notice to the orchestrator) or `pause` (all of that plus SIGSTOP via the pause path; resume with `prefix+p`) |
 | `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); `v` pages the attached brief in-app, `e` opens it in `$VISUAL`/`$EDITOR`, and a rejection is reported back to the orchestrator |
 | `judge` | string | `""` | Machine gate: name of the role that scores this role's completed work. Each delegation loops builder -> judge -> builder until the judge's score reaches `judge_pass` or `judge_rounds` runs out; any ambiguity (unparseable verdict, judge timeout, judge exit, cap) falls closed to a human gate. Empty disables the loop entirely |
 | `judge_pass` | int | `7` | Minimum judge score (1-10) that passes |
@@ -171,6 +173,7 @@ See [keybindings.md](keybindings.md) for what each action does.
 | `on_gate` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation joins the approval queue; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
 | `on_input` | string | `""` | Command run via `sh -c` (background, non-blocking) when an agent transitions to waiting-for-input; `CHORAGOS_ROLE` is in its env |
 | `on_timeout` | string | `""` | Command run via `sh -c` (background, non-blocking) when a delegation outlives its role's `timeout`; `CHORAGOS_ROLE` and `CHORAGOS_TASK` are in its env |
+| `on_budget` | string | `""` | Command run the same way when a role crosses its `budget`; `CHORAGOS_TASK` carries `$<cost> of $<budget>` |
 | `viewer` | string | `"pager"` | How `v` opens briefs/reports: `"pager"` renders in-app, `"editor"` opens `$VISUAL`/`$EDITOR` (pager when both are unset). The board and gate `e` always open the editor |
 
 ### `[ui.theme]`

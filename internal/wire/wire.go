@@ -56,12 +56,13 @@ type Event struct {
 
 // Role mirrors one roster entry for the client.
 type Role struct {
-	Role     config.Role `json:"role"`
-	Exited   bool        `json:"exited"`
-	Gone     bool        `json:"gone"`
-	Waiting  bool        `json:"waiting"`
-	Paused   bool        `json:"paused,omitempty"`
-	Restarts int         `json:"restarts"`
+	Role       config.Role `json:"role"`
+	Exited     bool        `json:"exited"`
+	Gone       bool        `json:"gone"`
+	Waiting    bool        `json:"waiting"`
+	Paused     bool        `json:"paused,omitempty"`
+	OverBudget bool        `json:"over_budget,omitempty"`
+	Restarts   int         `json:"restarts"`
 }
 
 // Task mirrors one task-board event.
