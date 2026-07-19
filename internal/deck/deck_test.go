@@ -1850,11 +1850,16 @@ func TestRosterAddRefusals(t *testing.T) {
 	if e, _ := m.findRole("x"); e != nil {
 		t.Fatal("refused role exists")
 	}
-	// four rapid injections concatenate and wrap arbitrarily on the 40-col
-	// pane, so match on the rows joined back together, not on one row
+}
+
+// TestRosterAddRefusalInjected asserts the injection on its own fixture: a single
+// refusal renders one deterministic line, where the four-in-a-row loop above
+// concatenates, wraps, and scrolls unpredictably on the 40-col pane.
+func TestRosterAddRefusalInjected(t *testing.T) {
+	m, _ := reloadFixture(t, reloadBase)
+	m.dispatch(ipc.Command{Cmd: "roster-add", RoleName: "x"})
 	if !waitFor(func() bool {
-		joined := strings.ReplaceAll(m.panes[0].pane.Render(), "\n", "")
-		return strings.Contains(joined, "Roster proposal refused")
+		return strings.Contains(m.panes[0].pane.Render(), "Roster proposal refused")
 	}) {
 		t.Fatal("refusal not injected into the orchestrator")
 	}
