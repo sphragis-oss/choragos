@@ -3,6 +3,7 @@
 package deck
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,8 +32,25 @@ func Report(path string, w io.Writer) error {
 	return writeReport(w, string(data), path)
 }
 
-// writeReport parses event lines and renders the per-role table.
-func writeReport(w io.Writer, log, path string) error {
+// ReportJSON emits the same summary as a stable JSON document on w.
+func ReportJSON(path string, w io.Writer) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read event log: %w", err)
+	}
+	return writeReportJSON(w, string(data), path)
+}
+
+// reportData is the aggregated run summary shared by the text and JSON renderers.
+type reportData struct {
+	start, end time.Time
+	dir        string
+	order      []string
+	rows       map[string]*reportRow
+}
+
+// aggregateReport parses event lines into the per-role summary.
+func aggregateReport(log, path string) (reportData, error) {
 	rows := map[string]*reportRow{}
 	var order []string
 	row := func(name string) *reportRow {
@@ -105,18 +123,27 @@ func writeReport(w io.Writer, log, path string) error {
 		}
 	}
 	if start.IsZero() {
-		return fmt.Errorf("no events found in %s", path)
+		return reportData{}, fmt.Errorf("no events found in %s", path)
 	}
-	fmt.Fprintf(w, "run %s · wall %s", start.Format("2006-01-02 15:04:05"), end.Sub(start).Round(time.Second))
-	if dir != "" {
-		fmt.Fprintf(w, " · %s", dir)
+	return reportData{start: start, end: end, dir: dir, order: order, rows: rows}, nil
+}
+
+// writeReport renders the per-role table.
+func writeReport(w io.Writer, log, path string) error {
+	d, err := aggregateReport(log, path)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "run %s · wall %s", d.start.Format("2006-01-02 15:04:05"), d.end.Sub(d.start).Round(time.Second))
+	if d.dir != "" {
+		fmt.Fprintf(w, " · %s", d.dir)
 	}
 	fmt.Fprintln(w)
 	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ROLE\tTASKS\tDONE\tBUSY\tAVG\tFIRST\tLAST\tTOKENS")
 	open := 0
-	for _, name := range order {
-		r := rows[name]
+	for _, name := range d.order {
+		r := d.rows[name]
 		open += r.tasks - r.done
 		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n",
 			r.role, r.tasks, r.done, reportDur(r.busy, r.done > 0), reportAvg(r.busy, r.done),
@@ -129,6 +156,72 @@ func writeReport(w io.Writer, log, path string) error {
 		fmt.Fprintf(w, "%d task(s) never reported work-done\n", open)
 	}
 	return nil
+}
+
+// jsonReport is the stable schema of report --json; fields with no data are explicit nulls.
+type jsonReport struct {
+	Start       time.Time  `json:"start"`
+	End         time.Time  `json:"end"`
+	WallSeconds float64    `json:"wall_seconds"`
+	Dir         *string    `json:"dir"`
+	OpenTasks   int        `json:"open_tasks"`
+	Roles       []jsonRole `json:"roles"`
+}
+
+type jsonRole struct {
+	Role        string      `json:"role"`
+	Tasks       int         `json:"tasks"`
+	Done        int         `json:"done"`
+	BusySeconds *float64    `json:"busy_seconds"`
+	AvgSeconds  *float64    `json:"avg_seconds"`
+	First       *time.Time  `json:"first"`
+	Last        *time.Time  `json:"last"`
+	Tokens      *jsonTokens `json:"tokens"`
+}
+
+type jsonTokens struct {
+	In            int64 `json:"in"`
+	Out           int64 `json:"out"`
+	CacheCreation int64 `json:"cache_creation"`
+	CacheRead     int64 `json:"cache_read"`
+}
+
+// writeReportJSON renders the summary as indented JSON.
+func writeReportJSON(w io.Writer, log, path string) error {
+	d, err := aggregateReport(log, path)
+	if err != nil {
+		return err
+	}
+	out := jsonReport{Start: d.start, End: d.end, WallSeconds: d.end.Sub(d.start).Seconds(), Roles: []jsonRole{}}
+	if d.dir != "" {
+		out.Dir = &d.dir
+	}
+	for _, name := range d.order {
+		r := d.rows[name]
+		out.OpenTasks += r.tasks - r.done
+		jr := jsonRole{Role: r.role, Tasks: r.tasks, Done: r.done}
+		if r.done > 0 {
+			busy := r.busy.Seconds()
+			avg := busy / float64(r.done)
+			jr.BusySeconds, jr.AvgSeconds = &busy, &avg
+		}
+		if !r.first.IsZero() {
+			first := r.first
+			jr.First = &first
+		}
+		if !r.last.IsZero() {
+			last := r.last
+			jr.Last = &last
+		}
+		if r.hasTokens {
+			jr.Tokens = &jsonTokens{In: r.usage.In, Out: r.usage.Out,
+				CacheCreation: r.usage.CacheCreation, CacheRead: r.usage.CacheRead}
+		}
+		out.Roles = append(out.Roles, jr)
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 // parseLogfmt splits one slog text line into key=value pairs, unquoting quoted values.
