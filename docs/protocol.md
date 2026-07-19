@@ -145,6 +145,36 @@ itself and the orchestrator hears only outcomes:
   argument) into a per-role table of tasks, completions, busy and average
   task time, first and last activity, and token usage; the token column
   reads n/a for roles the gateway never reported.
+- `choragos report --json`: the same data as one JSON document, for
+  scripts and CI. Fields with no data are explicit nulls, never absent,
+  and new fields are only ever added:
+
+  ```json
+  {
+    "start": "2026-07-13T13:13:35.634+03:00",
+    "end": "2026-07-13T13:16:05.634+03:00",
+    "wall_seconds": 150,
+    "dir": "/tmp/demo",
+    "open_tasks": 1,
+    "roles": [
+      {
+        "role": "coder",
+        "tasks": 2,
+        "done": 1,
+        "busy_seconds": 60,
+        "avg_seconds": 60,
+        "first": "2026-07-13T13:13:39.636+03:00",
+        "last": "2026-07-13T13:14:40+03:00",
+        "tokens": {"in": 2000, "out": 300, "cache_creation": 0, "cache_read": 900000}
+      }
+    ]
+  }
+  ```
+
+  `tokens` is null for roles the gateway never reported (or with the
+  gateway off), `busy_seconds`/`avg_seconds` are null with no completed
+  tasks, `first`/`last` are null for roles that never showed activity,
+  and `dir` is null when the log predates the deck-starting line.
 - `.choragos/logs/<role>.log`: each role's plain-text transcript, one
   session per header line with the working directory and start time.
   Lines are appended as they scroll off the live screen (every 15s), so

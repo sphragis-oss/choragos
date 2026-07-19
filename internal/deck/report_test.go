@@ -3,6 +3,7 @@
 package deck
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,49 @@ func TestWriteReport(t *testing.T) {
 
 func TestWriteReportEmpty(t *testing.T) {
 	if err := writeReport(&strings.Builder{}, "", "x.log"); err == nil {
+		t.Fatal("empty log should error")
+	}
+}
+
+func TestWriteReportJSON(t *testing.T) {
+	var sb strings.Builder
+	if err := writeReportJSON(&sb, sampleEvents, "events.log"); err != nil {
+		t.Fatal(err)
+	}
+	var got jsonReport
+	if err := json.Unmarshal([]byte(sb.String()), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, sb.String())
+	}
+	if got.WallSeconds != 150 || got.OpenTasks != 1 || got.Dir == nil || *got.Dir != "/tmp/demo" {
+		t.Fatalf("header = wall %v open %d dir %v", got.WallSeconds, got.OpenTasks, got.Dir)
+	}
+	byRole := map[string]jsonRole{}
+	for _, r := range got.Roles {
+		byRole[r.Role] = r
+	}
+	coder := byRole["coder"]
+	if coder.Tasks != 2 || coder.Done != 1 {
+		t.Fatalf("coder tasks/done = %d/%d, want 2/1", coder.Tasks, coder.Done)
+	}
+	if coder.BusySeconds == nil || *coder.BusySeconds != 60 || coder.AvgSeconds == nil || *coder.AvgSeconds != 60 {
+		t.Fatalf("coder busy/avg = %v/%v, want 60/60", coder.BusySeconds, coder.AvgSeconds)
+	}
+	// last cumulative snapshot wins
+	if coder.Tokens == nil || coder.Tokens.In != 2000 || coder.Tokens.Out != 300 || coder.Tokens.CacheRead != 900000 {
+		t.Fatalf("coder tokens = %+v", coder.Tokens)
+	}
+	orch := byRole["orchestrator"]
+	if orch.Tokens != nil {
+		t.Fatal("gateway-less role must have null tokens")
+	}
+	if orch.First == nil || orch.Last == nil {
+		t.Fatal("active role must carry first/last timestamps")
+	}
+	// no completions: busy and avg are explicit nulls in the document
+	if orch.BusySeconds != nil || !strings.Contains(sb.String(), `"busy_seconds": null`) {
+		t.Fatalf("busy_seconds must be an explicit null:\n%s", sb.String())
+	}
+	if err := writeReportJSON(&strings.Builder{}, "", "x.log"); err == nil {
 		t.Fatal("empty log should error")
 	}
 }
