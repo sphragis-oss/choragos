@@ -1,5 +1,41 @@
 # Security Policy
 
+## Threat model
+
+Choragos runs AI coding agents as regular child processes of your user, the
+same way you would run `claude` or `aider` from a shell. It is not a sandbox
+and does not claim to be one.
+
+What Choragos provides:
+
+- **Least privilege per role, environment only.** `env_allow` / `env_deny`
+  filter the environment a role's process receives, so a reviewer never gets
+  your `AWS_*` credentials in its env. This is process-env hygiene, not
+  isolation.
+- **Approval gates.** Human (`approve`) and machine (`judge`) gates hold a
+  delegation before it reaches a role, and any judge ambiguity falls closed
+  to a human gate.
+- **Checkpoints.** Agent file changes are checkpointed with git plumbing and
+  can be rolled back without touching history.
+- **Gateway in the LLM path (optional).** With Sphragis enabled, each worker
+  is launched with its LLM base URL pointed at the local gateway for PII
+  redaction and a tamper-evident audit log, and delegation is refused while
+  the gateway is down.
+
+What Choragos explicitly does not prevent:
+
+- An agent reading any file your user can read (`~/.ssh`, dotfiles,
+  repository secrets, local config).
+- An agent reaching the network directly (cloud instance metadata, arbitrary
+  endpoints). `ANTHROPIC_BASE_URL` routes cooperating clients through the
+  gateway; it is not egress enforcement.
+- An agent executing any binary your user can execute.
+
+OS-level isolation belongs to the OS. A role's `command` is arbitrary, so it
+can be a wrapper such as `docker run`, `sandbox-exec`, or `bwrap`, and the
+whole deck can run inside a container or VM. Choragos composes with those
+layers instead of reimplementing them.
+
 ## Reporting a vulnerability
 
 Please report security vulnerabilities privately. Do not open a public issue for
