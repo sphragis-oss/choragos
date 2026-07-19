@@ -104,6 +104,11 @@ session and its agents; used by `choragos kill`).
    role's PTY, then a separate Enter. Full prompts travel as files because
    multi-line pastes do not submit reliably in agent TUIs.
 
+For roles with `fresh = true` the deck respawns the role between steps 4
+and 5 and holds the injection until the fresh pane finishes booting, so
+every task (including judge retry rounds) starts with clean agent
+context; the task file carries everything the new process needs.
+
 ## What the deck does with a work-done
 
 Routes it to the `start` role: `A worker reports: <summary>` plus

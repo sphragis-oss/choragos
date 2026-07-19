@@ -27,6 +27,7 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `env_allow` | array | `[]` | Switch the role to an env allowlist: baseline vars (`PATH`, `HOME`, `TERM`, `SHELL`, `LANG`, `LC_*`, `XDG_*`, ...) plus these names or `PREFIX_*` patterns |
 | `env_deny` | array | `[]` | Strip matching vars (exact or `PREFIX_*`) in either mode; wins over `env_allow` |
 | `base_url_env` | array | `["ANTHROPIC_BASE_URL"]` | Env var name(s) that receive this role's gateway URL when the gateway is on; set for non-Anthropic CLIs, e.g. `["OPENAI_BASE_URL"]` |
+| `fresh` | bool | `false` | Respawn the role before every delegation, so each task starts with clean agent context; the task waits for the fresh pane's boot, and nothing is lost because tasks travel as files. Judge retry rounds respawn too. Workers only (warned and ignored on the start role) |
 | `restart` | string | `""` | `"on-failure"` respawns the role in place when its process exits non-zero (or dies by signal); clean exits and deck shutdown are respected |
 | `restart_retries` | int | `3` | Auto-restart budget per role, so a broken command cannot crash-loop; a manual `prefix+R` resets it |
 | `timeout` | string | `""` | Wall-clock limit per delegation to this role (Go duration, e.g. `"45m"`); empty disables. The timer starts when the task is delivered (after any approval gate) and clears on the matching work-done |

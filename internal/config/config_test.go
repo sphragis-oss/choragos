@@ -151,6 +151,38 @@ timeout_action = "explode"
 	}
 }
 
+func TestFreshValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "sh"
+start = true
+fresh = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+fresh = true
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roles[0].Fresh {
+		t.Fatal("fresh must be ignored on the start role")
+	}
+	if !c.Roles[1].Fresh {
+		t.Fatal("fresh lost on a worker")
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("want 1 warning, got %v", c.Warnings)
+	}
+}
+
 func TestRosterDefaults(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

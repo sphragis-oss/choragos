@@ -1917,6 +1917,60 @@ func TestRosterAddDisabled(t *testing.T) {
 	}
 }
 
+func TestFreshDelegationRespawnsAndDelivers(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.panes[1].role.Fresh = true
+	gen := m.panes[1].gen
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "FRESH-1"})
+	if m.panes[1].gen != gen+1 {
+		t.Fatalf("gen = %d, want %d (fresh must respawn before delivery)", m.panes[1].gen, gen+1)
+	}
+	if m.panes[1].pendingInject == "" {
+		t.Fatal("task injection must be held for the fresh pane's boot")
+	}
+	// board records the delegation immediately, delivery follows the boot
+	if len(m.board) != 1 || m.board[0].id != "T1" {
+		t.Fatalf("board = %+v", m.board)
+	}
+	// drive the tick loop by hand: boot the fresh pane, verify, then flush the task
+	deadline := time.After(8 * time.Second)
+	for m.panes[1].pendingInject != "" {
+		select {
+		case <-deadline:
+			t.Fatal("pending task never flushed after boot")
+		default:
+			m.bootPanes()
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[1].pane.Render(), "worker-task-coder.md")
+	}) {
+		t.Fatal("task line not injected into the fresh pane")
+	}
+	// a second delegation respawns again: clean context per task, not per session
+	m.resolveTask("T1")
+	gen = m.panes[1].gen
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "FRESH-2"})
+	if m.panes[1].gen != gen+1 {
+		t.Fatal("second delegation must respawn again")
+	}
+}
+
+func TestNonFreshDeliveryUnchanged(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	gen := m.panes[1].gen
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "PLAIN-1"})
+	if m.panes[1].gen != gen || m.panes[1].pendingInject != "" {
+		t.Fatal("non-fresh role must deliver in place")
+	}
+	if !waitFor(func() bool {
+		return strings.Contains(m.panes[1].pane.Render(), "worker-task-coder.md")
+	}) {
+		t.Fatal("task line not injected")
+	}
+}
+
 func TestRecapNote(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator"))
 	if m.recapNote() != "" {
