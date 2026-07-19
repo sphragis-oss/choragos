@@ -67,6 +67,42 @@ start = true
 	}
 }
 
+func TestModelFlagName(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "default"
+command = "claude"
+model = "opus"
+start = true
+
+[[roles]]
+name = "renamed"
+command = "mycli"
+model = "opus"
+model_flag = "-m"
+
+[[roles]]
+name = "optout"
+command = "cat"
+model = "opus"
+model_flag = ""
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"default": "--model", "renamed": "-m", "optout": ""}
+	for _, r := range c.Roles {
+		if got := r.ModelFlagName(); got != want[r.Name] {
+			t.Errorf("role %s: ModelFlagName = %q, want %q", r.Name, got, want[r.Name])
+		}
+	}
+}
+
 func TestLoadPricing(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

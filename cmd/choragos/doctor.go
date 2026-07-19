@@ -20,6 +20,9 @@ import (
 // maxSocketPath is a portable bound for sun_path (104 on darwin, 108 on linux).
 const maxSocketPath = 100
 
+// modelAwareCLI lists agent CLIs known to accept --model.
+var modelAwareCLI = map[string]bool{"claude": true, "agy": true, "codex": true}
+
 func doctorCmd() *cobra.Command {
 	var cfgPath string
 	cmd := &cobra.Command{
@@ -64,6 +67,9 @@ func runDoctor(out io.Writer, cfgPath string) int {
 			report("FAIL", "role:"+r.Name, fmt.Sprintf("command %q not found in PATH (shell aliases do not resolve)", r.Command))
 		} else {
 			report("OK", "role:"+r.Name, r.Command)
+		}
+		if r.Model != "" && r.ModelFlag == nil && !modelAwareCLI[filepath.Base(r.Command)] {
+			report("WARN", "role:"+r.Name, fmt.Sprintf("model %q is passed as --model but %q is not a known model-aware CLI; set model_flag to the right flag, or \"\" to not pass it", r.Model, r.Command))
 		}
 		if r.Judge == "" {
 			continue

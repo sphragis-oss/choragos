@@ -71,6 +71,14 @@ func TestRoleArgsAppendsModel(t *testing.T) {
 	if bare := roleArgs(config.Role{Command: "sh"}); len(bare) != 0 {
 		t.Fatalf("want no args without model, got %v", bare)
 	}
+	short := "-m"
+	if got := roleArgs(config.Role{Command: "mycli", Model: "opus", ModelFlag: &short}); strings.Join(got, " ") != "-m opus" {
+		t.Fatalf("custom model_flag: roleArgs = %v", got)
+	}
+	none := ""
+	if got := roleArgs(config.Role{Command: "cat", Model: "opus", ModelFlag: &none}); len(got) != 0 {
+		t.Fatalf("empty model_flag must drop the model, got %v", got)
+	}
 }
 
 func TestKeyBytes(t *testing.T) {

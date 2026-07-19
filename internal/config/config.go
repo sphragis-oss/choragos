@@ -23,8 +23,10 @@ type Role struct {
 	Command string   `toml:"command"`
 	Args    []string `toml:"args"`
 	Model   string   `toml:"model"`
-	Prompt  string   `toml:"prompt_template"`
-	Start   bool     `toml:"start"`
+	// flag that passes model to the command (default "--model"); "" = do not pass
+	ModelFlag *string `toml:"model_flag"`
+	Prompt    string  `toml:"prompt_template"`
+	Start     bool    `toml:"start"`
 	// extra markers appended to the built-in status heuristics for this agent's TUI
 	InputPrompts  []string `toml:"input_prompts"`
 	ChromeMarkers []string `toml:"chrome_markers"`
@@ -67,6 +69,14 @@ func (r Role) TimeoutDuration() time.Duration {
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
 func (r Role) RestartOnFailure() bool { return r.Restart == "on-failure" }
+
+// ModelFlagName returns the flag that passes model (default "--model"); empty means do not pass it.
+func (r Role) ModelFlagName() string {
+	if r.ModelFlag == nil {
+		return "--model"
+	}
+	return *r.ModelFlag
+}
 
 // BaseURLEnvNames returns the env vars that receive this role's agent URL.
 func (r Role) BaseURLEnvNames() []string {
