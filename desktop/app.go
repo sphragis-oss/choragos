@@ -82,6 +82,8 @@ type Role struct {
 	Gone    bool   `json:"gone"`
 	Waiting bool   `json:"waiting"`
 	Paused  bool   `json:"paused"`
+	// budget breach flag mirrored from the deck's card marker
+	OverBudget bool `json:"overBudget"`
 }
 
 func toRoles(in []wire.Role) []Role {
@@ -90,6 +92,7 @@ func toRoles(in []wire.Role) []Role {
 		out = append(out, Role{
 			Name: r.Role.Name, Start: r.Role.Start, Model: r.Role.Model,
 			Exited: r.Exited, Gone: r.Gone, Waiting: r.Waiting, Paused: r.Paused,
+			OverBudget: r.OverBudget,
 		})
 	}
 	return out
@@ -107,6 +110,8 @@ type Task struct {
 	DoneAt int64  `json:"doneAt"`
 	Round  int    `json:"round"`
 	Score  string `json:"score"`
+	// delegate rows: outlived the role's timeout before any work-done
+	TimedOut bool `json:"timedOut"`
 }
 
 func toTasks(in []wire.Task) []Task {
@@ -115,7 +120,7 @@ func toTasks(in []wire.Task) []Task {
 		out = append(out, Task{
 			At: t.At / 1e6, Kind: t.Kind, ID: t.ID, To: t.To,
 			Task: t.Task, File: t.File, Done: t.Done, DoneAt: t.DoneAt / 1e6,
-			Round: t.Round, Score: t.Score,
+			Round: t.Round, Score: t.Score, TimedOut: t.TimedOut,
 		})
 	}
 	return out

@@ -11,7 +11,7 @@ import (
 func toWireTasks(board []taskEvent) []wire.Task {
 	out := make([]wire.Task, 0, len(board))
 	for _, ev := range board {
-		w := wire.Task{At: ev.at.UnixNano(), Kind: ev.kind, ID: ev.id, To: ev.to, Task: ev.task, File: ev.file, Done: ev.done, Round: ev.round, Score: ev.score}
+		w := wire.Task{At: ev.at.UnixNano(), Kind: ev.kind, ID: ev.id, To: ev.to, Task: ev.task, File: ev.file, Done: ev.done, Round: ev.round, Score: ev.score, TimedOut: ev.timedOut}
 		if !ev.doneAt.IsZero() {
 			w.DoneAt = ev.doneAt.UnixNano()
 		}

@@ -175,6 +175,12 @@ function renderCards() {
     stateLine.className = "state";
     stateLine.textContent = st.label;
     card.append(row, stateLine);
+    if (r.overBudget) {
+      const budget = document.createElement("div");
+      budget.className = "state budget";
+      budget.textContent = "over budget";
+      card.append(budget);
+    }
     if (idx === state.active && !r.gone) {
       const actions = document.createElement("div");
       actions.className = "role-actions";
@@ -256,7 +262,10 @@ function renderBoard() {
       task.appendChild(file);
     }
     const status = document.createElement("span");
-    if (t.kind === "delegate" && !t.doneAt) {
+    if (t.kind === "delegate" && !t.doneAt && t.timedOut) {
+      status.className = "status timeout";
+      status.textContent = "timeout";
+    } else if (t.kind === "delegate" && !t.doneAt) {
       status.className = "status pending";
       status.textContent = "pending";
     } else if (t.kind === "delegate") {

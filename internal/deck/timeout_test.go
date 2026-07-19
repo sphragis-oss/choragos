@@ -77,3 +77,12 @@ func TestCheckTimeoutsRestartTerminatesWorker(t *testing.T) {
 		t.Fatal("timeout_action=restart did not terminate the worker")
 	}
 }
+
+func TestToWireTasksCarriesTimeout(t *testing.T) {
+	ev := expiredDelegate("coder")
+	ev.timedOut = true
+	w := toWireTasks([]taskEvent{ev})
+	if len(w) != 1 || !w[0].TimedOut {
+		t.Fatalf("wire task = %+v, want TimedOut", w)
+	}
+}

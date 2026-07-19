@@ -179,6 +179,8 @@ button.danger:hover, button.danger.armed { border-color: var(--danger); color: v
 #board-rows .trow.head { color: var(--dim); }
 #board-rows .status.done { color: var(--working); }
 #board-rows .status.pending { color: var(--waiting); }
+#board-rows .status.timeout { color: var(--danger); }
+.card .state.budget { color: var(--waiting); }
 #board-rows .file { color: var(--accent); cursor: pointer; }
 
 .star {
