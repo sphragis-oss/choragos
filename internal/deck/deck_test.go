@@ -2026,6 +2026,53 @@ func TestNonFreshDeliveryUnchanged(t *testing.T) {
 	}
 }
 
+func writeHandoff(t *testing.T, role string) {
+	t.Helper()
+	if err := os.MkdirAll(contextDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(contextDir, "handoff-"+role+".md"), []byte("decisions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func taskFile(t *testing.T, role string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(contextDir, "worker-task-"+role+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestFreshHandoffAttached(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.panes[1].role.Fresh = true
+	writeHandoff(t, "coder")
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T"})
+	if !strings.Contains(taskFile(t, "coder"), "Read "+filepath.Join(contextDir, "handoff-coder.md")) {
+		t.Fatal("fresh task file must reference the orchestrator's handoff")
+	}
+}
+
+func TestFreshHandoffAbsentFileSkipped(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	m.panes[1].role.Fresh = true
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T"})
+	if strings.Contains(taskFile(t, "coder"), "handoff-coder.md") {
+		t.Fatal("no handoff file, no handoff reference")
+	}
+}
+
+func TestHandoffIgnoredForNonFresh(t *testing.T) {
+	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
+	writeHandoff(t, "coder")
+	m.dispatch(ipc.Command{Cmd: "delegate", To: []string{"coder"}, Task: "T"})
+	if strings.Contains(taskFile(t, "coder"), "handoff-coder.md") {
+		t.Fatal("non-fresh roles keep context; handoff must not attach")
+	}
+}
+
 func TestCheckBudgets(t *testing.T) {
 	m := newTestModel(startCatPanes(t, "orchestrator", "coder"))
 	m.panes[1].role.Budget = "0.10"

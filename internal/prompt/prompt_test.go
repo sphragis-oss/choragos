@@ -35,6 +35,25 @@ func TestOrchestratorContext(t *testing.T) {
 	if strings.Contains(c, "- **orchestrator**") {
 		t.Error("start role must not list itself as an available agent")
 	}
+	if strings.Contains(c, "## Handoff for fresh agents") {
+		t.Error("handoff section must be absent without fresh roles")
+	}
+}
+
+func TestOrchestratorContextFreshHandoff(t *testing.T) {
+	cfg := testCfg()
+	cfg.Roles[1].Fresh = true
+	c := prompt.OrchestratorContext(cfg)
+	for _, want := range []string{
+		"- **coder** (fresh: clean context every task)",
+		"- **reviewer**\n",
+		"## Handoff for fresh agents",
+		".choragos/handoff-<role>.md",
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("orchestrator context missing %q", want)
+		}
+	}
 }
 
 func TestWorkerTask(t *testing.T) {
