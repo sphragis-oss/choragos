@@ -19,7 +19,8 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `name` | string | required | Unique role name; targeted by `choragos delegate --to <name>` |
 | `command` | string | required | Agent binary, resolved on PATH (shell aliases do not resolve) |
 | `args` | array | `[]` | Extra argv passed to the command |
-| `model` | string | `""` | Appended as `--model <value>` when set |
+| `model` | string | `""` | Appended as `<model_flag> <value>` when set |
+| `model_flag` | string | `"--model"` | Flag that passes `model` to the command; set for CLIs that name it differently (e.g. `"-m"`), or `""` for commands that take no model flag (`doctor` warns when `model` is set on an unknown CLI without it) |
 | `prompt_template` | string | `""` | Role brief injected at boot and prefixed to delegated tasks |
 | `start` | bool | `false` | Marks the orchestrator: receives the delegation protocol and `work-done` reports; exactly one role should set it |
 | `input_prompts` | array | `[]` | Extra markers (substring, case-insensitive) that mean "blocked waiting for input", added to the built-ins |
@@ -283,7 +284,7 @@ Edit the config file, then `choragos reload` (or `prefix+C` in the deck):
 the deck re-reads the file it was started with and converges the team on
 it by role name. Added roles spawn and get their boot brief; removed roles
 are stopped gracefully and disappear from the sidebar and delegation
-targets; a changed `command`/`args`/`model`/`env_*` respawns that role
+targets; a changed `command`/`args`/`model`/`model_flag`/`env_*` respawns that role
 with the new spec; changed `prompt_template`/`approve`/`restart*` apply
 without a restart, on the next task.
 

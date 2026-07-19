@@ -1114,6 +1114,7 @@ func (s *session) spawnRole(r config.Role, cw, ch int) {
 // specChanged reports whether a role change needs a process restart (command line or env identity).
 func specChanged(a, b config.Role) bool {
 	return a.Command != b.Command || a.Model != b.Model ||
+		a.ModelFlagName() != b.ModelFlagName() ||
 		!slices.Equal(a.Args, b.Args) ||
 		!slices.Equal(a.EnvAllow, b.EnvAllow) ||
 		!slices.Equal(a.EnvDeny, b.EnvDeny) ||
@@ -1307,8 +1308,8 @@ func newEventLog() (*slog.Logger, io.Closer) {
 
 func roleArgs(r config.Role) []string {
 	args := append([]string{}, r.Args...)
-	if r.Model != "" {
-		args = append(args, "--model", r.Model)
+	if f := r.ModelFlagName(); r.Model != "" && f != "" {
+		args = append(args, f, r.Model)
 	}
 	return args
 }
