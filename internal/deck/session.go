@@ -901,7 +901,8 @@ func specChanged(a, b config.Role) bool {
 	return a.Command != b.Command || a.Model != b.Model ||
 		!slices.Equal(a.Args, b.Args) ||
 		!slices.Equal(a.EnvAllow, b.EnvAllow) ||
-		!slices.Equal(a.EnvDeny, b.EnvDeny)
+		!slices.Equal(a.EnvDeny, b.EnvDeny) ||
+		!slices.Equal(a.BaseURLEnv, b.BaseURLEnv)
 }
 
 // softMerge keeps old's process identity and takes upd's restart-free fields.
@@ -980,7 +981,9 @@ func roleEnv(r config.Role, socket, baseURL string) []string {
 	}
 	env = append(env, ipc.EnvSocket+"="+socket)
 	if baseURL != "" {
-		env = append(env, "ANTHROPIC_BASE_URL="+agentURL(baseURL, r.Name))
+		for _, name := range r.BaseURLEnvNames() {
+			env = append(env, name+"="+agentURL(baseURL, r.Name))
+		}
 	}
 	return env
 }

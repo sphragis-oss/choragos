@@ -32,6 +32,8 @@ type Role struct {
 	// (exact names or "PREFIX_*" patterns); env_deny strips matches in either mode
 	EnvAllow []string `toml:"env_allow"`
 	EnvDeny  []string `toml:"env_deny"`
+	// gateway wiring: env var name(s) that receive this role's agent URL (default ANTHROPIC_BASE_URL)
+	BaseURLEnv []string `toml:"base_url_env"`
 	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
 	Restart        string `toml:"restart"`
 	RestartRetries int    `toml:"restart_retries"`
@@ -54,6 +56,14 @@ func (r Role) TimeoutDuration() time.Duration {
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
 func (r Role) RestartOnFailure() bool { return r.Restart == "on-failure" }
+
+// BaseURLEnvNames returns the env vars that receive this role's agent URL.
+func (r Role) BaseURLEnvNames() []string {
+	if len(r.BaseURLEnv) > 0 {
+		return r.BaseURLEnv
+	}
+	return []string{"ANTHROPIC_BASE_URL"}
+}
 
 // JudgeCap returns the max builder->judge rounds (default 3), so a failing loop cannot run forever.
 func (r Role) JudgeCap() int {
@@ -361,6 +371,13 @@ func Load(path string) (Config, error) {
 		if a := r.TimeoutAction; a != "" && a != "notify" && a != "restart" {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown timeout_action %q (notify or restart); using notify", path, r.Name, a))
 			r.TimeoutAction = ""
+		}
+		for _, n := range r.BaseURLEnv {
+			if n == "" || strings.ContainsAny(n, "= \t") {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: invalid base_url_env name %q; using the default", path, r.Name, n))
+				r.BaseURLEnv = nil
+				break
+			}
 		}
 		if r.Judge != "" {
 			if r.Judge == r.Name {

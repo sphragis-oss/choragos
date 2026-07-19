@@ -725,6 +725,16 @@ func TestRoleEnvIsolation(t *testing.T) {
 	if has(env, "CHOR_TEST_TOKEN") {
 		t.Fatal("env_deny must win over env_allow")
 	}
+	// base_url_env redirects the agent URL to the named vars instead of the default
+	env = roleEnv(config.Role{BaseURLEnv: []string{"OPENAI_BASE_URL", "OPENAI_API_BASE"}}, "/tmp/s.sock", "http://gw")
+	if !has(env, "OPENAI_BASE_URL") || !has(env, "OPENAI_API_BASE") || has(env, "ANTHROPIC_BASE_URL") {
+		t.Fatal("base_url_env must replace the default injection, not add to it")
+	}
+	// gateway off: nothing injected regardless of base_url_env
+	env = roleEnv(config.Role{BaseURLEnv: []string{"OPENAI_BASE_URL"}}, "/tmp/s.sock", "")
+	if has(env, "OPENAI_BASE_URL") {
+		t.Fatal("no gateway URL means no injection")
+	}
 }
 
 func TestBootVerifyAndRetry(t *testing.T) {
