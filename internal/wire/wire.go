@@ -77,6 +77,8 @@ type Task struct {
 	DoneAt int64  `json:"da,omitempty"`
 	Round  int    `json:"r,omitempty"`  // judge loop round; 0 = unjudged
 	Score  string `json:"sc,omitempty"` // judge verdict once parsed, e.g. "6/10"
+	// delegate rows: outlived the role's timeout before any work-done
+	TimedOut bool `json:"tm,omitempty"`
 }
 
 // Gate mirrors one pending approval gate.
