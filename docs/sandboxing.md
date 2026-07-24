@@ -110,6 +110,30 @@ exec sandbox-exec -D WS="$PWD" -D TMP="${TMPDIR:-/tmp}" -f sandbox/coder.sb clau
 Reads stay open (deny-read profiles usually break the CLI itself); this
 contains file damage, not exfiltration.
 
+To turn a `owns_files` claim (a detection tripwire, see
+`docs/design-write-ownership.md`) into a real wall, add a per-role deny
+for the owned file to every non-owner role's profile:
+
+```scheme
+; coder.sb: workspace-confined AND barred from the QA-owned ledger
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write* (subpath (param "WS")) (subpath "/private/tmp")
+  (subpath (param "TMP")) (literal "/dev/null") (subpath "/dev/tty"))
+(deny file-write* (literal (param "OWNED")))
+```
+
+```bash
+exec sandbox-exec -D WS="$PWD" -D TMP="${TMPDIR:-/tmp}" \
+  -D OWNED="$PWD/defects.md" -f sandbox/coder.sb claude "$@"
+```
+
+The later `deny` wins over the workspace `allow`, so the role keeps its
+normal write range minus the owned file. The denied write surfaces as an
+opaque CLI error, which is why the prompt clause and the tripwire stay
+on even when the sandbox does the real enforcement.
+
 ## Whole deck: container or VM
 
 The strongest simple boundary: run everything inside, so sockets, task

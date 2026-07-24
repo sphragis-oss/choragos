@@ -35,7 +35,7 @@ func startOwnModel(t *testing.T, dev config.Role) (*Model, []*entry) {
 		go func(p *pane.Pane) { _ = p.Stream(nil) }(e.pane)
 	}
 	m := newTestModel(panes)
-	m.session.cfg = cfg
+	m.cfg = cfg
 	return m, panes
 }
 
