@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-24
+
+Write-partitioned coordination files: separation of duties for agents.
+
+### Added
+- Write ownership: `owns_files` on a role makes it the sole writer of
+  workspace-relative coordination files (the QA-owns-`defects.md`
+  pattern), so a coder cannot close its own bugs and the orchestrator
+  cannot declare victory past an open ledger. Every role's prompts
+  carry the ownership map, owned files are fingerprinted around each
+  delegation, and a change by a non-owner holds that work-done at a
+  human gate (judged delegations fail their loop closed); a change
+  while the owner also had a task in flight only logs and warns.
+  Fail-closed load validation: workspace-relative paths only, no
+  `.choragos/` claims, exactly one owner per file. Design note in
+  `docs/design-write-ownership.md`. (#167, #169)
+- `defects-flow` init template: orchestrator + coder + QA (owns
+  `defects.md`) + adversary, wired for the ownership flow. (#169)
+- `choragos doctor` warns when a non-owner role's `prompt_template`
+  instructs writing an owned file; read references and explicit
+  prohibitions stay quiet, and the shipped templates are covered by a
+  doctor regression test. (#169, #172)
+- `docs/sandboxing.md`: per-role seatbelt deny recipe that turns an
+  ownership claim into OS-level prevention. (#169)
+- README: guardrails section (human gate, judge loop, write ownership,
+  checkpoints, timeouts and budgets) and a new demo gif built around
+  the ownership gate. (#170, #171)
+
+### Changed
+- Homebrew distribution migrated from the deprecated GoReleaser
+  `brews` formula to a cask, keeping completions and manpages; on
+  macOS the install strips the quarantine bit so the unsigned binary
+  runs.
+- deps: `x/ansi` 0.11.7 with the `cellbuf` 0.0.15 / `x/term` 0.2.2
+  API companions; `x/text` 0.39.0 for GO-2026-5970. (#166, #168)
+
+### Fixed
+- Ownership gates render their own overlay title and hint instead of
+  the judge-loop copy. (#170, #171)
+- `dependency-review` CI failed on every dependency-changing PR: the
+  action's OpenSSF scorecard fetch needed `api.deps.dev` and
+  `api.securityscorecards.dev` in the harden-runner egress
+  allowlist. (#168)
+
 ## [0.13.0] - 2026-07-19
 
 Team evolution, cost control, and clean context per task.
@@ -449,7 +493,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/sphragis-oss/choragos/compare/v0.11.1...v0.11.2
