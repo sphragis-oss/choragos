@@ -11,7 +11,9 @@ accounts. The judge loop (design-judge-loop.md) gives cross-model
 verdicts on a task; ownership gives write-scoped coordination state.
 They compose and neither changes the other's defaults.
 
-Status: proposed, not implemented.
+Status: implemented; this note is the behavior reference,
+docs/configuration.md has the keys. The doctor check shipped with a
+write-hint refinement (see the doctor section).
 
 ## Configuration
 
@@ -123,11 +125,16 @@ while claiming a file is protected is the one forbidden behavior.
 ## `choragos doctor`
 
 One new WARN, alongside the existing judge self-agreement warning.
-Detecting "mentions the file in a writing context" is not feasible, so
-the check is simpler and honest: WARN whenever a non-owner's
-`prompt_template` references an owned filename at all, with a message
-saying the instruction may belong on the owner instead. Reading is
-legitimate, hence WARN and not FAIL.
+The first cut warned on any mention of an owned filename in a
+non-owner's `prompt_template`, which made the shipped `defects-flow`
+template warn three times out of the box: legitimate read references
+("fix defects listed in defects.md") drowned the signal. The shipped
+check is a sentence-level heuristic instead: WARN only when the
+filename appears next to a write verb (write, edit, update, close,
+record, ...) with no negation in the same sentence ("never edit it"
+stays quiet). Still WARN-grade and best-effort by design; reading is
+legitimate, prevention lives in the detection layer, and the shipped
+templates are covered by a doctor regression test.
 Duplicate claims are a load FAIL (see Configuration), so doctor
 reports them through the existing config check.
 
