@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -70,6 +71,11 @@ func runDoctor(out io.Writer, cfgPath string) int {
 		}
 		if r.Model != "" && r.ModelFlag == nil && !modelAwareCLI[filepath.Base(r.Command)] {
 			report("WARN", "role:"+r.Name, fmt.Sprintf("model %q is passed as --model but %q is not a known model-aware CLI; set model_flag to the right flag, or \"\" to not pass it", r.Model, r.Command))
+		}
+		for p, owner := range cfg.OwnedFiles() {
+			if owner != r.Name && strings.Contains(r.Prompt, filepath.Base(p)) {
+				report("WARN", "ownership:"+r.Name, fmt.Sprintf("prompt_template mentions %q, which %q owns; reads are fine, but a write instruction belongs on the owner", filepath.Base(p), owner))
+			}
 		}
 		if r.Judge == "" {
 			continue
