@@ -970,6 +970,9 @@ func (m *Model) renderGate(w, h int) string {
 	if g.reason != "" {
 		title = "judge loop needs a decision"
 	}
+	if g.ownership {
+		title = "write ownership needs a decision"
+	}
 	if g.cmd.Cmd == "roster-add" {
 		title = "roster proposal awaiting approval"
 	}
@@ -997,6 +1000,9 @@ func (m *Model) renderGate(w, h int) string {
 	case g.reason != "":
 		keys = "[y] accept the result   [n] reject"
 		hint = "the autonomous loop stopped; accept hands the last result to the orchestrator"
+		if g.ownership {
+			hint = "a non-owner changed an owned file; accept hands the result to the orchestrator"
+		}
 		if g.report != "" {
 			keys = "[y] accept the result   [v] view report   [n] reject"
 		}
