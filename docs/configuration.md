@@ -39,6 +39,7 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `judge` | string | `""` | Machine gate: name of the role that scores this role's completed work. Each delegation loops builder -> judge -> builder until the judge's score reaches `judge_pass` or `judge_rounds` runs out; any ambiguity (unparseable verdict, judge timeout, judge exit, cap) falls closed to a human gate. Empty disables the loop entirely |
 | `judge_pass` | int | `7` | Minimum judge score (1-10) that passes |
 | `judge_rounds` | int | `3` | Maximum builder -> judge rounds before the loop stops and asks a human |
+| `owns_files` | array | `[]` | This role is the sole writer of these workspace-relative files (e.g. `["defects.md"]`). Every role's prompts state the ownership map, and owned files are fingerprinted around each delegation: a change by a non-owner holds that work-done at a human gate (judged delegations fail their loop closed); a change while the owner also had a task in flight only logs and warns, since attribution is ambiguous. Detection, not prevention: an agent can still physically write the file (see `docs/sandboxing.md` for the OS-level wall). Paths must stay inside the workspace, `.choragos/` cannot be claimed, and a file has exactly one owner (load error otherwise) |
 
 Judge loop example: the coder's work is scored by the reviewer and
 retried with the critique until it earns an 8, at most three rounds.
@@ -63,6 +64,18 @@ judge_pass = 8
 name = "reviewer"
 command = "agy"     # cross-vendor judging; choragos doctor warns on same-vendor pairs
 timeout = "20m"
+```
+
+Write-ownership example: QA is the sole writer of the defect ledger, so
+the coder cannot close its own bugs and the orchestrator cannot declare
+victory while defects stay open. See `docs/design-write-ownership.md`
+for the contract and `defects-flow` in the init templates for a full team.
+
+```toml
+[[roles]]
+name = "qa"
+command = "claude"
+owns_files = ["defects.md"]
 ```
 
 Environment isolation example: a reviewer that never sees cloud credentials.

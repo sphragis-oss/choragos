@@ -102,3 +102,35 @@ command = "sh"
 		t.Fatalf("unexpected judge WARN for cross-vendor pair:\n%s", out.String())
 	}
 }
+
+func TestDoctorWarnsOnNonOwnerPromptReference(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+
+[[roles]]
+name = "dev"
+command = "cat"
+prompt_template = "Fix bugs and update defects.md when done."
+
+[[roles]]
+name = "qa"
+command = "cat"
+owns_files = ["defects.md"]
+prompt_template = "Verify fixes; only you edit defects.md."
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	runDoctor(&out, f)
+	if !strings.Contains(out.String(), "ownership:dev") {
+		t.Fatalf("non-owner reference WARN missing:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "ownership:qa") {
+		t.Fatalf("owner wrongly warned:\n%s", out.String())
+	}
+}

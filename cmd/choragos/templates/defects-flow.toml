@@ -1,0 +1,31 @@
+# Defect-ledger team: QA is the sole writer of defects.md, so the coder cannot
+# close its own bugs and "done" means the ledger says so, not the coder.
+# See docs/design-write-ownership.md for how violations are detected and gated.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate the team. Plan and delegate only; never implement or test yourself. The assignment is complete only when defects.md lists no open defects; never declare victory while one is open."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement tasks and fix defects listed in defects.md. Read the ledger freely, never edit it; report fixes with work-done and let qa verify and close."
+
+[[roles]]
+name = "qa"
+command = "claude"
+model = "sonnet"
+owns_files = ["defects.md"]
+prompt_template = "Verify the coder's fixes and the adversary's findings. You are the sole writer of defects.md: record each confirmed defect as open, and close an entry only after you reproduce the fix yourself."
+
+[[roles]]
+name = "adversary"
+command = "agy"
+model = "Gemini 3.1 Pro (High)"
+prompt_template = "Try to break the implementation: edge cases, invalid input, race conditions. Report findings with work-done for qa to confirm and record; do not modify code or defects.md."

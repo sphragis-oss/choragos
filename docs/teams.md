@@ -12,6 +12,7 @@ choragos init --template starter      # commented single-agent scaffold
 choragos init --template claude-team  # all-Claude 5-role crew
 choragos init --template mixed-team   # Claude + Gemini mix
 choragos init --template review       # review-focused team
+choragos init --template defects-flow # QA owns the defect ledger (write ownership)
 choragos init --auto                  # detect the project, language-specific roles
 ```
 
@@ -158,6 +159,21 @@ judge another vendor or at least another model (`choragos doctor`
 warns when they match). Every round is a full agent run and shows up
 in the per-role token and cost accounting; keep `judge_rounds` low and
 let the human gate absorb the hard cases.
+
+## Write ownership: one role holds the pen
+
+Judges score a task; ownership guards shared state between tasks.
+`owns_files = ["defects.md"]` on a role makes it the sole writer of
+that file: every role's prompts carry the ownership map, and the deck
+fingerprints owned files around each delegation. A change by a
+non-owner holds that work-done at a human gate (a judged delegation
+fails its loop closed), so a coder cannot quietly close its own bugs
+and the orchestrator cannot report success past an open ledger. This
+is a tripwire, not a wall; an agent can still physically write the
+file, and `docs/sandboxing.md` shows the OS-level deny for when you
+want real enforcement. Start from the `defects-flow` template to see
+the full pattern (coder reads the ledger, QA owns it, an adversary
+hunts for new entries).
 
 ## Checkpoints: undo what a worker did
 
