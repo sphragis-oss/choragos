@@ -106,6 +106,11 @@ func (s *session) handleJudgedDone(cmd ipc.Command) bool {
 	}
 	s.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: from, task: singleLine(cmd.Task), file: cmd.Report, round: loop.round})
 	s.resolveTask(cmd.ID)
+	if reason := s.ownershipReason(cmd.ID, from); reason != "" {
+		loop.report = cmd.Report
+		s.fallbackGate(loop, reason)
+		return true
+	}
 	if loop.phase == "build" {
 		loop.report = cmd.Report
 		s.deliverJudgeRound(loop)
@@ -152,6 +157,7 @@ func (s *session) deliverJudgeRound(loop *judgeLoop) {
 	s.log().Info("delegate", "id", id, "from", "choragos", "to", e.role.Name, "task", label, "loop", loop.origID, "round", loop.round)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: loop.report, round: loop.round})
 	s.snapshotTask(id, e.role.Name, label)
+	s.snapshotOwned(id)
 	injectLine(e, line)
 	s.focus(i)
 	loop.phase = "judge"

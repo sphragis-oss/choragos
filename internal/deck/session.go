@@ -127,9 +127,10 @@ type session struct {
 	cfg        config.Config
 	panes      []*entry
 	board      []taskEvent
-	gates      []pendingGate         // delegations awaiting user approval, oldest first
-	loops      map[string]*judgeLoop // judge loops keyed by their in-flight task id
-	taskSeq    int                   // task id counter for delegations
+	gates      []pendingGate                // delegations awaiting user approval, oldest first
+	loops      map[string]*judgeLoop        // judge loops keyed by their in-flight task id
+	ownSnaps   map[string]map[string]string // owned-file hashes per in-flight task id (write ownership)
+	taskSeq    int                          // task id counter for delegations
 	server     *ipc.Server
 	socket     string
 	baseURL    string // gateway base URL handed to role env; reused on restart
@@ -169,6 +170,8 @@ type pendingGate struct {
 	reason string
 	report string // last report attached to a fallback gate
 	loopID string
+	// ownership gates hold a completed work-done whose delegation changed a file it does not own
+	ownership bool
 }
 
 // taskEvent is one delegation-protocol event, shown on the task board.
@@ -325,6 +328,12 @@ func (s *session) dispatch(cmd ipc.Command) {
 			s.log().Info("work-done", "id", cmd.ID, "to", s.panes[i].role.Name, "done", cmd.Done, "task", summary, "report", cmd.Report)
 			s.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: s.panes[i].role.Name, task: summary, file: cmd.Report, done: cmd.Done})
 			s.resolveTask(cmd.ID)
+			if role := s.delegateRole(cmd.ID); role != "" {
+				if reason := s.ownershipReason(cmd.ID, role); reason != "" {
+					s.gateOwnership(cmd, role, reason)
+					return // the orchestrator hears the outcome only after the user rules
+				}
+			}
 			injectLine(s.panes[i], line)
 			s.focus(i)
 		}
@@ -389,6 +398,7 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	s.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
 	s.snapshotTask(id, e.role.Name, label)
+	s.snapshotOwned(id)
 	if e.role.Fresh {
 		// clean context per task: respawn first, inject once the fresh pane boots
 		s.log().Info("fresh respawn", "id", id, "role", e.role.Name)
@@ -496,6 +506,10 @@ func (s *session) approveGate() {
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	if g.ownership {
+		s.resolveOwnership(g, true)
+		return
+	}
 	if g.reason != "" {
 		s.resolveFallback(g, true)
 		return
@@ -521,6 +535,10 @@ func (s *session) rejectGate() {
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	if g.ownership {
+		s.resolveOwnership(g, false)
+		return
+	}
 	if g.reason != "" {
 		s.resolveFallback(g, false)
 		return
