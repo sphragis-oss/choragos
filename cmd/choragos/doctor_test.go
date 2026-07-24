@@ -128,9 +128,54 @@ prompt_template = "Verify fixes; only you edit defects.md."
 	var out strings.Builder
 	runDoctor(&out, f)
 	if !strings.Contains(out.String(), "ownership:dev") {
-		t.Fatalf("non-owner reference WARN missing:\n%s", out.String())
+		t.Fatalf("non-owner write instruction WARN missing:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "ownership:qa") {
 		t.Fatalf("owner wrongly warned:\n%s", out.String())
+	}
+}
+
+func TestDoctorQuietOnReadOnlyReferences(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+prompt_template = "Done only when defects.md lists no open defects."
+
+[[roles]]
+name = "dev"
+command = "cat"
+prompt_template = "Consult defects.md for open bugs. Never edit defects.md; do not modify defects.md either."
+
+[[roles]]
+name = "qa"
+command = "cat"
+owns_files = ["defects.md"]
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	runDoctor(&out, f)
+	if strings.Contains(out.String(), "ownership:") {
+		t.Fatalf("read or negated references wrongly warned:\n%s", out.String())
+	}
+}
+
+func TestDoctorQuietOnDefectsFlowTemplate(t *testing.T) {
+	body, err := templatesFS.ReadFile("templates/defects-flow.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(f, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	runDoctor(&out, f)
+	if strings.Contains(out.String(), "ownership:") {
+		t.Fatalf("shipped template trips its own ownership WARN:\n%s", out.String())
 	}
 }

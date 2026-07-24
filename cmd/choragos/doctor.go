@@ -21,6 +21,38 @@ import (
 // maxSocketPath is a portable bound for sun_path (104 on darwin, 108 on linux).
 const maxSocketPath = 100
 
+// ownershipWriteVerbs mark a sentence as a write instruction; heuristic, WARN-grade only.
+var ownershipWriteVerbs = []string{"write", "edit", "update", "modify", "close", "mark", "append", "record", "create", "delete", "maintain"}
+
+// ownershipNegations clear a sentence that forbids the write instead of asking for it.
+var ownershipNegations = []string{"never", "do not", "don't", "read-only", "read only"}
+
+// ownershipWriteHint reports whether the prompt names the file next to an unnegated write verb.
+func ownershipWriteHint(prompt, base string) bool {
+	for _, seg := range strings.FieldsFunc(strings.ReplaceAll(prompt, ". ", ";"), func(r rune) bool { return r == ';' || r == '\n' }) {
+		if !strings.Contains(seg, base) {
+			continue
+		}
+		l := strings.ToLower(seg)
+		negated := false
+		for _, n := range ownershipNegations {
+			if strings.Contains(l, n) {
+				negated = true
+				break
+			}
+		}
+		if negated {
+			continue
+		}
+		for _, v := range ownershipWriteVerbs {
+			if strings.Contains(l, v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // modelAwareCLI lists agent CLIs known to accept --model.
 var modelAwareCLI = map[string]bool{"claude": true, "agy": true, "codex": true}
 
@@ -73,8 +105,8 @@ func runDoctor(out io.Writer, cfgPath string) int {
 			report("WARN", "role:"+r.Name, fmt.Sprintf("model %q is passed as --model but %q is not a known model-aware CLI; set model_flag to the right flag, or \"\" to not pass it", r.Model, r.Command))
 		}
 		for p, owner := range cfg.OwnedFiles() {
-			if owner != r.Name && strings.Contains(r.Prompt, filepath.Base(p)) {
-				report("WARN", "ownership:"+r.Name, fmt.Sprintf("prompt_template mentions %q, which %q owns; reads are fine, but a write instruction belongs on the owner", filepath.Base(p), owner))
+			if owner != r.Name && ownershipWriteHint(r.Prompt, filepath.Base(p)) {
+				report("WARN", "ownership:"+r.Name, fmt.Sprintf("prompt_template seems to instruct writing %q, which %q owns; that instruction belongs on the owner", filepath.Base(p), owner))
 			}
 		}
 		if r.Judge == "" {
