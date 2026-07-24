@@ -666,3 +666,54 @@ func TestJudgeDefaults(t *testing.T) {
 		t.Fatalf("defaults wrong: pass=%d cap=%d", z.JudgePassScore(), z.JudgeCap())
 	}
 }
+
+func TestOwnsFilesValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roles := func(qaOwns, devOwns string) string {
+		b := "[[roles]]\nname = \"qa\"\ncommand = \"sh\"\nstart = true\n"
+		if qaOwns != "" {
+			b += "owns_files = [" + qaOwns + "]\n"
+		}
+		b += "\n[[roles]]\nname = \"dev\"\ncommand = \"sh\"\n"
+		if devOwns != "" {
+			b += "owns_files = [" + devOwns + "]\n"
+		}
+		return b
+	}
+
+	write(roles(`"defects.md", "./notes/qa.md"`, ""))
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := c.OwnedFiles()
+	if owned["defects.md"] != "qa" || owned["notes/qa.md"] != "qa" {
+		t.Fatalf("owned = %v, want cleaned paths owned by qa", owned)
+	}
+
+	for name, bad := range map[string]string{
+		"duplicate claim": roles(`"defects.md"`, `"defects.md"`),
+		"absolute path":   roles(`"/etc/defects.md"`, ""),
+		"path escape":     roles(`"../defects.md"`, ""),
+		"internal dir":    roles(`".choragos/task.md"`, ""),
+		"empty entry":     roles(`""`, ""),
+	} {
+		write(bad)
+		if _, err := config.Load(f); err == nil {
+			t.Errorf("%s: want load error, got nil", name)
+		}
+	}
+}
+
+func TestOwnedFilesEmptyByDefault(t *testing.T) {
+	if m := config.Default().OwnedFiles(); m != nil {
+		t.Fatalf("default config owns files: %v", m)
+	}
+}

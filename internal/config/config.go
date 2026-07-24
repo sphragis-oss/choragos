@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,8 @@ type Role struct {
 	Judge       string `toml:"judge"`
 	JudgePass   int    `toml:"judge_pass"`
 	JudgeRounds int    `toml:"judge_rounds"`
+	// ownership: this role is the sole writer of these workspace-relative files (see docs/design-write-ownership.md)
+	OwnsFiles []string `toml:"owns_files"`
 	// wall-clock limit per delegation ("45m"); empty = disabled. Action: "notify" (default) or "restart"
 	Timeout       string `toml:"timeout"`
 	TimeoutAction string `toml:"timeout_action"`
@@ -108,6 +111,20 @@ func (r Role) RestartCap() int {
 		return r.RestartRetries
 	}
 	return 3
+}
+
+// OwnedFiles maps each owned workspace-relative path to its owner role name.
+func (c Config) OwnedFiles() map[string]string {
+	var m map[string]string
+	for _, r := range c.Roles {
+		for _, p := range r.OwnsFiles {
+			if m == nil {
+				m = make(map[string]string)
+			}
+			m[p] = r.Name
+		}
+	}
+	return m
 }
 
 // Config is the full orchestration.
@@ -444,6 +461,27 @@ func Load(path string) (Config, error) {
 		if r.JudgeRounds < 0 {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: negative judge_rounds; using the default %d", path, r.Name, Role{}.JudgeCap()))
 			r.JudgeRounds = 0
+		}
+	}
+	// ownership claims fail closed: a half-validated claim must never look protected
+	owners := make(map[string]string)
+	for i := range c.Roles {
+		r := &c.Roles[i]
+		for j, p := range r.OwnsFiles {
+			cp := filepath.Clean(strings.TrimSpace(p))
+			switch {
+			case cp == "" || cp == ".":
+				return Config{}, fmt.Errorf("config %s: role %q: empty owns_files entry", path, r.Name)
+			case filepath.IsAbs(cp) || cp == ".." || strings.HasPrefix(cp, "../"):
+				return Config{}, fmt.Errorf("config %s: role %q: owns_files %q must be a workspace-relative path", path, r.Name, p)
+			case cp == ".choragos" || strings.HasPrefix(cp, ".choragos/"):
+				return Config{}, fmt.Errorf("config %s: role %q: owns_files %q: %s is internal and cannot be owned", path, r.Name, p, ".choragos")
+			}
+			if prev, dup := owners[cp]; dup {
+				return Config{}, fmt.Errorf("config %s: %q is claimed by both %q and %q; a file has exactly one owner", path, cp, prev, r.Name)
+			}
+			owners[cp] = r.Name
+			r.OwnsFiles[j] = cp
 		}
 	}
 	th := &c.UI.Theme
