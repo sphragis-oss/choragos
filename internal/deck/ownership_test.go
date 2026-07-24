@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
@@ -140,6 +141,20 @@ func TestOwnershipUnreadableFailsClosed(t *testing.T) {
 	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T1", Task: "done"})
 	if len(m.gates) != 1 {
 		t.Fatalf("unreadable owned file did not fail toward the gate: %+v", m.gates)
+	}
+}
+
+func TestRenderOwnershipGate(t *testing.T) {
+	m, _ := startOwnModel(t, config.Role{Name: "dev", Command: "cat"})
+	m.gates = []pendingGate{{to: "dev", reason: "ownership violation: dev changed defects.md (owned by qa)", ownership: true, at: time.Now()}}
+	got := m.renderGate(100, 24)
+	for _, want := range []string{"write ownership needs a decision", "ownership violation", "a non-owner changed an owned file", "[y] accept the result"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ownership gate overlay missing %q:\n%q", want, got)
+		}
+	}
+	if strings.Contains(got, "judge loop") || strings.Contains(got, "autonomous loop") {
+		t.Errorf("ownership gate reuses judge copy:\n%q", got)
 	}
 }
 
