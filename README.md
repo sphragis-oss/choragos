@@ -35,7 +35,7 @@
 
 ---
 
-Choragos is a multi-agent development orchestrator. You define the team in a single config file, the roles, the CLI agent each one runs, and the model behind it, and choragos runs the chorus: owned PTY panes per agent, a delegate/work-done protocol over a local socket, approval and judge gates, checkpoints, and live telemetry. It can also route every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), an EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log. The gateway is optional: choragos works standalone, and every feature degrades cleanly without it.
+Choragos is a multi-agent development orchestrator. You define the team in a single config file, the roles, the CLI agent each one runs, and the model behind it, and choragos runs the chorus: owned PTY panes per agent, a delegate/work-done protocol over a local socket, human and machine gates, write-owned coordination files, checkpoints, and live telemetry. It can also route every agent's LLM traffic through [Sphragis](https://github.com/sphragis-oss/sphragis), an EU AI Act compliance gateway, for local PII redaction and a tamper-evident audit log. The gateway is optional: choragos works standalone, and every feature degrades cleanly without it.
 
 > The name is the Greek χορηγός (*choragos*), the one who led and funded the chorus. Here it leads a chorus of agents.
 
@@ -51,6 +51,26 @@ Choragos is a multi-agent development orchestrator. You define the team in a sin
 - **Live token and cost telemetry:** With the gateway in the path, each role's status card shows its model and live token counts, and dollar cost once you set a `[pricing]` table. No SDK hooks, no vendor lock: the gateway counts what the provider reports. Set `budget = "5.00"` on a role to be notified, or have it paused, the moment its session cost crosses the cap. After the run, `choragos report` summarizes tasks, durations, token burn, and cost per role from the event log.
 - **Runtime control:** Per-role delegation timeouts catch a worker stuck in a loop (`timeout = "45m"`, notify or restart), and `prefix+p` freezes a role (SIGSTOP) so you can inspect its work mid-flight and resume without losing the agent's context.
 - **Least privilege per role (opt-in):** By default roles inherit the parent environment. Set `env_allow` on a role to switch it to an allowlist (baseline vars like `PATH`/`HOME`/`TERM` plus the names or `PREFIX_*` patterns you list), or `env_deny` to strip specific variables, so a reviewer never sees your `AWS_*` credentials. Choragos is not a sandbox: agents run as your user, and OS-level isolation composes from outside (containers, VMs, a wrapper as the role's `command`). See the [threat model](SECURITY.md#threat-model).
+
+## Guardrails: trust the run, not the agent
+
+Multi-agent teams fail in a predictable way: an agent gets tired of the task and declares victory, approves its own work, or quietly rewrites the shared state everyone else plans against. Choragos ships a stack of guardrails aimed at exactly that. Each one is opt-in, fails closed to a human, and changes nothing when unconfigured.
+
+| Guardrail | Config | What it stops |
+|-----------|--------|---------------|
+| Human gate | `approve = true` | a delegation running before a human has seen the plan |
+| Judge loop | `judge = "reviewer"` | work accepted on the worker's own word; a second model scores it and retries with the critique |
+| Write ownership | `owns_files = ["defects.md"]` | a role editing coordination state it does not own, e.g. a coder closing its own bugs |
+| Checkpoints | on by default in git repos | a bad delegation you cannot undo; every task snapshots the workspace first |
+| Timeouts and budgets | `timeout = "45m"`, `budget = "5.00"` | a worker stuck in a loop, or a session burning money unwatched |
+
+They compose. In the `defects-flow` template the coder implements, an adversary hunts for breakage, and QA is the sole writer of `defects.md`: the coder cannot mark its own bug closed, and the orchestrator cannot report success while the ledger holds an open defect. A change to an owned file by anyone else is detected at the next work-done and held at a human gate, with the audit trail in the event log.
+
+```bash
+choragos init --template defects-flow
+```
+
+See [teams.md](docs/teams.md) for how each guardrail works and [design-write-ownership.md](docs/design-write-ownership.md) for the ownership contract.
 
 ## Architecture
 
@@ -113,7 +133,7 @@ make build
 # Write a starter .choragos.toml (roles, keybindings, UI options)
 ./choragos init
 
-# Or start from a team template: starter, claude-team, mixed-team, review
+# Or start from a team template: starter, claude-team, mixed-team, review, defects-flow
 ./choragos init --template review
 
 # Or let it detect the project (go.mod, package.json, Cargo.toml, pyproject.toml)
