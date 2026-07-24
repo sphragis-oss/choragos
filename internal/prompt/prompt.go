@@ -5,21 +5,53 @@ package prompt
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 )
 
+// ownershipClause renders the file-ownership rules for one role; empty when nothing is owned.
+func ownershipClause(roleName string, owned map[string]string) string {
+	if len(owned) == 0 {
+		return ""
+	}
+	var mine, theirs []string
+	for _, p := range slices.Sorted(maps.Keys(owned)) {
+		if owned[p] == roleName {
+			mine = append(mine, p)
+		} else {
+			theirs = append(theirs, fmt.Sprintf("%s (owned by %s)", p, owned[p]))
+		}
+	}
+	var b strings.Builder
+	b.WriteString("## File ownership\n\n")
+	if len(mine) > 0 {
+		b.WriteString("You are the sole writer of: " + strings.Join(mine, ", ") + ". Every other role only reads them; route their change requests through yourself.\n")
+	}
+	if len(theirs) > 0 {
+		b.WriteString("Never create, edit, or delete: " + strings.Join(theirs, ", ") + ". Read them freely; ask the owner for any change. Changes by non-owners are detected and stop the task.\n")
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
 // OrchestratorContext is the start role's boot context: brief, available roles, and delegation protocol.
 func OrchestratorContext(cfg config.Config) string {
 	var b strings.Builder
+	start := ""
 	for _, r := range cfg.Roles {
-		if r.Start && r.Prompt != "" {
-			b.WriteString(r.Prompt)
-			b.WriteString("\n\n")
+		if r.Start {
+			start = r.Name
+			if r.Prompt != "" {
+				b.WriteString(r.Prompt)
+				b.WriteString("\n\n")
+			}
 			break
 		}
 	}
+	b.WriteString(ownershipClause(start, cfg.OwnedFiles()))
 	b.WriteString("## Available agents\n\n")
 	fresh := false
 	for _, r := range cfg.Roles {
@@ -51,25 +83,27 @@ func OrchestratorContext(cfg config.Config) string {
 	return b.String()
 }
 
-// WorkerBrief is a worker's boot context: its role brief and the idle protocol.
-func WorkerBrief(role config.Role) string {
+// WorkerBrief is a worker's boot context: its role brief, ownership rules, and the idle protocol.
+func WorkerBrief(role config.Role, owned map[string]string) string {
 	var b strings.Builder
 	if role.Prompt != "" {
 		b.WriteString(role.Prompt)
 		b.WriteString("\n\n")
 	}
+	b.WriteString(ownershipClause(role.Name, owned))
 	b.WriteString("## Protocol\n\nStay idle until the orchestrator delegates a task to you. When you get one, complete it, then report:\n\n")
 	b.WriteString("```bash\nchoragos work-done --task \"Summary with file paths and outcomes.\"\n```\n")
 	return b.String()
 }
 
 // JudgeTask is a judge round's prompt: score the builder's work with a strict machine-readable verdict.
-func JudgeTask(role config.Role, task, builderReport, verdictFile, id string, pass int) string {
+func JudgeTask(role config.Role, task, builderReport, verdictFile, id string, pass int, owned map[string]string) string {
 	var b strings.Builder
 	if role.Prompt != "" {
 		b.WriteString(role.Prompt)
 		b.WriteString("\n\n")
 	}
+	b.WriteString(ownershipClause(role.Name, owned))
 	b.WriteString("## Judge task\n\nTask id: " + id + "\n\nYou are the judge for this delegated task:\n\n" + task + "\n\n")
 	if builderReport != "" {
 		b.WriteString("The worker's report: read " + builderReport + "\n\n")
@@ -80,13 +114,14 @@ func JudgeTask(role config.Role, task, builderReport, verdictFile, id string, pa
 	return b.String()
 }
 
-// WorkerTask is a worker's task prompt: role brief, the task, and the work-done instruction.
-func WorkerTask(role config.Role, task, id string) string {
+// WorkerTask is a worker's task prompt: role brief, ownership rules, the task, and the work-done instruction.
+func WorkerTask(role config.Role, task, id string, owned map[string]string) string {
 	var b strings.Builder
 	if role.Prompt != "" {
 		b.WriteString(role.Prompt)
 		b.WriteString("\n\n")
 	}
+	b.WriteString(ownershipClause(role.Name, owned))
 	b.WriteString("## Task\n\n")
 	if id != "" {
 		b.WriteString("Task id: " + id + "\n\n")

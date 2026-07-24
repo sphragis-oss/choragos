@@ -151,7 +151,7 @@ func (s *session) deliverJudgeRound(loop *judgeLoop) {
 		task = strings.TrimSpace("Read " + loop.cmd.Brief + " for the full brief.\n\n" + task)
 	}
 	file := "judge-task-" + sanitize(e.role.Name) + ".md"
-	line := writeContext(file, prompt.JudgeTask(e.role, task, loop.report, verdictFile, id, builder.role.JudgePassScore()),
+	line := writeContext(file, prompt.JudgeTask(e.role, task, loop.report, verdictFile, id, builder.role.JudgePassScore(), s.cfg.OwnedFiles()),
 		"Read "+filepath.Join(contextDir, file)+" for your task.")
 	label := fmt.Sprintf("judge %s round %d", loop.origID, loop.round)
 	s.log().Info("delegate", "id", id, "from", "choragos", "to", e.role.Name, "task", label, "loop", loop.origID, "round", loop.round)

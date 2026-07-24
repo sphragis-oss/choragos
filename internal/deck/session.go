@@ -393,7 +393,7 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 		}
 	}
 	file := "worker-task-" + sanitize(e.role.Name) + ".md"
-	line := writeContext(file, prompt.WorkerTask(e.role, task, id),
+	line := writeContext(file, prompt.WorkerTask(e.role, task, id, s.cfg.OwnedFiles()),
 		"Read "+filepath.Join(contextDir, file)+" for your task.")
 	s.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
@@ -780,7 +780,7 @@ func (s *session) injectBoot(e *entry) {
 		return
 	}
 	file := sanitize(e.role.Name) + "-brief.md"
-	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role),
+	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role, s.cfg.OwnedFiles()),
 		"Read "+filepath.Join(contextDir, file)+" for your role, then stay idle until a task is delegated to you.")
 	injectLine(e, e.bootLine)
 }
