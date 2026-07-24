@@ -53,20 +53,47 @@ signs:
       - "${artifact}"
       - "--yes"
 
-brews:
+# brews: is hard-deprecated (goreleaser.com/deprecations#brews); casks are the house pattern
+homebrew_casks:
   - name: choragos
+    binaries:
+      - choragos
     repository:
       owner: sphragis-oss
       name: homebrew-sphragis
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/sphragis-oss/choragos
     description: "Secure multi-agent development orchestrator TUI"
-    license: "Apache-2.0"
-    extra_install: |
-      bash_completion.install "completions/choragos.bash" => "choragos"
-      zsh_completion.install "completions/_choragos"
-      fish_completion.install "completions/choragos.fish"
-      man1.install Dir["manpages/*.1"]
+    completions:
+      bash: completions/choragos.bash
+      zsh: completions/_choragos
+      fish: completions/choragos.fish
+    # cask manpage stanzas take literal paths; regenerate this list when subcommands change
+    manpages:
+      - manpages/choragos-attach.1
+      - manpages/choragos-checkpoints-prune.1
+      - manpages/choragos-checkpoints.1
+      - manpages/choragos-delegate.1
+      - manpages/choragos-doctor.1
+      - manpages/choragos-init.1
+      - manpages/choragos-kill.1
+      - manpages/choragos-ls.1
+      - manpages/choragos-reload.1
+      - manpages/choragos-report.1
+      - manpages/choragos-rollback.1
+      - manpages/choragos-roster-add.1
+      - manpages/choragos-roster.1
+      - manpages/choragos-serve.1
+      - manpages/choragos-version.1
+      - manpages/choragos-work-done.1
+      - manpages/choragos.1
+    # unsigned binaries: strip the quarantine bit or macOS reports the app as damaged
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/choragos"]
+          end
 
 release:
   github:
