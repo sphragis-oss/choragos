@@ -234,7 +234,7 @@ func (s *session) start(cw, ch int) error {
 	s.server = srv
 	ipc.WriteMeta(s.socket) // sidecar for `choragos ls`
 	wd, _ := os.Getwd()
-	s.log().Info("deck starting", "roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd)
+	s.log().Info("deck starting", "roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd, "pid", os.Getpid())
 	for _, w := range s.cfg.Warnings {
 		s.log().Warn("config", "warning", w)
 	}
@@ -1331,13 +1331,21 @@ func writeCrashLog(r any) string {
 	return path
 }
 
+// eventLogMaxBytes caps events.log; over it the file rotates to events.log.1 on start.
+const eventLogMaxBytes = 5 << 20
+
 // newEventLog opens the control-plane event log (delegate/work-done/boot/lifecycle); on failure it discards.
+// Append mode so history survives restarts; each run begins at its "deck starting" marker.
 func newEventLog() (*slog.Logger, io.Closer) {
 	dir, err := logsDir()
 	if err != nil {
 		return discardLog, nil
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "events.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	path := filepath.Join(dir, "events.log")
+	if fi, err := os.Stat(path); err == nil && fi.Size() > eventLogMaxBytes {
+		_ = os.Rename(path, path+".1")
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return discardLog, nil
 	}

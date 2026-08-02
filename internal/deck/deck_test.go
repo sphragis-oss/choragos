@@ -92,6 +92,47 @@ func TestLogsAreOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestEventLogAppendsAcrossRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, run := range []string{"first", "second"} {
+		log, c := newEventLog()
+		log.Info("deck starting", "dir", run)
+		if c == nil {
+			t.Fatal("newEventLog returned no closer")
+		}
+		_ = c.Close()
+	}
+	data, err := os.ReadFile(filepath.Join(contextDir, "logs", "events.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "dir=first") || !strings.Contains(string(data), "dir=second") {
+		t.Fatalf("event log should keep both runs:\n%s", data)
+	}
+}
+
+func TestEventLogRotatesOverCap(t *testing.T) {
+	t.Chdir(t.TempDir())
+	dir, err := logsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "events.log")
+	if err := os.WriteFile(path, make([]byte, eventLogMaxBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, c := newEventLog()
+	if c != nil {
+		_ = c.Close()
+	}
+	if fi, err := os.Stat(path + ".1"); err != nil || fi.Size() != eventLogMaxBytes+1 {
+		t.Fatalf("rotated file: %v %v", fi, err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Size() != 0 {
+		t.Fatalf("fresh log after rotation: %v %v", fi, err)
+	}
+}
+
 func TestLogsDirFailureIsBestEffort(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := os.WriteFile(contextDir, []byte("not a dir"), 0o600); err != nil {
