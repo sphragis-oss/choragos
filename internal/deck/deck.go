@@ -136,9 +136,9 @@ func programOptions(cfg config.Config) []tea.ProgramOption {
 	return opts
 }
 
-// Run opens the deck for cfg and blocks until the user quits.
-func Run(cfg config.Config) (err error) {
-	m := &Model{session: &session{cfg: cfg}}
+// Run opens the deck for cfg and blocks until the user quits; snap restores a previous session.
+func Run(cfg config.Config, snap *Snapshot) (err error) {
+	m := &Model{session: &session{cfg: cfg, resume: snap}}
 	m.notify = func(v any) {
 		if m.prog != nil {
 			m.prog.Send(v)
@@ -276,6 +276,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = m.remote.WriteEvent(wire.Event{Kind: "quit"}) // stops the detached session too
 			return m, tea.Quit
 		}
+		if m.tree != nil {
+			m.layout = m.tree.Marshal() // quit-time layout for a later --resume
+		}
 		m.closeAll()
 		return m, tea.Quit
 	case tea.KeyCtrlO:
@@ -344,8 +347,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.wmAction(msg.String())
-		if m.remote != nil && m.tree != nil {
-			_ = m.remote.WriteEvent(wire.Event{Kind: "layout", Data: m.tree.Marshal()}) // checkpoint for the next attach
+		if m.tree != nil {
+			m.layout = m.tree.Marshal() // kept for the session snapshot
+			if m.remote != nil {
+				_ = m.remote.WriteEvent(wire.Event{Kind: "layout", Data: m.layout}) // checkpoint for the next attach
+			}
 		}
 		return m, nil
 	}
@@ -1385,6 +1391,12 @@ func (m *Model) startAll() (tea.Cmd, error) {
 	}
 	m.active = m.startIdx()
 	m.tree = wm.New(m.active)
+	if len(m.layout) > 0 {
+		if t, err := wm.Unmarshal(m.layout); err == nil {
+			m.tree = t
+			m.active = t.FocusedRole()
+		}
+	}
 	if m.sphragisOn {
 		return ensureGateway(m.cfg.Sphragis), nil
 	}

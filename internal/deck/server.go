@@ -49,8 +49,9 @@ type server struct {
 }
 
 // RunServer runs the session core headless until shutdown; `choragos attach` brings the UI.
-func RunServer(cfg config.Config, version string) error {
-	s := &session{cfg: cfg}
+// snap restores a previous session's deck state.
+func RunServer(cfg config.Config, version string, snap *Snapshot) error {
+	s := &session{cfg: cfg, resume: snap}
 	msgs := make(chan any, 1024)
 	s.notify = func(v any) { msgs <- v }
 	srv := &server{sess: s, msgs: msgs, version: version, wired: map[int]*pane.Pane{}}
@@ -59,6 +60,7 @@ func RunServer(cfg config.Config, version string) error {
 	if err := s.start(80, 24); err != nil {
 		return err
 	}
+	srv.layout = s.layout // restored layout reaches the next attach
 	defer s.closeAll()
 	ipc.WriteMeta(s.socket)
 	defer ipc.RemoveMeta()
@@ -211,6 +213,7 @@ func (srv *server) handleClient(ev wire.Event) bool {
 		srv.syncClient()
 	case "layout":
 		srv.layout = ev.Data
+		s.layout = ev.Data // kept for the session snapshot
 	case "detach":
 		s.log().Info("client detached")
 		srv.dropClient()

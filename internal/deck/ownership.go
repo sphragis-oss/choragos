@@ -131,6 +131,7 @@ func (s *session) ownershipReason(id, role string) string {
 // gateOwnership holds a plain work-done at a human gate; the orchestrator hears it only after the user rules.
 func (s *session) gateOwnership(cmd ipc.Command, role, reason string) {
 	s.gates = append(s.gates, pendingGate{cmd: cmd, to: role, at: time.Now(), reason: reason, report: cmd.Report, ownership: true})
+	s.saveSnapshot()
 	if s.bellFn != nil {
 		s.bellFn()
 	}

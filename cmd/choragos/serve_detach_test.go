@@ -51,3 +51,49 @@ func TestServeDetachStartsChildAndTightensLogs(t *testing.T) {
 		t.Errorf("server.log mode = %o, want 600", got)
 	}
 }
+
+func TestServeResumeRefusesWithoutSnapshot(t *testing.T) {
+	shortRuntimeDir(t)
+	t.Chdir(t.TempDir())
+	cfg := "[[roles]]\nname = \"orchestrator\"\ncommand = \"cat\"\nstart = true\n\n[sphragis]\nenabled = false\n"
+	if err := os.WriteFile(".choragos.toml", []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := serveCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--resume"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no session snapshot") {
+		t.Fatalf("serve --resume without a snapshot must refuse: %v", err)
+	}
+}
+
+func TestServeDetachForwardsResume(t *testing.T) {
+	shortRuntimeDir(t)
+	t.Chdir(t.TempDir())
+	t.Setenv("CHORAGOS_DETACH_TEST_CHILD", "1")
+	cfg := "[[roles]]\nname = \"orchestrator\"\ncommand = \"cat\"\nstart = true\n\n[sphragis]\nenabled = false\n"
+	if err := os.WriteFile(".choragos.toml", []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap := `{"version": 1, "config_path": ".choragos.toml", "roster": [{"name": "orchestrator"}]}`
+	if err := os.MkdirAll(".choragos", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".choragos", "session.json"), []byte(snap), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := serveCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--detach", "--resume"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("serve --detach --resume: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "session started") {
+		t.Fatalf("missing start message:\n%s", out.String())
+	}
+}

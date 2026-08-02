@@ -218,6 +218,7 @@ func (s *session) deliverRetryRound(loop *judgeLoop, builder *entry, score strin
 // fallbackGate fails the loop closed into the human approval queue.
 func (s *session) fallbackGate(loop *judgeLoop, reason string) {
 	s.gates = append(s.gates, pendingGate{cmd: loop.cmd, to: loop.builder, at: time.Now(), reason: reason, report: loop.report, loopID: loop.origID})
+	s.saveSnapshot()
 	s.log().Warn("judge gate", "loop", loop.origID, "round", loop.round, "reason", reason, "report", loop.report)
 	if s.bellFn != nil {
 		s.bellFn()

@@ -159,6 +159,11 @@ itself and the orchestrator hears only outcomes:
   task time, first and last activity, and token usage; the token column
   reads n/a for roles the gateway never reported. By default the summary
   covers the most recent run; `--all` covers every run in the file.
+- `.choragos/session.json`: the deck-state snapshot (task board, task-id
+  counter, pending gates, roster order with tombstones, tiling layout),
+  written atomically on every board or gate change and on quit, restored
+  by `choragos serve --resume` (see
+  [long-running-sessions.md](long-running-sessions.md)).
 - `choragos report --json`: the same data as one JSON document, for
   scripts and CI. Fields with no data are explicit nulls, never absent,
   and new fields are only ever added:
