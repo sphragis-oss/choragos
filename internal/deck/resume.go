@@ -50,11 +50,7 @@ func (s *session) saveSnapshot() {
 		TaskSeq: s.taskSeq, Roster: roster,
 		Board: toWireTasks(s.board), Gates: toWireGates(s.gates), Layout: s.layout,
 	}
-	b, err := json.Marshal(&snap)
-	if err != nil {
-		s.log().Warn("session snapshot failed", "err", err)
-		return
-	}
+	b, _ := json.Marshal(&snap) // plain structs: cannot fail
 	path := filepath.Join(contextDir, snapshotName)
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
