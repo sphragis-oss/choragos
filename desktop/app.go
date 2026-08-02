@@ -336,6 +336,8 @@ func (a *App) stream(conn *wire.Conn, gen int) {
 			runtime.EventsEmit(a.ctx, "pane:reset", ev.Idx)
 		case "focus":
 			runtime.EventsEmit(a.ctx, "session:focus", ev.Idx)
+		case "bye":
+			runtime.EventsEmit(a.ctx, "session:bye", ev.Reason)
 		}
 	})
 	a.lost(gen, err)
@@ -405,6 +407,12 @@ func (a *App) PauseRole(idx int) error {
 // StopSession shuts the whole session down, agents included.
 func (a *App) StopSession() error {
 	return a.write(wire.Event{Kind: "quit"})
+}
+
+// Handoff asks the orchestrator to write the session handoff document; the
+// session then stops and the server says bye.
+func (a *App) Handoff() error {
+	return a.write(wire.Event{Kind: "handoff"})
 }
 
 // maxBriefBytes caps brief viewing so a runaway file cannot wedge the webview.
