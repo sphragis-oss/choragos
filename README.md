@@ -160,7 +160,7 @@ Sessions detach like tmux does: `choragos serve --detach` runs the crew headless
 - [Building your own team](docs/teams.md) - roles, per-role models, briefs, and a worked pipeline example
 - [Control protocol](docs/protocol.md) - the delegate/work-done wire contract for integrators
 - [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
-- [Long-running sessions](docs/long-running-sessions.md) - native detach/attach and session management
+- [Long-running sessions](docs/long-running-sessions.md) - native detach/attach, resume after a quit, and session handoff
 - [Sandboxing recipes](docs/sandboxing.md) - wrapping roles or the whole deck in Docker, bubblewrap, or sandbox-exec
 - [Verifying releases](SECURITY.md#verifying-releases) - cosign signatures, checksums, provenance
 

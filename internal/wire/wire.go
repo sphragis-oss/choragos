@@ -52,6 +52,8 @@ type Event struct {
 	Approve bool   `json:"approve,omitempty"`
 	On      bool   `json:"on,omitempty"` // status: sphragis enforcement / gateway health
 	Up      bool   `json:"up,omitempty"`
+	// bye (server -> client): why the session ended ("handoff", "shutdown")
+	Reason string `json:"reason,omitempty"`
 }
 
 // Role mirrors one roster entry for the client.

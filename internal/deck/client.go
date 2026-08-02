@@ -60,6 +60,9 @@ func RunAttach(version string) error {
 	if _, err := m.prog.Run(); err != nil {
 		return err
 	}
+	if m.bye != "" {
+		fmt.Println(m.bye)
+	}
 	return m.err
 }
 

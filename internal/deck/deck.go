@@ -114,8 +114,17 @@ type Model struct {
 	cardHits   []cardHit  // sidebar card y-extents from the last render, for click focus
 	th         deckTheme  // resolved status colors ([ui.theme] over the defaults)
 	remote     *wire.Conn // attached to a detached session; core actions go over the wire
+	bye        string     // server's goodbye; a deliberate session end, not a lost connection
 	w, h       int
 	err        error
+}
+
+// byeMessage renders the server's goodbye for the terminal after the TUI closes.
+func byeMessage(reason string) string {
+	if reason == "handoff" {
+		return "session ended: handoff complete. Resume with: choragos serve --resume"
+	}
+	return "session ended: shutdown requested"
 }
 
 // wireSession points the core's UI callbacks at this Model.
@@ -224,8 +233,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyCommand(msg.cmd)
 	case remoteEvMsg:
+		if msg.ev.Kind == "bye" {
+			m.bye = byeMessage(msg.ev.Reason)
+			return m, tea.Quit
+		}
 		m.applyRemoteEvent(msg.ev)
 	case connLostMsg:
+		if m.bye != "" {
+			return m, tea.Quit // the server said goodbye; the dropped conn is expected
+		}
 		m.err = fmt.Errorf("session connection lost: %w", msg.err)
 		return m, tea.Quit
 	case gatewayReadyMsg:
