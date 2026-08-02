@@ -31,7 +31,7 @@ const EnvSocket = "CHORAGOS_SOCK"
 
 // Command is one control message.
 type Command struct {
-	Cmd    string   `json:"cmd"` // "delegate", "work-done", "roster-add", or "reload"
+	Cmd    string   `json:"cmd"` // "delegate", "work-done", "roster-add", "reload", or "handoff"
 	To     []string `json:"to,omitempty"`
 	Task   string   `json:"task,omitempty"`
 	Brief  string   `json:"brief,omitempty"`  // absolute path to a delegation brief file
@@ -44,6 +44,8 @@ type Command struct {
 	RoleArgs    []string `json:"role_args,omitempty"`
 	RoleModel   string   `json:"role_model,omitempty"`
 	RolePrompt  string   `json:"role_prompt,omitempty"`
+	// handoff: config the next session should resume with; empty keeps the current one
+	NextConfig string `json:"next_config,omitempty"`
 }
 
 // SessionDir is the per-user directory holding session sockets and metadata (0700).

@@ -98,6 +98,9 @@ func RunServer(cfg config.Config, version string, snap *Snapshot) error {
 			s.checkWaiting()
 			s.checkTimeouts()
 			s.maybeLogTokens()
+			if s.checkHandoff() {
+				return nil
+			}
 			if s.sphragisOn {
 				go func() { msgs <- gatewayHealthMsg{up: sphragis.Healthy(cfg.Sphragis.Addr)} }()
 			}
@@ -136,6 +139,8 @@ func (srv *server) handle(v any) bool {
 		switch msg.cmd.Cmd {
 		case "shutdown":
 			return true
+		case "handoff":
+			s.startHandoff(msg.cmd.NextConfig)
 		case "reload":
 			cw, ch := s.panes[s.startIdx()].pane.Size()
 			s.reload(cw, ch)
@@ -211,6 +216,8 @@ func (srv *server) handleClient(ev wire.Event) bool {
 	case "sphragis":
 		s.sphragisOn = !s.sphragisOn
 		srv.syncClient()
+	case "handoff":
+		s.startHandoff("")
 	case "layout":
 		srv.layout = ev.Data
 		s.layout = ev.Data // kept for the session snapshot

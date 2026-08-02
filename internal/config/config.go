@@ -174,6 +174,7 @@ type Keys struct {
 	Search          string `toml:"search"`
 	Reload          string `toml:"reload"`
 	Detach          string `toml:"detach"`
+	Handoff         string `toml:"handoff"`
 }
 
 // Defaulted fills empty bindings with the herdr default keymap and normalizes herdr syntax.
@@ -215,6 +216,7 @@ func (k Keys) Defaulted() Keys {
 	set(&k.Search, "/")
 	set(&k.Reload, "C")
 	set(&k.Detach, "d")
+	set(&k.Handoff, "H")
 	return k
 }
 
