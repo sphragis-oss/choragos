@@ -151,7 +151,7 @@ Choragos will start the agents and, when Sphragis is installed or explicitly ena
 
 The deck is a tiling window manager over the role panes, driven tmux-style behind a prefix key (default `ctrl+b`): split (`v`, `-`), move focus (`h/j/k/l`, `1..9`), zoom (`z`), live resize (`r`), restart a role (`R`), pause/resume a role (`p`), broadcast input to all agents (`a`), task board (`t`), scrollback search (`/`), and a help overlay (`?`). Closing a tile never kills its agent, the mouse focuses tiles and scrolls history, and the terminal bell rings when an agent blocks waiting for input. All bindings are configurable under `[keys]` in `.choragos.toml`.
 
-Sessions detach like tmux does: `choragos serve --detach` runs the crew headless, `choragos attach` brings the TUI back with screens, tasks, gates, and layout restored, and `prefix+d` leaves the agents running when you go. `choragos ls` and `choragos kill` manage sessions across projects.
+Sessions detach like tmux does: `choragos serve --detach` runs the crew headless, `choragos attach` brings the TUI back with screens, tasks, gates, and layout restored, and `prefix+d` leaves the agents running when you go. `choragos ls` and `choragos kill` manage sessions across projects. Quitting is not the end either: `choragos serve --resume` restores a stopped session's board, gates, and layout, and `choragos handoff` ends a session with an orchestrator-written handoff document that briefs the next one, optionally under a new team config.
 
 ### Documentation
 
