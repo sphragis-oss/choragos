@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-02
+
+Sessions that survive their own end: resume after a quit, hand off to
+the next team.
+
+### Added
+- Session resume: the deck persists its state (task board, task ids,
+  pending gates, roster order with tombstones, tiling layout) to
+  `.choragos/session.json` on every board or gate change and on quit;
+  `choragos serve --resume` (also with `--detach`) brings it back,
+  respawning the roles in snapshot order and re-briefing the
+  orchestrator with the mid-session recap built from the restored
+  board. Corrupt or version-mismatched snapshots, a different config
+  path, or a config that dropped a live role refuse loudly instead of
+  guessing; roles the config added spawn appended. Agent LLM context
+  stays per-agent config (for example `--continue` in `args`).
+  (#178, #180)
+- Session handoff: `choragos handoff [--config new-team.toml]`, or
+  `prefix+H` behind a confirm overlay, asks the orchestrator to write
+  `.choragos/handoff-session.md` (goal, state of the work, in-flight
+  and remaining tasks), stops the session once the document lands (2
+  minute limit; the document is an enrichment, not a dependency), and
+  the next `serve --resume` attaches it to the new orchestrator's
+  boot context after the recap. Roles the new config drops become
+  tombstones instead of refusing the resume, so handing off to a
+  disjoint team works; each session keeps one immutable orchestrator,
+  per the team-evolution rule. (#181)
+- Durable `events.log`: append across runs with a `deck starting`
+  marker per run (now carrying the pid) and a 5 MB rotation to
+  `events.log.1`. `choragos report` defaults to the most recent run;
+  `--all` covers the whole file. (#178)
+- Design note in `docs/design-session-resume-handoff.md`; resume and
+  handoff guides in `docs/long-running-sessions.md`. (#175)
+
+### Fixed
+- `desktop/go.mod` had drifted behind the root module's `x/text`
+  bump, breaking `make -C desktop vet` for source builds; the desktop
+  CI only triggers on `desktop/**` paths, so main stayed green while
+  broken. (#176)
+
 ## [0.14.0] - 2026-07-24
 
 Write-partitioned coordination files: separation of duties for agents.
@@ -493,7 +533,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/sphragis-oss/choragos/compare/v0.11.2...v0.12.0
