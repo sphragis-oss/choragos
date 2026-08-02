@@ -1,6 +1,10 @@
 # Design: session resume and orchestrator handoff
 
-Status: parts A and B implemented; part C proposed.
+Status: implemented (parts A, B, and C). Part C shipped with two
+implementation deltas: the quit snapshot carries a `handoff` flag so
+resume tombstones roles the new config dropped (instead of refusing,
+which would have made a disjoint team impossible), and the stored
+layout is cleared on handoff since it describes the old team.
 Two user-facing features with one shared
 foundation: after a quit, `choragos serve --resume` brings the deck
 back with its board, gates, layout, and roster intact; and

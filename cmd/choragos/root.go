@@ -49,6 +49,7 @@ func rootCmd() *cobra.Command {
 		workDoneCmd(),
 		rosterCmd(),
 		reloadCmd(),
+		handoffCmd(),
 		versionCmd(),
 		genManCmd(),
 	)

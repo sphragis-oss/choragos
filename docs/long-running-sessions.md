@@ -68,6 +68,33 @@ Roles the config *added* since the snapshot spawn normally, appended
 after the restored roster. Without `--resume` a leftover snapshot is
 ignored and overwritten as the new session progresses.
 
+## Handoff to the next session
+
+Resume brings the *same* session back; handoff is a deliberate session
+boundary that carries the context to a *next* one, optionally with a
+different team. Each session keeps one immutable orchestrator (the
+"orchestrator always exists" rule); the sessions succeed each other.
+
+```bash
+choragos handoff                          # keep the same team config
+choragos handoff --config new-team.toml   # hand off to a new team
+# or prefix+H in the deck (confirm overlay)
+```
+
+The deck asks the running orchestrator to write
+`.choragos/handoff-session.md` (goal, state of the work, in-flight and
+remaining tasks, anything the next team must know), then quits once the
+file is written, or after 2 minutes without it: the document is an
+enrichment, not a dependency. You can also write or edit it by hand
+before resuming.
+
+The next `choragos serve --resume` (with `--config new-team.toml` when
+one was named) restores the board as usual and attaches the handoff
+document to the new orchestrator's boot context after the recap. Roles
+the new config drops become tombstones instead of refusing the resume,
+so the board history and its indices stay intact; the stored layout is
+deliberately not carried across a handoff.
+
 ## Sessions are per directory
 
 One session per working directory: sockets and metadata live under a

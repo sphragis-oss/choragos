@@ -124,29 +124,32 @@ func lastN(lines []string, n int) []string {
 
 // session is the deck's core: everything that must survive a future UI detach.
 type session struct {
-	cfg        config.Config
-	panes      []*entry
-	board      []taskEvent
-	gates      []pendingGate                // delegations awaiting user approval, oldest first
-	loops      map[string]*judgeLoop        // judge loops keyed by their in-flight task id
-	ownSnaps   map[string]map[string]string // owned-file hashes per in-flight task id (write ownership)
-	taskSeq    int                          // task id counter for delegations
-	server     *ipc.Server
-	socket     string
-	baseURL    string // gateway base URL handed to role env; reused on restart
-	gateway    *sphragis.Supervisor
-	sphragisOn bool              // gateway enforcement, toggled live with ctrl+g
-	gatewayUp  bool              // last known gateway health (refreshed off the UI thread)
-	lastTokens time.Time         // last event-log token snapshot, paced by tokenSnapInterval
-	closed     bool              // closeAll ran; makes cleanup idempotent
-	ckpt       *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
-	bellFn     func()            // rings the terminal bell; nil disables ([ui] bell)
-	layout     []byte            // last known wm layout blob, persisted in the session snapshot
-	resume     *Snapshot         // state to restore on start; nil for a fresh session
-	events     *slog.Logger
-	eventsC    io.Closer
-	notify     func(any) // core -> UI message pump; nil-safe via send
-	focusFn    func(int) // UI focus request (delegations, work-done, input prompts)
+	cfg         config.Config
+	panes       []*entry
+	board       []taskEvent
+	gates       []pendingGate                // delegations awaiting user approval, oldest first
+	loops       map[string]*judgeLoop        // judge loops keyed by their in-flight task id
+	ownSnaps    map[string]map[string]string // owned-file hashes per in-flight task id (write ownership)
+	taskSeq     int                          // task id counter for delegations
+	server      *ipc.Server
+	socket      string
+	baseURL     string // gateway base URL handed to role env; reused on restart
+	gateway     *sphragis.Supervisor
+	sphragisOn  bool              // gateway enforcement, toggled live with ctrl+g
+	gatewayUp   bool              // last known gateway health (refreshed off the UI thread)
+	lastTokens  time.Time         // last event-log token snapshot, paced by tokenSnapInterval
+	closed      bool              // closeAll ran; makes cleanup idempotent
+	ckpt        *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
+	bellFn      func()            // rings the terminal bell; nil disables ([ui] bell)
+	layout      []byte            // last known wm layout blob, persisted in the session snapshot
+	resume      *Snapshot         // state to restore on start; nil for a fresh session
+	handoffAt   time.Time         // when a handoff was requested; zero = none pending
+	handoffCfg  string            // config the next session should resume with; empty keeps the current
+	handoffDone bool              // handoff finished; the quit snapshot carries the flag
+	events      *slog.Logger
+	eventsC     io.Closer
+	notify      func(any) // core -> UI message pump; nil-safe via send
+	focusFn     func(int) // UI focus request (delegations, work-done, input prompts)
 }
 
 // send forwards a core message to the UI loop; nil-safe for tests without a pump.
@@ -793,7 +796,7 @@ func bootLanded(e *entry) bool {
 func (s *session) injectBoot(e *entry) {
 	if e.role.Start {
 		file := "orchestrator-context.md"
-		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg)+s.recapNote(),
+		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg)+s.recapNote()+s.handoffNote(),
 			"Read "+filepath.Join(contextDir, file)+" for your role, available agents, and the delegation protocol. Acknowledge your role and wait for instructions.")
 		injectLine(e, e.bootLine)
 		return

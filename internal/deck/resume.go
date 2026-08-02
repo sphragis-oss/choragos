@@ -31,6 +31,9 @@ type Snapshot struct {
 	Board      []wire.Task `json:"board,omitempty"`
 	Gates      []wire.Gate `json:"gates,omitempty"`
 	Layout     []byte      `json:"layout,omitempty"`
+	// Handoff marks a snapshot written by choragos handoff: the next config may
+	// drop roles, which resume then tombstones instead of refusing.
+	Handoff bool `json:"handoff,omitempty"`
 }
 
 // SnapRole preserves one roster slot; order and tombstones are index-load-bearing.
@@ -49,6 +52,7 @@ func (s *session) saveSnapshot() {
 		Version: snapshotVersion, Saved: time.Now(), ConfigPath: s.cfg.Path,
 		TaskSeq: s.taskSeq, Roster: roster,
 		Board: toWireTasks(s.board), Gates: toWireGates(s.gates), Layout: s.layout,
+		Handoff: s.handoffDone,
 	}
 	b, _ := json.Marshal(&snap) // plain structs: cannot fail
 	path := filepath.Join(contextDir, snapshotName)
@@ -76,19 +80,34 @@ func LoadSnapshot(cfg config.Config) (*Snapshot, error) {
 	if snap.Version != snapshotVersion {
 		return nil, fmt.Errorf("session snapshot is v%d, this deck writes v%d; start without --resume", snap.Version, snapshotVersion)
 	}
-	if snap.ConfigPath != cfg.Path {
+	if !samePath(snap.ConfigPath, cfg.Path) {
 		return nil, fmt.Errorf("snapshot was taken with config %q, not %q; resume with the same config or start without --resume", snap.ConfigPath, cfg.Path)
 	}
 	have := make(map[string]bool, len(cfg.Roles))
 	for _, r := range cfg.Roles {
 		have[r.Name] = true
 	}
-	for _, sr := range snap.Roster {
-		if !sr.Gone && !have[sr.Name] {
-			return nil, fmt.Errorf("config no longer defines role %q from the snapshot; restore it or start without --resume", sr.Name)
+	for i, sr := range snap.Roster {
+		if sr.Gone || have[sr.Name] {
+			continue
 		}
+		if snap.Handoff {
+			snap.Roster[i].Gone = true // the handoff picked a new team; keep the slot for indices
+			continue
+		}
+		return nil, fmt.Errorf("config no longer defines role %q from the snapshot; restore it or start without --resume", sr.Name)
 	}
 	return &snap, nil
+}
+
+// samePath compares config paths by absolute form; handoff stores them absolute.
+func samePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	aa, errA := filepath.Abs(a)
+	ab, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && aa == ab
 }
 
 // spawnResume spawns the roster in snapshot order, tombstones kept so stored indices stay valid;

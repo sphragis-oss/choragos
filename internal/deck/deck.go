@@ -103,6 +103,7 @@ type Model struct {
 	rbFiles    int        // files the rollback will restore
 	rbMsg      string     // error or result text; any key closes
 	rbWarn     string     // unresolved-task caution shown in the overlay
+	hoOn       bool       // handoff confirm overlay visible; y hands off, any other key cancels
 	broadcast  bool       // normal-mode keys go to every live pane
 	searching  bool       // typing a scrollback search query
 	searchBuf  string     // query being typed
@@ -217,6 +218,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.closeAll()
 			return m, tea.Quit
 		}
+		if msg.cmd.Cmd == "handoff" {
+			m.startHandoff(msg.cmd.NextConfig)
+			return m, nil
+		}
 		m.applyCommand(msg.cmd)
 	case remoteEvMsg:
 		m.applyRemoteEvent(msg.ev)
@@ -256,6 +261,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.checkWaiting()
 		m.checkTimeouts()
 		m.maybeLogTokens()
+		if m.checkHandoff() {
+			m.closeAll()
+			return m, tea.Quit
+		}
 		if m.sphragisOn {
 			cmds := []tea.Cmd{tick(), checkHealth(m.cfg.Sphragis.Addr)}
 			if m.gatewayUp {
@@ -316,6 +325,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.rbOn {
 		m.rollbackKey(msg)
+		return m, nil
+	}
+	if m.hoOn {
+		m.handoffKey(msg)
 		return m, nil
 	}
 	if m.boardOn {
@@ -535,11 +548,46 @@ func (m *Model) wmAction(key string) {
 	case m.keys.Search:
 		m.searching = true
 		m.searchBuf = ""
+	case m.keys.Handoff:
+		m.hoOn = true
 	default:
 		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			m.surfaceRole(int(key[0] - '1')) // card numbers are 1-based
 		}
 	}
+}
+
+// handoffKey resolves the handoff confirm: y hands the session off, any other key cancels.
+func (m *Model) handoffKey(msg tea.KeyMsg) {
+	m.hoOn = false
+	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
+		return
+	}
+	switch string(msg.Runes) {
+	case "y", "Y":
+		if m.remote != nil {
+			_ = m.remote.WriteEvent(wire.Event{Kind: "handoff"})
+			return
+		}
+		m.startHandoff("")
+	}
+}
+
+// renderHandoff draws the handoff confirm in place of the tiled area.
+func (m *Model) renderHandoff(w, h int) string {
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(m.th.waiting).Render("session handoff") + "\n\n")
+	b.WriteString("The orchestrator will write " + filepath.Join(contextDir, handoffFile) + ",\n")
+	b.WriteString("then the session stops (2 minute limit). Resume with:\n\n")
+	b.WriteString("  choragos serve --resume [--config new-team.toml]\n\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Render("[y] hand off   [any other key] cancel"))
+	if w < 6 || h < 5 {
+		return truncate(b.String(), w*h)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).BorderForeground(m.th.waiting).
+		Width(w - 2).Height(h - 2).MaxHeight(h).
+		Render(b.String())
 }
 
 // searchKey edits the query; Enter jumps to the nearest match above, Esc cancels.
@@ -911,6 +959,9 @@ func (m *Model) View() string {
 	if m.rbOn {
 		body = m.renderRollback(mainW, contentH) // a started rollback outranks a gate; one keypress resolves it
 	}
+	if m.hoOn {
+		body = m.renderHandoff(mainW, contentH) // one keypress resolves it, like the rollback confirm
+	}
 	if m.pagerOn {
 		body = m.renderPager(mainW, contentH) // reading outranks even the gate; esc returns to it
 	}
@@ -944,6 +995,7 @@ func (m *Model) renderHelp(w, h int) string {
 		{k.Prefix + " " + k.Detach, "detach (attached sessions; agents keep running)"},
 		{k.Prefix + " " + k.Broadcast, "toggle broadcast input"},
 		{k.Prefix + " " + k.TaskBoard, "task board"},
+		{k.Prefix + " " + k.Handoff, "handoff: end the session with a handoff doc"},
 		{k.Prefix + " 1..9", "focus role by card number"},
 		{k.Prefix + " " + k.Search, "search scrollback"},
 		{k.Prefix + " " + k.Help, "this help"},

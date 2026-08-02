@@ -49,7 +49,7 @@ happens asynchronously in the UI loop.
 
 | Field | Type | Used by | Meaning |
 |-------|------|---------|---------|
-| `cmd` | string | all | `"delegate"`, `"work-done"`, `"roster-add"`, or `"reload"` |
+| `cmd` | string | all | `"delegate"`, `"work-done"`, `"roster-add"`, `"reload"`, or `"handoff"` |
 | `to` | string array | delegate | Target role names; one injection per role |
 | `task` | string | both | Task text (delegate) or one-line summary (work-done) |
 | `brief` | string | delegate | Absolute path to a brief file holding the full task |
@@ -61,6 +61,7 @@ happens asynchronously in the UI loop.
 | `role_args` | string array | roster-add | Arguments for the command, in order |
 | `role_model` | string | roster-add | Model for the role, optional |
 | `role_prompt` | string | roster-add | `prompt_template` for the role, optional |
+| `next_config` | string | handoff | Absolute config path for the next session; empty keeps the current one |
 
 The CLI verbs validate `brief` / `report` (non-empty regular file) and
 absolutize them before sending, so they resolve from any working directory.
@@ -85,6 +86,12 @@ human edit plus `reload`.
 Two more field-less verbs exist for session lifecycle: `ping` (liveness,
 the ack is the answer; used by `choragos ls`) and `shutdown` (stop the
 session and its agents; used by `choragos kill`).
+
+`handoff` (sent by `choragos handoff`) asks the orchestrator to write
+`.choragos/handoff-session.md`, then stops the session once the file is
+written (or after 2 minutes), stamping the quit snapshot for
+`choragos serve --resume` (see
+[long-running-sessions.md](long-running-sessions.md#handoff-to-the-next-session)).
 
 ## What the deck does with a delegate
 

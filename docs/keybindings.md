@@ -38,6 +38,7 @@ forwarded to the PTY.
 | `pause_role` | `prefix+p` | Freeze/resume the focused role's process group (SIGSTOP/SIGCONT): inspect the workspace mid-flight without losing the agent's context. Status shows `paused`; paused time never counts toward `timeout`; input typed or delegated meanwhile buffers until resume. Best-effort: children in their own process groups keep running, and an API call in flight during a long pause may drop and retry on resume |
 | `reload` | `prefix+C` | Re-read the config file and converge the team: spawn added roles, retire removed ones, respawn changed specs (same as `choragos reload`) |
 | `detach` | `prefix+d` | Detach from a `choragos attach` session: the TUI exits, agents keep running (no-op in a foreground `serve`) |
+| `handoff` | `prefix+H` | Confirm overlay, then session handoff: the orchestrator writes `.choragos/handoff-session.md` and the session stops; resume with `choragos serve --resume` (same as `choragos handoff`) |
 | `broadcast` | `prefix+a` | Toggle sending normal-mode keys to every live pane (`[BCAST]`) |
 | `task_board` | `prefix+t` | Overlay of delegations with pending/done status and durations; `j`/`k` select an entry, `v` views its brief or report, `e` opens it in `$EDITOR`, `u` rolls the workspace back to before that task, any other key closes |
 | `search` | `prefix+/` | Search the focused tile's scrollback; Enter jumps, `n`/`N` navigate |
