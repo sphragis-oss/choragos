@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-02
+
+Deliberate endings, everywhere a session can end.
+
+### Added
+- `bye` wire event: when a session ends on purpose while a client is
+  attached (handoff completion, `choragos kill`, SIGTERM), the server
+  says goodbye with the reason before exiting. The attached TUI quits
+  cleanly and prints `session ended: handoff complete` (with the
+  resume hint) or `session ended: shutdown requested` instead of
+  reporting a lost connection. Additive under proto 1. (#182, #185)
+- Desktop: a **Hand off session** action next to Stop everything,
+  behind the same two-click confirm. The orchestrator writes
+  `.choragos/handoff-session.md`, the session stops, and the app
+  returns to the picker with the handoff goodbye and the resume hint;
+  plain shutdowns get the same courtesy. (#183, #186)
+
 ## [0.15.0] - 2026-08-02
 
 Sessions that survive their own end: resume after a quit, hand off to
@@ -533,7 +550,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/sphragis-oss/choragos/compare/v0.12.0...v0.13.0
