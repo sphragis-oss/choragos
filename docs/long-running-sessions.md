@@ -88,6 +88,11 @@ file is written, or after 2 minutes without it: the document is an
 enrichment, not a dependency. You can also write or edit it by hand
 before resuming.
 
+An attached client is told the end is deliberate: it exits cleanly
+with `session ended: handoff complete` (and the resume hint) instead
+of reporting a lost connection; `choragos kill` says goodbye the same
+way.
+
 The next `choragos serve --resume` (with `--config new-team.toml` when
 one was named) restores the board as usual and attaches the handoff
 document to the new orchestrator's boot context after the recap. Roles

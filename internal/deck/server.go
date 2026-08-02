@@ -92,6 +92,7 @@ func RunServer(cfg config.Config, version string, snap *Snapshot) error {
 	for {
 		select {
 		case <-sigCh:
+			srv.sayBye("shutdown")
 			return nil
 		case <-ticker.C:
 			s.bootPanes()
@@ -99,6 +100,7 @@ func RunServer(cfg config.Config, version string, snap *Snapshot) error {
 			s.checkTimeouts()
 			s.maybeLogTokens()
 			if s.checkHandoff() {
+				srv.sayBye("handoff")
 				return nil
 			}
 			if s.sphragisOn {
@@ -138,6 +140,7 @@ func (srv *server) handle(v any) bool {
 	case ipcMsg:
 		switch msg.cmd.Cmd {
 		case "shutdown":
+			srv.sayBye("shutdown")
 			return true
 		case "handoff":
 			s.startHandoff(msg.cmd.NextConfig)
@@ -306,6 +309,11 @@ func (srv *server) attach(wc *wire.Conn, hello wire.Event) {
 			}
 		}
 	}()
+}
+
+// sayBye tells the attached client the session is ending on purpose, so it can quit cleanly.
+func (srv *server) sayBye(reason string) {
+	srv.sendEvent(wire.Event{Kind: "bye", Reason: reason})
 }
 
 // dropClient severs the attached client; the session keeps running.
