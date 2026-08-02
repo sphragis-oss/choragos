@@ -28,21 +28,40 @@ type reportRow struct {
 }
 
 // Report summarizes an events.log into a per-role activity table on w.
-func Report(path string, w io.Writer) error {
-	data, err := os.ReadFile(path)
+// By default only the last run is covered; all extends to the whole file.
+func Report(path string, w io.Writer, all bool) error {
+	log, err := readEventLog(path, all)
 	if err != nil {
-		return fmt.Errorf("read event log: %w", err)
+		return err
 	}
-	return writeReport(w, string(data), path)
+	return writeReport(w, log, path)
 }
 
 // ReportJSON emits the same summary as a stable JSON document on w.
-func ReportJSON(path string, w io.Writer) error {
+func ReportJSON(path string, w io.Writer, all bool) error {
+	log, err := readEventLog(path, all)
+	if err != nil {
+		return err
+	}
+	return writeReportJSON(w, log, path)
+}
+
+// readEventLog loads the log, cut at the final "deck starting" marker unless all.
+func readEventLog(path string, all bool) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read event log: %w", err)
+		return "", fmt.Errorf("read event log: %w", err)
 	}
-	return writeReportJSON(w, string(data), path)
+	log := string(data)
+	if all {
+		return log, nil
+	}
+	if i := strings.LastIndex(log, `msg="deck starting"`); i >= 0 {
+		if j := strings.LastIndexByte(log[:i], '\n'); j >= 0 {
+			return log[j+1:], nil
+		}
+	}
+	return log, nil
 }
 
 // reportData is the aggregated run summary shared by the text and JSON renderers.

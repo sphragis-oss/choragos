@@ -1,6 +1,7 @@
 # Design: session resume and orchestrator handoff
 
-Status: proposal. Two user-facing features with one shared
+Status: Part A implemented; parts B and C proposed.
+Two user-facing features with one shared
 foundation: after a quit, `choragos serve --resume` brings the deck
 back with its board, gates, layout, and roster intact; and
 `choragos handoff` ends the current session on purpose, carrying its

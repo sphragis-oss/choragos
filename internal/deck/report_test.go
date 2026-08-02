@@ -4,8 +4,11 @@ package deck
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const sampleEvents = `time=2026-07-13T13:13:35.634+03:00 level=INFO msg="deck starting" roles=3 sphragis=true dir=/tmp/demo
@@ -130,6 +133,60 @@ time=2026-07-13T13:16:02.000+03:00 level=WARN msg="budget exceeded" role=coder b
 	orch := byRole["orchestrator"]
 	if orch.CostUSD != nil || orch.BudgetUSD != nil {
 		t.Fatal("unpriced role must have null cost and budget")
+	}
+}
+
+func TestReportLastSessionDefault(t *testing.T) {
+	older := `time=2026-07-12T09:00:00.000+03:00 level=INFO msg="deck starting" roles=2 sphragis=false dir=/tmp/old pid=100
+time=2026-07-12T09:01:00.000+03:00 level=INFO msg=delegate id=T1 from=orchestrator to=translator task="old" brief=""
+time=2026-07-12T09:02:00.000+03:00 level=INFO msg="deck stopping"
+`
+	path := filepath.Join(t.TempDir(), "events.log")
+	if err := os.WriteFile(path, []byte(older+sampleEvents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var sb strings.Builder
+	if err := Report(path, &sb, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sb.String(), "translator") || !strings.Contains(sb.String(), "coder") {
+		t.Errorf("default report should cover only the last run:\n%s", sb.String())
+	}
+	sb.Reset()
+	if err := Report(path, &sb, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sb.String(), "translator") || !strings.Contains(sb.String(), "coder") {
+		t.Errorf("--all report should cover every run:\n%s", sb.String())
+	}
+	sb.Reset()
+	if err := ReportJSON(path, &sb, false); err != nil {
+		t.Fatal(err)
+	}
+	var got jsonReport
+	if err := json.Unmarshal([]byte(sb.String()), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Roles) != 2 || !got.Start.After(time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("JSON default should start at the last run: roles=%d start=%v", len(got.Roles), got.Start)
+	}
+	if err := Report(filepath.Join(t.TempDir(), "missing.log"), &sb, false); err == nil {
+		t.Fatal("missing log should error")
+	}
+}
+
+func TestReportNoMarkerCoversWholeFile(t *testing.T) {
+	log := strings.Join(strings.Split(sampleEvents, "\n")[1:], "\n")
+	path := filepath.Join(t.TempDir(), "events.log")
+	if err := os.WriteFile(path, []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var sb strings.Builder
+	if err := Report(path, &sb, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sb.String(), "coder") {
+		t.Errorf("marker-less log should still report:\n%s", sb.String())
 	}
 }
 
