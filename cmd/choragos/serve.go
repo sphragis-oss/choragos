@@ -22,6 +22,7 @@ func serveCmd() *cobra.Command {
 		sphragis bool
 		detach   bool
 		headless bool
+		resume   bool
 	)
 	cmd := &cobra.Command{
 		Use:     "serve",
@@ -42,25 +43,32 @@ func serveCmd() *cobra.Command {
 			if cmd.Flags().Changed("sphragis") {
 				cfg.Sphragis.Enabled = &sphragis
 			}
+			var snap *deck.Snapshot
+			if resume {
+				if snap, err = deck.LoadSnapshot(cfg); err != nil {
+					return err
+				}
+			}
 			if detach {
-				return detachServe(cmd, cfgPath, sphragis, cmd.Flags().Changed("sphragis"))
+				return detachServe(cmd, cfgPath, sphragis, cmd.Flags().Changed("sphragis"), resume)
 			}
 			if headless {
-				return deck.RunServer(cfg, version)
+				return deck.RunServer(cfg, version, snap)
 			}
-			return deck.Run(cfg)
+			return deck.Run(cfg, snap)
 		},
 	}
 	cmd.Flags().StringVar(&cfgPath, "config", "", "orchestration config path (default "+config.DefaultFile+", else built-in)")
 	cmd.Flags().BoolVar(&sphragis, "sphragis", true, "route agent traffic through the Sphragis gateway, fail-closed (default on)")
 	cmd.Flags().BoolVar(&detach, "detach", false, "start the session headless and return; reconnect with 'choragos attach'")
 	cmd.Flags().BoolVar(&headless, "headless", false, "run the session server in the foreground without a TUI (used by --detach)")
+	cmd.Flags().BoolVar(&resume, "resume", false, "restore the previous session's board, gates, and layout from .choragos/session.json")
 	_ = cmd.Flags().MarkHidden("headless")
 	return cmd
 }
 
 // detachServe double-forks the headless server for this directory and returns.
-func detachServe(cmd *cobra.Command, cfgPath string, sphragis, sphragisSet bool) error {
+func detachServe(cmd *cobra.Command, cfgPath string, sphragis, sphragisSet, resume bool) error {
 	if err := ipc.Send(ipc.SocketPath(), ipc.Command{Cmd: "ping"}); err == nil {
 		return fmt.Errorf("a session is already running for this directory (choragos attach, or choragos kill)")
 	}
@@ -78,6 +86,9 @@ func detachServe(cmd *cobra.Command, cfgPath string, sphragis, sphragisSet bool)
 	}
 	if sphragisSet {
 		args = append(args, fmt.Sprintf("--sphragis=%t", sphragis))
+	}
+	if resume {
+		args = append(args, "--resume")
 	}
 	if err := os.MkdirAll(".choragos", 0o755); err != nil {
 		return err

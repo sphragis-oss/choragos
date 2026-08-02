@@ -141,6 +141,8 @@ type session struct {
 	closed     bool              // closeAll ran; makes cleanup idempotent
 	ckpt       *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
 	bellFn     func()            // rings the terminal bell; nil disables ([ui] bell)
+	layout     []byte            // last known wm layout blob, persisted in the session snapshot
+	resume     *Snapshot         // state to restore on start; nil for a fresh session
 	events     *slog.Logger
 	eventsC    io.Closer
 	notify     func(any) // core -> UI message pump; nil-safe via send
@@ -197,6 +199,7 @@ func (s *session) recordTask(ev taskEvent) {
 	if len(s.board) > boardCap {
 		s.board = s.board[len(s.board)-boardCap:]
 	}
+	s.saveSnapshot()
 }
 
 // resolveTask marks the delegation with this id as reported.
@@ -208,6 +211,7 @@ func (s *session) resolveTask(id string) {
 		ev := &s.board[i]
 		if ev.kind == "delegate" && ev.id == id && ev.doneAt.IsZero() {
 			ev.doneAt = time.Now()
+			s.saveSnapshot()
 			return
 		}
 	}
@@ -249,7 +253,12 @@ func (s *session) start(cw, ch int) error {
 	if s.sphragisOn {
 		s.baseURL = s.cfg.Sphragis.BaseURL()
 	}
-	panes, err := startPanes(s.cfg, cw, ch, s.socket, s.baseURL)
+	var panes []*entry
+	if s.resume != nil {
+		panes, err = spawnResume(s.cfg, s.resume, cw, ch, s.socket, s.baseURL)
+	} else {
+		panes, err = startPanes(s.cfg, cw, ch, s.socket, s.baseURL)
+	}
 	if err != nil {
 		return err
 	}
@@ -258,7 +267,13 @@ func (s *session) start(cw, ch int) error {
 	for i, e := range panes {
 		e.startedAt = now
 		e.lastActive = now
+		if e.gone {
+			continue
+		}
 		s.watchPane(e, i)
+	}
+	if s.resume != nil {
+		s.applyResume(s.resume)
 	}
 	return nil
 }
@@ -299,6 +314,7 @@ func (s *session) dispatch(cmd ipc.Command) {
 			}
 			if e.role.Approve {
 				s.gates = append(s.gates, pendingGate{cmd: cmd, to: name, at: time.Now()})
+				s.saveSnapshot()
 				s.log().Info("delegate gated", "to", name, "task", singleLine(cmd.Task), "brief", cmd.Brief)
 				if s.bellFn != nil {
 					s.bellFn()
@@ -447,6 +463,7 @@ func (s *session) rosterAdd(cmd ipc.Command) {
 		cmd.Task = "add role " + name + " (command " + cmd.RoleCommand + ", model " + cmp.Or(cmd.RoleModel, "default") + ")"
 		if s.cfg.Roster.NeedsApprove() {
 			s.gates = append(s.gates, pendingGate{cmd: cmd, to: name, at: time.Now()})
+			s.saveSnapshot()
 			s.log().Info("roster add gated", "role", name, "command", cmd.RoleCommand, "model", cmd.RoleModel)
 			if s.bellFn != nil {
 				s.bellFn()
@@ -506,6 +523,7 @@ func (s *session) approveGate() {
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	s.saveSnapshot()
 	if g.ownership {
 		s.resolveOwnership(g, true)
 		return
@@ -535,6 +553,7 @@ func (s *session) rejectGate() {
 	}
 	g := s.gates[0]
 	s.gates = s.gates[1:]
+	s.saveSnapshot()
 	if g.ownership {
 		s.resolveOwnership(g, false)
 		return
@@ -1085,6 +1104,7 @@ func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 	}
 	s.gates = kept
 	s.cfg.Roles = cfg.Roles // future orchestrator boots see the new roster
+	s.saveSnapshot()        // roster order and tombstones changed
 	if len(added)+len(removed)+len(respawned) == 0 {
 		s.log().Info("reload: no role changes")
 		return retired, false
@@ -1183,6 +1203,7 @@ func (s *session) closeAll() {
 	}
 	s.closed = true
 	s.log().Info("deck stopping")
+	s.saveSnapshot() // final state for a later serve --resume
 	if s.server != nil {
 		_ = s.server.Close()
 		_ = os.Remove(s.socket)

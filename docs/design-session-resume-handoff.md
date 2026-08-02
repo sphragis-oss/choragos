@@ -1,6 +1,6 @@
 # Design: session resume and orchestrator handoff
 
-Status: Part A implemented; parts B and C proposed.
+Status: parts A and B implemented; part C proposed.
 Two user-facing features with one shared
 foundation: after a quit, `choragos serve --resume` brings the deck
 back with its board, gates, layout, and roster intact; and

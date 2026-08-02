@@ -50,7 +50,7 @@ approve = true
 		t.Fatal(err)
 	}
 	done = make(chan error, 1)
-	go func() { done <- RunServer(cfg, serverTestVersion) }()
+	go func() { done <- RunServer(cfg, serverTestVersion, nil) }()
 	if !waitFor(func() bool {
 		_, err := os.Stat(ipc.UISocketPath())
 		return err == nil
