@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/pane"
@@ -202,5 +200,4 @@ func TestHandoffIPCTickQuits(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(contextDir, snapshotName)); err != nil {
 		t.Fatalf("quit must leave the snapshot: %v", err)
 	}
-	var _ tea.Cmd = cmd
 }
