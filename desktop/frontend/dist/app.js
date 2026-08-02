@@ -18,6 +18,7 @@ const els = {
   setupAuto: document.getElementById("setup-auto"),
   setupTemplate: document.getElementById("setup-template"),
   setupCreate: document.getElementById("setup-create"),
+  handoff: document.getElementById("handoff"),
   setupNote: document.getElementById("setup-note"),
   mirror: document.getElementById("mirror"),
   cards: document.getElementById("cards"),
@@ -445,6 +446,7 @@ function toPicker() {
   els.mirror.classList.add("hidden");
   els.picker.classList.remove("hidden");
   disarmStop();
+  disarmHandoff();
   refreshSessions();
   state.pollTimer = setInterval(refreshSessions, 5000);
 }
@@ -516,6 +518,15 @@ Ev.EventsOn("session:lost", (msg) => {
   toPicker();
 });
 
+Ev.EventsOn("session:bye", (reason) => {
+  if (!state.attached) return;
+  state.expectStop = true;
+  toPicker();
+  showPickerStatus(reason === "handoff"
+    ? "Session ended: handoff complete. Resume with: choragos serve --resume"
+    : "Session ended: shutdown requested.");
+});
+
 /* lifecycle buttons */
 
 els.detach.addEventListener("click", async () => {
@@ -538,6 +549,24 @@ els.stop.addEventListener("click", async () => {
   }
   state.expectStop = true;
   await App.StopSession();
+});
+
+// handoff is two-click like stop: the orchestrator writes the handoff doc, then the session stops
+function disarmHandoff() {
+  els.handoff.classList.remove("armed");
+  els.handoff.textContent = "Hand off session";
+}
+
+els.handoff.addEventListener("click", async () => {
+  if (!els.handoff.classList.contains("armed")) {
+    els.handoff.classList.add("armed");
+    els.handoff.textContent = "Click again: orchestrator writes the handoff, session stops";
+    setTimeout(disarmHandoff, 3000);
+    return;
+  }
+  disarmHandoff();
+  state.expectStop = true;
+  await App.Handoff();
 });
 
 setInterval(() => {
