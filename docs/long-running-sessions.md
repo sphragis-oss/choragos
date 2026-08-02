@@ -36,6 +36,38 @@ still supervises, and `[ui] on_gate` / `on_input` hooks still fire, so
 you hear about a waiting gate even with no client. `events.log` records
 everything in between.
 
+## Resume after quit
+
+Detach keeps the server alive; resume brings a session back after it
+fully stopped. The deck writes its state (task board, task-id counter,
+pending gates, roster order with tombstones, tiling layout) to
+`.choragos/session.json` on every board or gate change and on quit, and
+
+```bash
+choragos serve --resume            # also works with --detach
+```
+
+restores it: roles respawn, the board and gates come back exactly as
+they were, and the orchestrator's boot context carries the usual
+mid-session recap (in-flight ids, pending gate count, completed count)
+built from the restored board.
+
+What resume is not: the agents' own LLM context. Their processes died
+with the deck; they come back fresh, informed by the recap. Agents with
+a native resume flag can add it to their `args` (for example
+`--continue`), exactly as after a model swap on reload.
+
+In-flight tasks restore as in flight. The worker behind them is gone,
+so no `work-done` will arrive; the orchestrator sees them in the recap
+and decides, with the delegation timeout as the backstop.
+
+Resume refuses loudly instead of guessing: a corrupt or
+version-mismatched snapshot, a different `--config` path, or a config
+that dropped a live role from the snapshot all abort with the reason.
+Roles the config *added* since the snapshot spawn normally, appended
+after the restored roster. Without `--resume` a leftover snapshot is
+ignored and overwritten as the new session progresses.
+
 ## Sessions are per directory
 
 One session per working directory: sockets and metadata live under a
