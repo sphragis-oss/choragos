@@ -86,7 +86,9 @@ The deck asks the running orchestrator to write
 remaining tasks, anything the next team must know), then quits once the
 file is written, or after 2 minutes without it: the document is an
 enrichment, not a dependency. You can also write or edit it by hand
-before resuming.
+before resuming. The orchestrator is asked to append a dated entry to
+`.choragos/memory.md` first, so the session's lessons outlive the
+handoff (see Project memory below).
 
 An attached client is told the end is deliberate: it exits cleanly
 with `session ended: handoff complete` (and the resume hint) instead
@@ -118,9 +120,10 @@ entry keeps it scannable:
 - the flaky suite is internal/wm; retry before digging
 ```
 
-Delete the file (or empty it) to boot stateless. Orchestrator-appended
-entries at session end are a planned follow-up
-([#190](https://github.com/sphragis-oss/choragos/issues/190)).
+Delete the file (or empty it) to boot stateless. `choragos handoff`
+also feeds it automatically: the orchestrator is asked to append an
+entry before writing the handoff document, so a deliberate session end
+leaves its lessons behind.
 
 ## Sessions are per directory
 

@@ -26,9 +26,11 @@ func (s *session) startHandoff(nextConfig string) {
 	s.handoffAt = time.Now()
 	s.handoffCfg = nextConfig
 	s.log().Info("handoff requested", "next_config", cmp.Or(nextConfig, s.cfg.Path))
-	s.injectOrchestrator("[choragos] The user requested a session handoff. Write " +
+	s.injectOrchestrator("[choragos] The user requested a session handoff. First append a short dated entry to " +
+		filepath.Join(contextDir, memoryFile) +
+		" with decisions, gotchas, and conventions from this session worth keeping for every future one. Then write " +
 		filepath.Join(contextDir, handoffFile) +
-		" covering the goal, the state of the work, in-flight and remaining tasks, and anything the next team must know. The session ends once the file is written (2 minute limit).")
+		" covering the goal, the state of the work, in-flight and remaining tasks, and anything the next team must know. The session ends once the handoff file is written (2 minute limit).")
 }
 
 // checkHandoff reports whether a pending handoff finished (document written or timed out) and the deck should quit.

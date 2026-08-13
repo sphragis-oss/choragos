@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Project memory: an append-only .choragos/memory.md of decisions, gotchas,
-// and conventions, offered to every orchestrator at boot. Hand-written today;
-// agent-appended entries are a follow-up (#190).
+// and conventions, offered to every orchestrator at boot. Hand-written or
+// appended by the orchestrator when a handoff ends the session (#190).
 package deck
 
 import (

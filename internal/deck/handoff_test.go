@@ -58,6 +58,20 @@ func TestHandoffWaitsForDocumentThenStamps(t *testing.T) {
 	}
 }
 
+func TestHandoffAsksForMemoryEntryFirst(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var got []byte
+	e := &entry{role: config.Role{Name: "orc", Start: true},
+		pane: pane.Remote(80, 24, func(b []byte) error { got = append(got, b...); return nil }, func(int, int) {})}
+	s := &session{cfg: config.Config{Path: "team.toml"}, panes: []*entry{e}}
+	s.startHandoff("")
+	mi := strings.Index(string(got), memoryFile)
+	hi := strings.Index(string(got), handoffFile)
+	if mi < 0 || hi < 0 || mi > hi {
+		t.Fatalf("request must ask for the memory entry before the handoff document: %q", got)
+	}
+}
+
 func TestHandoffTimesOutWithoutDocument(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s := &session{cfg: config.Config{Path: "team.toml"}, panes: []*entry{remoteEntry("orc", true)}}
