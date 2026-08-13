@@ -796,7 +796,7 @@ func bootLanded(e *entry) bool {
 func (s *session) injectBoot(e *entry) {
 	if e.role.Start {
 		file := "orchestrator-context.md"
-		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg)+s.recapNote()+s.handoffNote(),
+		e.bootLine = writeContext(file, prompt.OrchestratorContext(s.cfg)+s.recapNote()+s.handoffNote()+s.memoryNote(),
 			"Read "+filepath.Join(contextDir, file)+" for your role, available agents, and the delegation protocol. Acknowledge your role and wait for instructions.")
 		injectLine(e, e.bootLine)
 		return

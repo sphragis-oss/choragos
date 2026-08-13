@@ -100,6 +100,28 @@ the new config drops become tombstones instead of refusing the resume,
 so the board history and its indices stay intact; the stored layout is
 deliberately not carried across a handoff.
 
+## Project memory
+
+Handoff carries state to the *next* session; `.choragos/memory.md`
+carries knowledge to *every* session. When the file exists and is
+non-empty, each orchestrator's boot context points at it, so decisions,
+gotchas, and conventions ("the tests need `-tags integration`", "we
+decided against go-git in #69") are not relearned run after run.
+
+The file is yours: plain markdown, hand-written, hand-edited, and
+committable if the whole team should share it. A dated heading per
+entry keeps it scannable:
+
+```markdown
+## 2026-08-13
+- integration tests need -tags integration
+- the flaky suite is internal/wm; retry before digging
+```
+
+Delete the file (or empty it) to boot stateless. Orchestrator-appended
+entries at session end are a planned follow-up
+([#190](https://github.com/sphragis-oss/choragos/issues/190)).
+
 ## Sessions are per directory
 
 One session per working directory: sockets and metadata live under a
