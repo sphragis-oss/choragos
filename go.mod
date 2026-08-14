@@ -2,6 +2,8 @@ module github.com/sphragis-oss/choragos
 
 go 1.26
 
+toolchain go1.26.6
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.10

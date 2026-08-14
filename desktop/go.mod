@@ -2,6 +2,8 @@ module github.com/sphragis-oss/choragos/desktop
 
 go 1.26
 
+toolchain go1.26.6
+
 require (
 	github.com/sphragis-oss/choragos v0.0.0
 	github.com/wailsapp/wails/v2 v2.13.0
