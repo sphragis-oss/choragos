@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-14
+
+Sessions that learn: a project memory every orchestrator boots with.
+
+### Added
+- Project memory: when a non-empty `.choragos/memory.md` exists, every
+  orchestrator's boot context points at it, so decisions, gotchas, and
+  conventions carry across sessions instead of being relearned. The
+  file is yours: plain markdown, hand-written, hand-edited, and
+  committable; delete or empty it to boot stateless. (#190, #191)
+- `choragos handoff` feeds the memory automatically: the orchestrator
+  is asked to append a short dated entry before writing the handoff
+  document, so a deliberate session end leaves its lessons behind. The
+  entry stays an enrichment; only the handoff document (or the 2
+  minute limit) ends the session. (#190, #193)
+- Design note for per-role git worktrees and merge gates
+  (`docs/design-role-worktrees.md`): worktree-per-role isolation,
+  deck-authored commits per accepted task, and a gated merge back to
+  the main tree. Proposal only; nothing changes at runtime yet.
+  (#189, #192)
+
 ## [0.16.0] - 2026-08-02
 
 Deliberate endings, everywhere a session can end.
@@ -550,7 +571,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sphragis-oss/choragos/compare/v0.13.0...v0.14.0
