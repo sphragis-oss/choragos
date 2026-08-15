@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-08-15
+
+### Added
+- Desktop: the approval modal now recognizes merge gates, with the
+  buttons reading **Merge** / **Keep branch** and the viewer opening
+  the diff as **View diff**; judge-fallback gates say **View report**
+  for the report the button actually opens. Resolution semantics were
+  already correct; the words now match the TUI. (#189, #202)
+
 ## [0.18.0] - 2026-08-15
 
 Trust the run, all the way to the merge: per-role worktrees, an audit
@@ -613,7 +622,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...v0.16.0
