@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-15
+
+Trust the run, all the way to the merge: per-role worktrees, an audit
+trail of deck-authored commits, and the diff held at a human gate.
+
+### Added
+- Per-role git worktrees: `worktree = true` spawns a role in its own
+  checkout at `.choragos/worktrees/<role>` on branch
+  `choragos/<role>`, so parallel roles never trample each other. The
+  branch is reused across sessions (fast-forwarded when fully merged,
+  kept as is otherwise), a live checkout is never reset, a deleted
+  one is pruned and recreated, and injected task, brief, handoff, and
+  ownership paths become absolute for the role. Startup refuses
+  loudly without git, a repository, or a commit; `choragos doctor`
+  reports each role's plan; the orchestrator warns and ignores the
+  key. (#189, #196)
+- Deck-authored commits: every `work-done` from a worktree role lands
+  the role's changes as one commit on its branch (`choragos:
+  <task-id> <summary>`, gitignore respected, clean trees skipped,
+  signing off so a pinentry can never hang the deck), so the branch
+  is a per-task audit trail and the agent needs no git discipline.
+  Judge revise rounds commit too. (#189, #197)
+- Merge modes and the merge gate: `merge = "gate"` holds each
+  accepted task's diff in the approval queue (the reason carries the
+  diffstat, `v` pages the full diff, `y` lands a no-fast-forward
+  merge commit, `n` keeps the branch), `"auto"` merges without
+  asking, `"manual"` (default) leaves the branch to you. Whatever the
+  mode: conflicts abort cleanly and fall closed to a gate naming the
+  paths, a main tree with uncommitted tracked changes refuses the
+  same way, and a diff touching another role's owned files always
+  faces a human. Runs after every accepted work-done: plain, judge
+  pass, accepted judge fallback, accepted ownership gate. Merge gates
+  survive resume. (#189, #198)
+- Pre-merge checkpoints: both merge paths snapshot the main tree
+  first (`refs/choragos/checkpoints/<epoch>-<task-id>-merge`), so a
+  landed merge is one `choragos rollback` away from undone. (#189,
+  #199)
+- `worktree-flow` init template: the defect-ledger team with the
+  coder and the adversary in parallel worktrees and the coder behind
+  a merge gate; a worktrees section in `docs/teams.md` and a
+  guardrail row in the README. (#189, #199)
+
 ## [0.17.0] - 2026-08-14
 
 Sessions that learn: a project memory every orchestrator boots with.
@@ -571,7 +613,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/sphragis-oss/choragos/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/sphragis-oss/choragos/compare/v0.14.0...v0.15.0
