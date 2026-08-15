@@ -220,6 +220,9 @@ function renderGate() {
   els.gateMore.textContent =
     state.gates.length > 1 ? `+${state.gates.length - 1} more waiting behind this one` : "";
   els.gateView.classList.toggle("hidden", !(g.reason ? g.report : g.brief));
+  els.gateApprove.textContent = g.mergeId ? "Merge" : "Approve";
+  els.gateReject.textContent = g.mergeId ? "Keep branch" : "Reject";
+  els.gateView.textContent = g.mergeId ? "View diff" : g.reason ? "View report" : "View brief";
   els.gateModal.classList.remove("hidden");
 }
 
