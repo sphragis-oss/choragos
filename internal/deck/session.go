@@ -232,6 +232,9 @@ func (s *session) log() *slog.Logger {
 
 // start opens the control socket, spawns every role at cw x ch, and begins streaming them.
 func (s *session) start(cw, ch int) error {
+	if err := worktreePreflight(s.cfg.Roles); err != nil {
+		return err
+	}
 	s.events, s.eventsC = newEventLog()
 	s.socket = ipc.SocketPath()
 	srv, err := ipc.Serve(s.socket, func(c ipc.Command) { s.send(ipcMsg{cmd: c}) })
@@ -398,7 +401,13 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	id := fmt.Sprintf("T%d", s.taskSeq)
 	task := cmd.Task
 	if cmd.Brief != "" {
-		task = strings.TrimSpace("Read " + cmd.Brief + " for the full brief.\n\n" + cmd.Task)
+		brief := cmd.Brief
+		if e.role.Worktree {
+			if abs, err := filepath.Abs(brief); err == nil {
+				brief = abs
+			}
+		}
+		task = strings.TrimSpace("Read " + brief + " for the full brief.\n\n" + cmd.Task)
 	}
 	label := singleLine(cmd.Task)
 	if label == "" {
@@ -406,14 +415,14 @@ func (s *session) deliverDelegate(e *entry, i int, cmd ipc.Command) string {
 	}
 	if e.role.Fresh {
 		// fresh roles start clean; attach the orchestrator's handoff when it exists
-		handoff := filepath.Join(contextDir, "handoff-"+sanitize(e.role.Name)+".md")
-		if _, err := os.Stat(handoff); err == nil {
-			task += "\n\nRead " + handoff + " for the orchestrator's handoff from earlier tasks."
+		handoff := "handoff-" + sanitize(e.role.Name) + ".md"
+		if _, err := os.Stat(filepath.Join(contextDir, handoff)); err == nil {
+			task += "\n\nRead " + ctxPath(e.role, handoff) + " for the orchestrator's handoff from earlier tasks."
 		}
 	}
 	file := "worker-task-" + sanitize(e.role.Name) + ".md"
-	line := writeContext(file, prompt.WorkerTask(e.role, task, id, s.cfg.OwnedFiles()),
-		"Read "+filepath.Join(contextDir, file)+" for your task.")
+	line := writeContext(file, prompt.WorkerTask(e.role, task, id, ownedFor(e.role, s.cfg.OwnedFiles())),
+		"Read "+ctxPath(e.role, file)+" for your task.")
 	s.log().Info("delegate", "id", id, "from", "orchestrator", "to", e.role.Name, "task", label, "brief", cmd.Brief)
 	s.recordTask(taskEvent{at: time.Now(), kind: "delegate", id: id, to: e.role.Name, task: label, file: cmd.Brief})
 	s.snapshotTask(id, e.role.Name, label)
@@ -802,8 +811,8 @@ func (s *session) injectBoot(e *entry) {
 		return
 	}
 	file := sanitize(e.role.Name) + "-brief.md"
-	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role, s.cfg.OwnedFiles()),
-		"Read "+filepath.Join(contextDir, file)+" for your role, then stay idle until a task is delegated to you.")
+	e.bootLine = writeContext(file, prompt.WorkerBrief(e.role, ownedFor(e.role, s.cfg.OwnedFiles())),
+		"Read "+ctxPath(e.role, file)+" for your role, then stay idle until a task is delegated to you.")
 	injectLine(e, e.bootLine)
 }
 
@@ -1284,6 +1293,13 @@ func matchEnv(name string, patterns []string) bool {
 func startRole(r config.Role, cols, rows int, env []string) (*pane.Pane, error) {
 	cmd := exec.Command(r.Command, roleArgs(r)...)
 	cmd.Env = env
+	if r.Worktree {
+		dir, err := ensureWorktree(r.Name)
+		if err != nil {
+			return nil, fmt.Errorf("worktree for role %q: %w", r.Name, err)
+		}
+		cmd.Dir = dir
+	}
 	p, err := pane.Start(cmd, cols, rows)
 	if err != nil {
 		return nil, fmt.Errorf("start role %q: %w", r.Name, err)

@@ -39,6 +39,8 @@ type Role struct {
 	BaseURLEnv []string `toml:"base_url_env"`
 	// fresh respawns the role before every delegation, so each task starts with clean agent context
 	Fresh bool `toml:"fresh"`
+	// worktree spawns the role in its own git worktree (see docs/design-role-worktrees.md)
+	Worktree bool `toml:"worktree"`
 	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
 	Restart        string `toml:"restart"`
 	RestartRetries int    `toml:"restart_retries"`
@@ -412,6 +414,10 @@ func Load(path string) (Config, error) {
 		if r.Fresh && r.Start {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: fresh is for workers; the orchestrator keeps its context; fresh disabled", path, r.Name))
 			c.Roles[i].Fresh = false
+		}
+		if r.Worktree && r.Start {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: worktree is for workers; the orchestrator plans from the main tree; worktree disabled", path, r.Name))
+			c.Roles[i].Worktree = false
 		}
 	}
 	roleNames := make(map[string]bool, len(c.Roles))

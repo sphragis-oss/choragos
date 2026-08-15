@@ -187,6 +187,38 @@ timeout_action = "explode"
 	}
 }
 
+func TestWorktreeValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "sh"
+start = true
+worktree = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+worktree = true
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roles[0].Worktree {
+		t.Fatal("worktree must be ignored on the start role")
+	}
+	if !c.Roles[1].Worktree {
+		t.Fatal("worktree lost on a worker")
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("want 1 warning, got %v", c.Warnings)
+	}
+}
+
 func TestFreshValidation(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

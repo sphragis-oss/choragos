@@ -14,6 +14,7 @@ import (
 
 	"github.com/sphragis-oss/choragos/internal/checkpoint"
 	"github.com/sphragis-oss/choragos/internal/config"
+	"github.com/sphragis-oss/choragos/internal/deck"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/sphragis"
 )
@@ -55,6 +56,24 @@ func ownershipWriteHint(prompt, base string) bool {
 
 // modelAwareCLI lists agent CLIs known to accept --model.
 var modelAwareCLI = map[string]bool{"claude": true, "agy": true, "codex": true}
+
+// worktreeCheck reports whether a worktree role can get its isolation here.
+func worktreeCheck(r config.Role) (level, msg string) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return "FAIL", "worktree = true but git is not in PATH"
+	}
+	if err := exec.Command("git", "rev-parse", "--is-inside-work-tree").Run(); err != nil {
+		return "FAIL", "worktree = true but this directory is not a git repository"
+	}
+	if err := exec.Command("git", "rev-parse", "HEAD").Run(); err != nil {
+		return "FAIL", "worktree = true but the repository has no commits"
+	}
+	b := deck.WorktreeBranch(r.Name)
+	if err := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+b).Run(); err != nil {
+		return "OK", fmt.Sprintf("will create %s on branch %s", deck.WorktreePath(r.Name), b)
+	}
+	return "OK", fmt.Sprintf("will reuse branch %s at %s", b, deck.WorktreePath(r.Name))
+}
 
 func doctorCmd() *cobra.Command {
 	var cfgPath string
@@ -103,6 +122,10 @@ func runDoctor(out io.Writer, cfgPath string) int {
 		}
 		if r.Model != "" && r.ModelFlag == nil && !modelAwareCLI[filepath.Base(r.Command)] {
 			report("WARN", "role:"+r.Name, fmt.Sprintf("model %q is passed as --model but %q is not a known model-aware CLI; set model_flag to the right flag, or \"\" to not pass it", r.Model, r.Command))
+		}
+		if r.Worktree {
+			level, msg := worktreeCheck(r)
+			report(level, "worktree:"+r.Name, msg)
 		}
 		for p, owner := range cfg.OwnedFiles() {
 			if owner != r.Name && ownershipWriteHint(r.Prompt, filepath.Base(p)) {

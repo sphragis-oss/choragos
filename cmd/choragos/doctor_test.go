@@ -4,10 +4,75 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sphragis-oss/choragos/internal/config"
+	"github.com/sphragis-oss/choragos/internal/deck"
 )
+
+func TestDoctorWorktreeChecks(t *testing.T) {
+	t.Chdir(t.TempDir())
+	f := "c.toml"
+	body := `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+
+[[roles]]
+name = "coder"
+command = "cat"
+worktree = true
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	runDoctor(&out, f)
+	if !strings.Contains(out.String(), "worktree:coder") || !strings.Contains(out.String(), "not a git repository") {
+		t.Fatalf("outside a repo the worktree check must FAIL:\n%s", out.String())
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"}, {"-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "one"}} {
+		if o, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, o)
+		}
+	}
+	out.Reset()
+	runDoctor(&out, f)
+	if !strings.Contains(out.String(), "worktree:coder") || !strings.Contains(out.String(), "will create") {
+		t.Fatalf("in a repo the worktree check must report the plan:\n%s", out.String())
+	}
+}
+
+func TestWorktreeCheckNoGit(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if level, msg := worktreeCheck(config.Role{Name: "c"}); level != "FAIL" || !strings.Contains(msg, "PATH") {
+		t.Fatalf("no git must FAIL: %s %s", level, msg)
+	}
+}
+
+func TestWorktreeCheckEmptyRepoAndReuse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	r := config.Role{Name: "coder"}
+	git := func(args ...string) {
+		if o, err := exec.Command("git", append([]string{"-c", "commit.gpgsign=false"}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, o)
+		}
+	}
+	git("init", "-q")
+	if level, msg := worktreeCheck(r); level != "FAIL" || !strings.Contains(msg, "no commits") {
+		t.Fatalf("empty repo must FAIL: %s %s", level, msg)
+	}
+	git("config", "user.email", "t@example.com")
+	git("config", "user.name", "t")
+	git("commit", "-q", "--allow-empty", "-m", "one")
+	git("branch", deck.WorktreeBranch(r.Name))
+	if level, msg := worktreeCheck(r); level != "OK" || !strings.Contains(msg, "will reuse") {
+		t.Fatalf("existing branch must report reuse: %s %s", level, msg)
+	}
+}
 
 func TestDoctorWarnsOnSameVendorJudge(t *testing.T) {
 	dir := t.TempDir()
