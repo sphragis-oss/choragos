@@ -217,6 +217,31 @@ func TestCommitWorktree(t *testing.T) {
 	if _, err := commitWorktree("ghost", "T3", ""); err == nil {
 		t.Fatal("missing worktree must error")
 	}
+	// a failing pre-commit hook surfaces the commit error (worktrees share .git/hooks)
+	hook := filepath.Join(".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(WorktreePath("coder"), "hooked.txt"), []byte("h"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := commitWorktree("coder", "T4", "hooked"); err == nil {
+		t.Fatal("failing pre-commit must surface")
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	// an unreadable file surfaces the add failure
+	bad := filepath.Join(WorktreePath("coder"), "unreadable.txt")
+	if err := os.WriteFile(bad, []byte("x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := commitWorktree("coder", "T5", "bad"); err == nil {
+		t.Fatal("unreadable file must surface the add failure")
+	}
+	if err := os.Chmod(bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestWorkDoneCommitsWorktree(t *testing.T) {
@@ -238,10 +263,17 @@ func TestWorkDoneCommitsWorktree(t *testing.T) {
 	if subj := gitT(t, "log", "-1", "--format=%s", WorktreeBranch("coder")); subj != "choragos: "+id+" built" {
 		t.Fatalf("subject = %q", subj)
 	}
+	// a now-clean tree logs and skips
+	s.maybeCommitWorktree(ipc.Command{ID: id, Task: "noop"})
 	// unknown ids and non-worktree roles are no-ops
 	s.maybeCommitWorktree(ipc.Command{ID: "T99", Task: "x"})
 	pid := s.deliverDelegate(plain, 2, ipc.Command{Task: "note it"})
 	s.maybeCommitWorktree(ipc.Command{ID: pid, Task: "noted"})
+	// a missing worktree takes the warn path without blocking
+	if err := os.RemoveAll(WorktreePath("coder")); err != nil {
+		t.Fatal(err)
+	}
+	s.maybeCommitWorktree(ipc.Command{ID: id, Task: "gone"})
 }
 
 func TestStartRoleSpawnsInWorktree(t *testing.T) {
