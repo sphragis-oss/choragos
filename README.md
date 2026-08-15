@@ -61,16 +61,19 @@ Multi-agent teams fail in a predictable way: an agent gets tired of the task and
 | Human gate | `approve = true` | a delegation running before a human has seen the plan |
 | Judge loop | `judge = "reviewer"` | work accepted on the worker's own word; a second model scores it and retries with the critique |
 | Write ownership | `owns_files = ["defects.md"]` | a role editing coordination state it does not own, e.g. a coder closing its own bugs |
-| Checkpoints | on by default in git repos | a bad delegation you cannot undo; every task snapshots the workspace first |
+| Worktrees + merge gate | `worktree = true`, `merge = "gate"` | agent changes landing on your branch before a human pages the diff; roles trampling each other's files |
+| Checkpoints | on by default in git repos | a bad delegation you cannot undo; every task and merge snapshots the workspace first |
 | Timeouts and budgets | `timeout = "45m"`, `budget = "5.00"` | a worker stuck in a loop, or a session burning money unwatched |
 
 They compose. In the `defects-flow` template the coder implements, an adversary hunts for breakage, and QA is the sole writer of `defects.md`: the coder cannot mark its own bug closed, and the orchestrator cannot report success while the ledger holds an open defect. A change to an owned file by anyone else is detected at the next work-done and held at a human gate, with the audit trail in the event log.
 
 ```bash
 choragos init --template defects-flow
+# or the same team with coder and adversary in isolated worktrees and a merge gate
+choragos init --template worktree-flow
 ```
 
-See [teams.md](docs/teams.md) for how each guardrail works and [design-write-ownership.md](docs/design-write-ownership.md) for the ownership contract.
+See [teams.md](docs/teams.md) for how each guardrail works, [design-write-ownership.md](docs/design-write-ownership.md) for the ownership contract, and [design-role-worktrees.md](docs/design-role-worktrees.md) for worktree isolation and the merge gate.
 
 ## Architecture
 
@@ -133,7 +136,7 @@ make build
 # Write a starter .choragos.toml (roles, keybindings, UI options)
 ./choragos init
 
-# Or start from a team template: starter, claude-team, mixed-team, review, defects-flow
+# Or start from a team template: starter, claude-team, mixed-team, review, defects-flow, worktree-flow
 ./choragos init --template review
 
 # Or let it detect the project (go.mod, package.json, Cargo.toml, pyproject.toml)

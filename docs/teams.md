@@ -195,6 +195,35 @@ worker made stay where they are, and the pre-rollback state is itself
 checkpointed, so the rollback can be undone. Details in the
 `[checkpoints]` section of [configuration.md](configuration.md).
 
+## Worktrees: isolation and the merge gate
+
+Ownership guards the coordination files; worktrees extend the idea to
+the whole repository. `worktree = true` spawns a role in its own git
+checkout at `.choragos/worktrees/<role>` on branch `choragos/<role>`,
+so two coders (or a coder and an adversary) never trample each other,
+and every accepted `work-done` lands as one commit on the role's
+branch: a per-task audit trail the agent cannot avoid, since the deck
+writes the commits.
+
+`merge` decides how that branch reaches yours. The default `"manual"`
+leaves it to you; `"gate"` holds each accepted task's diff in the
+approval queue, where `v` pages the full diff and `y` lands it as a
+no-fast-forward merge commit; `"auto"` merges without asking. In
+every mode a conflict aborts cleanly and falls closed to a gate
+naming the paths, a main tree with uncommitted tracked changes
+refuses the same way, a diff touching another role's owned files
+always faces a human, and the pre-merge state is checkpointed, so a
+merge is one rollback away from undone.
+
+```bash
+choragos init --template worktree-flow
+```
+
+gives the defect-ledger team with the coder and the adversary in
+parallel worktrees and the coder behind a merge gate. Key reference
+in [configuration.md](configuration.md); design and deltas in
+[design-role-worktrees.md](design-role-worktrees.md).
+
 ## Isolate credentials per role
 
 A reviewer does not need your cloud keys:

@@ -387,6 +387,21 @@ func (s *session) initCheckpoints() {
 	}
 }
 
+// snapshotMerge checkpoints the main tree before a role branch lands; failure warns, never blocks.
+func (s *session) snapshotMerge(id, role string) {
+	if s.ckpt == nil {
+		return
+	}
+	t0 := time.Now()
+	name := fmt.Sprintf("%d-%s-merge", t0.Unix(), id)
+	ref, err := s.ckpt.Snapshot(name, id+" merge from "+role, "head: "+s.ckpt.Head())
+	if err != nil {
+		s.log().Warn("pre-merge checkpoint failed", "task", id, "err", err)
+		return
+	}
+	s.log().Info("pre-merge checkpoint", "task", id, "ref", ref, "took", time.Since(t0).Round(time.Millisecond))
+}
+
 // snapshotTask checkpoints the workspace before a task reaches its worker; failure warns, never blocks.
 func (s *session) snapshotTask(id, role, label string) {
 	if s.ckpt == nil {

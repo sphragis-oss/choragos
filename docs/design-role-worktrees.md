@@ -3,10 +3,9 @@
 Covers issue [#189](https://github.com/sphragis-oss/choragos/issues/189)
 (per-role worktree isolation with a gated merge back).
 
-Status: stages 2 (worktree lifecycle), 3 (deck-authored commits), and
-4 (merge modes and the merge gate) implemented; stage 5 (pre-merge
-checkpoints, templates, docs polish) remains. Deltas from the
-proposal: the work-done commit subject carries the worker's summary
+Status: implemented, all stages: worktree lifecycle, deck-authored
+commits, merge modes with the merge gate, pre-merge checkpoints, and
+the `worktree-flow` template. Deltas from the proposal: the work-done commit subject carries the worker's summary
 rather than the delegation label; a merge gate approval that fails
 (conflict, dirty tree) resolves with the orchestrator notified and
 the branch kept, rather than re-queueing; `merge` on a non-worktree
