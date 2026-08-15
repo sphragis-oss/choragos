@@ -134,12 +134,14 @@ type Gate struct {
 	At     int64  `json:"at"`
 	Reason string `json:"reason"`
 	Report string `json:"report"`
+	// merge gates: the task id whose diff waits to land; labels the modal
+	MergeID string `json:"mergeId"`
 }
 
 func toGates(in []wire.Gate) []Gate {
 	out := make([]Gate, 0, len(in))
 	for _, g := range in {
-		out = append(out, Gate{To: g.To, Task: g.Cmd.Task, Brief: g.Cmd.Brief, At: g.At / 1e6, Reason: g.Reason, Report: g.Report})
+		out = append(out, Gate{To: g.To, Task: g.Cmd.Task, Brief: g.Cmd.Brief, At: g.At / 1e6, Reason: g.Reason, Report: g.Report, MergeID: g.MergeID})
 	}
 	return out
 }

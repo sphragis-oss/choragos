@@ -18,4 +18,8 @@ func TestParityFieldMappings(t *testing.T) {
 	if len(tk) != 1 || !tk[0].TimedOut {
 		t.Fatalf("tasks = %+v, want TimedOut", tk)
 	}
+	g := toGates([]wire.Gate{{To: "coder", Reason: "merge choragos/coder: 1 file changed", Report: ".choragos/merge-coder.diff", MergeID: "T1"}})
+	if len(g) != 1 || g[0].MergeID != "T1" || g[0].Report == "" {
+		t.Fatalf("gates = %+v, want MergeID", g)
+	}
 }
