@@ -147,6 +147,7 @@ func (s *session) resolveOwnership(g pendingGate, accept bool) {
 			msg += " Report: read " + g.report
 		}
 		s.notifyOrchestrator(msg)
+		s.queueMerge(g.to, g.cmd.ID)
 		return
 	}
 	s.notifyOrchestrator(fmt.Sprintf("[choragos] The user rejected %s's work: %s. Route changes to owned files through their owner and delegate again.", g.to, g.reason))

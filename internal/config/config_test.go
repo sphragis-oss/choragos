@@ -219,6 +219,52 @@ worktree = true
 	}
 }
 
+func TestMergeValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "orchestrator"
+command = "sh"
+start = true
+
+[[roles]]
+name = "coder"
+command = "sh"
+worktree = true
+merge = "gate"
+
+[[roles]]
+name = "bot"
+command = "sh"
+worktree = true
+merge = "sideways"
+
+[[roles]]
+name = "lone"
+command = "sh"
+merge = "auto"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roles[1].MergeMode() != "gate" {
+		t.Fatalf("valid mode lost: %q", c.Roles[1].Merge)
+	}
+	if c.Roles[2].MergeMode() != "manual" {
+		t.Fatalf("unknown mode must fall back to manual: %q", c.Roles[2].Merge)
+	}
+	if c.Roles[3].Merge != "" {
+		t.Fatalf("merge without worktree must be disabled: %q", c.Roles[3].Merge)
+	}
+	if len(c.Warnings) != 2 {
+		t.Fatalf("want 2 warnings, got %v", c.Warnings)
+	}
+}
+
 func TestFreshValidation(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

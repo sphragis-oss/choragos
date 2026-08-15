@@ -177,6 +177,8 @@ type pendingGate struct {
 	loopID string
 	// ownership gates hold a completed work-done whose delegation changed a file it does not own
 	ownership bool
+	// merge gates hold a worktree role's diff before it lands; the task id that produced it
+	mergeID string
 }
 
 // taskEvent is one delegation-protocol event, shown on the task board.
@@ -351,7 +353,8 @@ func (s *session) dispatch(cmd ipc.Command) {
 			s.log().Info("work-done", "id", cmd.ID, "to", s.panes[i].role.Name, "done", cmd.Done, "task", summary, "report", cmd.Report)
 			s.recordTask(taskEvent{at: time.Now(), kind: "work-done", id: cmd.ID, to: s.panes[i].role.Name, task: summary, file: cmd.Report, done: cmd.Done})
 			s.resolveTask(cmd.ID)
-			if role := s.delegateRole(cmd.ID); role != "" {
+			role := s.delegateRole(cmd.ID)
+			if role != "" {
 				if reason := s.ownershipReason(cmd.ID, role); reason != "" {
 					s.gateOwnership(cmd, role, reason)
 					return // the orchestrator hears the outcome only after the user rules
@@ -359,6 +362,9 @@ func (s *session) dispatch(cmd ipc.Command) {
 			}
 			injectLine(s.panes[i], line)
 			s.focus(i)
+			if role != "" {
+				s.queueMerge(role, cmd.ID)
+			}
 		}
 	}
 }
@@ -541,6 +547,10 @@ func (s *session) approveGate() {
 		s.resolveOwnership(g, true)
 		return
 	}
+	if g.mergeID != "" {
+		s.resolveMerge(g, true)
+		return
+	}
 	if g.reason != "" {
 		s.resolveFallback(g, true)
 		return
@@ -569,6 +579,10 @@ func (s *session) rejectGate() {
 	s.saveSnapshot()
 	if g.ownership {
 		s.resolveOwnership(g, false)
+		return
+	}
+	if g.mergeID != "" {
+		s.resolveMerge(g, false)
 		return
 	}
 	if g.reason != "" {

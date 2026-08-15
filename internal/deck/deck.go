@@ -1080,6 +1080,10 @@ func (m *Model) renderGate(w, h int) string {
 		if g.report != "" {
 			keys = "[y] accept the result   [v] view report   [n] reject"
 		}
+		if g.mergeID != "" {
+			keys = "[y] merge   [v] view diff   [n] keep the branch"
+			hint = "y lands the role's branch on your current branch; n leaves it for git"
+		}
 	case g.cmd.Brief != "":
 		keys = "[y] approve   [v] view brief   [e] edit brief   [n] reject"
 		hint = "v pages the brief in-app, e opens your $EDITOR; the gate stays until y or n"

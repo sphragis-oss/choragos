@@ -186,6 +186,7 @@ func (s *session) scoreVerdict(loop *judgeLoop, cmd ipc.Command) {
 	if pass {
 		s.notifyOrchestrator(fmt.Sprintf("[choragos] %s passed judge review for task %s (round %d, score %s). Full verdict: read %s",
 			loop.builder, loop.origID, loop.round, scoreStr, cmd.Report))
+		s.queueMerge(loop.builder, loop.origID)
 		return
 	}
 	if loop.round >= builder.role.JudgeCap() {
@@ -235,6 +236,7 @@ func (s *session) resolveFallback(g pendingGate, accept bool) {
 			msg += " Last report: read " + g.report
 		}
 		s.notifyOrchestrator(msg)
+		s.queueMerge(g.to, g.loopID)
 		return
 	}
 	s.notifyOrchestrator(fmt.Sprintf("[choragos] The judge loop for your delegation to %s stopped (%s) and the user rejected the result. Revise the task or the brief and delegate again if still needed.", g.to, g.reason))
