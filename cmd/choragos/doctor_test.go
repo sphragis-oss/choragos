@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sphragis-oss/choragos/internal/config"
+	"github.com/sphragis-oss/choragos/internal/deck"
 )
 
 func TestDoctorWorktreeChecks(t *testing.T) {
@@ -40,6 +43,34 @@ worktree = true
 	runDoctor(&out, f)
 	if !strings.Contains(out.String(), "worktree:coder") || !strings.Contains(out.String(), "will create") {
 		t.Fatalf("in a repo the worktree check must report the plan:\n%s", out.String())
+	}
+}
+
+func TestWorktreeCheckNoGit(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if level, msg := worktreeCheck(config.Role{Name: "c"}); level != "FAIL" || !strings.Contains(msg, "PATH") {
+		t.Fatalf("no git must FAIL: %s %s", level, msg)
+	}
+}
+
+func TestWorktreeCheckEmptyRepoAndReuse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	r := config.Role{Name: "coder"}
+	git := func(args ...string) {
+		if o, err := exec.Command("git", append([]string{"-c", "commit.gpgsign=false"}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, o)
+		}
+	}
+	git("init", "-q")
+	if level, msg := worktreeCheck(r); level != "FAIL" || !strings.Contains(msg, "no commits") {
+		t.Fatalf("empty repo must FAIL: %s %s", level, msg)
+	}
+	git("config", "user.email", "t@example.com")
+	git("config", "user.name", "t")
+	git("commit", "-q", "--allow-empty", "-m", "one")
+	git("branch", deck.WorktreeBranch(r.Name))
+	if level, msg := worktreeCheck(r); level != "OK" || !strings.Contains(msg, "will reuse") {
+		t.Fatalf("existing branch must report reuse: %s %s", level, msg)
 	}
 }
 

@@ -112,6 +112,39 @@ func TestEnsureWorktreeLifecycle(t *testing.T) {
 	}
 }
 
+func TestWorktreePreflightNoGit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	if err := worktreePreflight([]config.Role{{Name: "c", Worktree: true}}); err == nil || !strings.Contains(err.Error(), "PATH") {
+		t.Fatalf("missing git must refuse: %v", err)
+	}
+}
+
+func TestEnsureWorktreeAddFailures(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	// a non-empty plain directory blocks the fresh add
+	if err := os.MkdirAll(WorktreePath("coder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(WorktreePath("coder"), "junk"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ensureWorktree("coder"); err == nil {
+		t.Fatal("blocked add must error")
+	}
+	// the failed add left the branch behind, so the retry takes the existing-branch path
+	gitT(t, "rev-parse", "--verify", "refs/heads/"+WorktreeBranch("coder"))
+	if _, err := ensureWorktree("coder"); err == nil {
+		t.Fatal("blocked add on an existing branch must error")
+	}
+	// a merged branch held by a foreign checkout refuses the fast-forward
+	gitT(t, "worktree", "add", "-q", "-b", WorktreeBranch("qa"), "elsewhere", "HEAD")
+	if _, err := ensureWorktree("qa"); err == nil {
+		t.Fatal("a branch checked out elsewhere must surface the failure")
+	}
+}
+
 func TestCtxPathAndOwnedFor(t *testing.T) {
 	t.Chdir(t.TempDir())
 	plain := config.Role{Name: "a"}
