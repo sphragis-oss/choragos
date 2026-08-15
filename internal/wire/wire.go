@@ -90,6 +90,8 @@ type Gate struct {
 	At     int64       `json:"at"`
 	Reason string      `json:"reason,omitempty"` // judge fallback gates: approve accepts, reject revises
 	Report string      `json:"report,omitempty"` // last report attached to a fallback gate
+	// merge gates: the task id whose diff waits to land; additive under proto 1
+	MergeID string `json:"mid,omitempty"`
 }
 
 // Conn frames messages on the UI socket: [uint32 len][kind byte][payload].

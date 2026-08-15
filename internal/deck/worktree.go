@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
@@ -129,6 +130,144 @@ func commitWorktree(role, id, label string) (string, error) {
 		return "", err
 	}
 	return runGit(dir, "rev-parse", "--short", "HEAD")
+}
+
+// mergePlan describes what merging the role branch would land.
+type mergePlan struct {
+	branch   string
+	diffstat string   // git diff --stat summary line
+	diff     string   // path to the written full diff
+	ownedHit []string // touched paths some other role owns
+}
+
+// planMerge inspects the role branch against HEAD; nil when there is nothing to merge.
+func (s *session) planMerge(role string) (*mergePlan, error) {
+	branch := WorktreeBranch(role)
+	if _, err := runGit(".", "merge-base", "--is-ancestor", branch, "HEAD"); err == nil {
+		return nil, nil
+	}
+	stat, err := runGit(".", "diff", "--stat", "HEAD..."+branch)
+	if err != nil {
+		return nil, err
+	}
+	full, err := runGit(".", "diff", "HEAD..."+branch)
+	if err != nil {
+		return nil, err
+	}
+	diffFile := filepath.Join(contextDir, "merge-"+sanitize(role)+".diff")
+	if err := os.MkdirAll(contextDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(diffFile, []byte(full+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	p := &mergePlan{branch: branch, diffstat: statSummary(stat), diff: diffFile}
+	names, err := runGit(".", "diff", "--name-only", "HEAD..."+branch)
+	if err != nil {
+		return nil, err
+	}
+	owned := s.cfg.OwnedFiles()
+	for _, n := range strings.Fields(names) {
+		if owner := owned[n]; owner != "" && owner != role {
+			p.ownedHit = append(p.ownedHit, n)
+		}
+	}
+	return p, nil
+}
+
+// statSummary keeps the closing "N files changed ..." line of a --stat block.
+func statSummary(stat string) string {
+	lines := strings.Split(strings.TrimSpace(stat), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// performMerge lands the role branch on the current branch; a non-empty reason means it refused cleanly.
+func performMerge(role, id string) (sha, reason string) {
+	status, err := runGit(".", "status", "--porcelain")
+	if err != nil {
+		return "", err.Error()
+	}
+	for _, l := range strings.Split(status, "\n") {
+		// untracked files (.choragos itself) never block; uncommitted tracked work does
+		if l != "" && !strings.HasPrefix(l, "??") {
+			return "", "the main tree has uncommitted changes; commit or stash them first"
+		}
+	}
+	branch := WorktreeBranch(role)
+	if _, err := runGit(".", "-c", "user.name=choragos", "-c", "user.email=choragos@localhost",
+		"-c", "commit.gpgsign=false", "merge", "--no-ff", "-m", "choragos: merge "+role+" ("+id+")", branch); err != nil {
+		conflicts, _ := runGit(".", "diff", "--name-only", "--diff-filter=U")
+		_, _ = runGit(".", "merge", "--abort")
+		if conflicts != "" {
+			return "", "conflicts in: " + strings.Join(strings.Fields(conflicts), ", ")
+		}
+		return "", err.Error()
+	}
+	out, err := runGit(".", "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return "", err.Error()
+	}
+	return out, ""
+}
+
+// queueMerge runs the role's merge mode after an accepted work-done.
+func (s *session) queueMerge(role, id string) {
+	e, _ := s.findRole(role)
+	if e == nil || !e.role.Worktree || e.role.MergeMode() == "manual" {
+		return
+	}
+	plan, err := s.planMerge(role)
+	if err != nil {
+		s.log().Warn("merge plan failed", "role", role, "task", id, "err", err)
+		return
+	}
+	if plan == nil {
+		s.log().Info("merge skipped, branch already merged", "role", role, "task", id)
+		return
+	}
+	reason := "merge " + plan.branch + ": " + plan.diffstat + " (task " + id + ")"
+	switch {
+	case len(plan.ownedHit) > 0:
+		// a diff into another role's owned files always faces a human, whatever the mode
+		s.gateMerge(role, id, reason+"; touches owned files: "+strings.Join(plan.ownedHit, ", "), plan.diff)
+	case e.role.MergeMode() == "auto":
+		if sha, fail := performMerge(role, id); fail == "" {
+			s.log().Info("merged", "role", role, "task", id, "sha", sha)
+			s.notifyOrchestrator("[choragos] Merged " + role + "'s branch for task " + id + " (" + sha + ").")
+		} else {
+			s.gateMerge(role, id, reason+"; auto-merge refused: "+fail, plan.diff)
+		}
+	default:
+		s.gateMerge(role, id, reason, plan.diff)
+	}
+}
+
+// gateMerge holds the diff for a human, mirroring the ownership gate's queue mechanics.
+func (s *session) gateMerge(role, id, reason, diff string) {
+	s.gates = append(s.gates, pendingGate{to: role, at: time.Now(), reason: reason, report: diff, mergeID: id})
+	s.saveSnapshot()
+	s.log().Info("merge gate", "role", role, "task", id, "reason", reason)
+	if s.bellFn != nil {
+		s.bellFn()
+	}
+	s.runHook(s.cfg.UI.OnGate, role, reason)
+}
+
+// resolveMerge closes a merge gate: approve lands the branch, reject keeps it.
+func (s *session) resolveMerge(g pendingGate, accept bool) {
+	s.log().Info("merge gate resolved", "to", g.to, "task", g.mergeID, "accepted", accept)
+	if !accept {
+		s.notifyOrchestrator("[choragos] The user declined merging " + g.to + "'s branch for task " + g.mergeID + "; the branch is kept as is.")
+		return
+	}
+	sha, fail := performMerge(g.to, g.mergeID)
+	if fail != "" {
+		s.log().Warn("merge failed", "role", g.to, "task", g.mergeID, "reason", fail)
+		s.notifyOrchestrator("[choragos] Merging " + g.to + "'s branch for task " + g.mergeID + " failed: " + fail + ". The branch is kept; resolve it with git and merge by hand.")
+		return
+	}
+	s.log().Info("merged", "role", g.to, "task", g.mergeID, "sha", sha)
+	s.notifyOrchestrator("[choragos] Merged " + g.to + "'s branch for task " + g.mergeID + " (" + sha + ").")
 }
 
 // ctxPath is the injected path for a context file; absolute for worktree roles, whose cwd differs.

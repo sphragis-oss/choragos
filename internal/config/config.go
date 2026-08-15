@@ -41,6 +41,8 @@ type Role struct {
 	Fresh bool `toml:"fresh"`
 	// worktree spawns the role in its own git worktree (see docs/design-role-worktrees.md)
 	Worktree bool `toml:"worktree"`
+	// merge lands the role's branch after accepted work: "gate" (hold the diff), "auto", "manual" (default)
+	Merge string `toml:"merge"`
 	// supervision: restart "on-failure" respawns the role on non-zero exit, capped by restart_retries
 	Restart        string `toml:"restart"`
 	RestartRetries int    `toml:"restart_retries"`
@@ -74,6 +76,14 @@ func (r Role) TimeoutDuration() time.Duration {
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
 func (r Role) RestartOnFailure() bool { return r.Restart == "on-failure" }
+
+// MergeMode returns the role's merge mode; Load validated the value.
+func (r Role) MergeMode() string {
+	if r.Merge == "" {
+		return "manual"
+	}
+	return r.Merge
+}
 
 // ModelFlagName returns the flag that passes model (default "--model"); empty means do not pass it.
 func (r Role) ModelFlagName() string {
@@ -418,6 +428,16 @@ func Load(path string) (Config, error) {
 		if r.Worktree && r.Start {
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: worktree is for workers; the orchestrator plans from the main tree; worktree disabled", path, r.Name))
 			c.Roles[i].Worktree = false
+			r.Worktree = false
+		}
+		if r.Merge != "" && r.Merge != "gate" && r.Merge != "auto" && r.Merge != "manual" {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: unknown merge mode %q (gate, auto, or manual); using manual", path, r.Name, r.Merge))
+			c.Roles[i].Merge = ""
+			r.Merge = ""
+		}
+		if r.Merge != "" && !r.Worktree {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: merge needs worktree = true; merge disabled", path, r.Name))
+			c.Roles[i].Merge = ""
 		}
 	}
 	roleNames := make(map[string]bool, len(c.Roles))

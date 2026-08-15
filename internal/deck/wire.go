@@ -24,7 +24,7 @@ func toWireTasks(board []taskEvent) []wire.Task {
 func toWireGates(gates []pendingGate) []wire.Gate {
 	out := make([]wire.Gate, 0, len(gates))
 	for _, g := range gates {
-		out = append(out, wire.Gate{Cmd: g.cmd, To: g.to, At: g.at.UnixNano(), Reason: g.reason, Report: g.report})
+		out = append(out, wire.Gate{Cmd: g.cmd, To: g.to, At: g.at.UnixNano(), Reason: g.reason, Report: g.report, MergeID: g.mergeID})
 	}
 	return out
 }
