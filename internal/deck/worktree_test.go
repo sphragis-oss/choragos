@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sphragis-oss/choragos/internal/checkpoint"
 	"github.com/sphragis-oss/choragos/internal/config"
 	"github.com/sphragis-oss/choragos/internal/ipc"
 	"github.com/sphragis-oss/choragos/internal/pane"
@@ -536,6 +537,36 @@ func TestQueueMergeEdges(t *testing.T) {
 	s.queueMerge("bot", "T3")
 	if len(s.gates) != 0 {
 		t.Fatalf("plan failure must not gate: %+v", s.gates)
+	}
+}
+
+func TestAutoMergeTakesPreMergeCheckpoint(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	drop := func([]byte) error { return nil }
+	bot := &entry{role: config.Role{Name: "bot", Worktree: true, Merge: "auto"}, pane: pane.Remote(80, 24, drop, func(int, int) {})}
+	s := &session{cfg: config.Config{Roles: []config.Role{bot.role}}, panes: []*entry{bot}}
+	st := checkpoint.New(".")
+	if ok, reason := st.Active(); !ok {
+		t.Fatalf("checkpoints inactive: %s", reason)
+	}
+	s.ckpt = st
+	if _, err := ensureWorktree("bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(WorktreePath("bot"), "auto.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := commitWorktree("bot", "T1", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	s.queueMerge("bot", "T1")
+	refs := gitT(t, "for-each-ref", "--format=%(refname)", "refs/choragos/checkpoints/")
+	if !strings.Contains(refs, "-T1-merge") {
+		t.Fatalf("pre-merge checkpoint ref missing:\n%s", refs)
+	}
+	if _, err := os.Stat("auto.txt"); err != nil {
+		t.Fatal("merge must still land")
 	}
 }
 

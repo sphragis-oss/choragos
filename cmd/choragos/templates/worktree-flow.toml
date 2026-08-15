@@ -1,0 +1,37 @@
+# The defect-ledger team in parallel worktrees: the coder and the adversary
+# each work in their own checkout on their own branch, every work-done lands
+# as one commit there, and the coder's changes reach your branch only through
+# the merge gate, with the diff paged in front of you. QA stays in the main
+# tree as the sole writer of defects.md. Requires a git repository with at
+# least one commit. See docs/design-role-worktrees.md.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate the team. Plan and delegate only; never implement or test yourself. The assignment is complete only when defects.md lists no open defects; never declare victory while one is open. Merges are the user's call: when a merge lands or is declined you will be told."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+worktree = true
+merge = "gate"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement tasks and fix defects listed in defects.md. You work in your own checkout; every finished task is committed to your branch and reaches the user's branch through a merge gate. Read the ledger freely, never edit it; report fixes with work-done and let qa verify and close."
+
+[[roles]]
+name = "qa"
+command = "claude"
+model = "sonnet"
+owns_files = ["defects.md"]
+prompt_template = "Verify the coder's fixes and the adversary's findings. You are the sole writer of defects.md: record each confirmed defect as open, and close an entry only after you reproduce the fix yourself."
+
+[[roles]]
+name = "adversary"
+command = "agy"
+model = "Gemini 3.1 Pro (High)"
+worktree = true
+prompt_template = "Try to break the implementation: edge cases, invalid input, race conditions. You work in your own checkout, so probe freely; your branch never merges. Report findings with work-done for qa to confirm and record; do not edit defects.md."

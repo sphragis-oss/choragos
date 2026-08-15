@@ -231,6 +231,7 @@ func (s *session) queueMerge(role, id string) {
 		// a diff into another role's owned files always faces a human, whatever the mode
 		s.gateMerge(role, id, reason+"; touches owned files: "+strings.Join(plan.ownedHit, ", "), plan.diff)
 	case e.role.MergeMode() == "auto":
+		s.snapshotMerge(id, role)
 		if sha, fail := performMerge(role, id); fail == "" {
 			s.log().Info("merged", "role", role, "task", id, "sha", sha)
 			s.notifyOrchestrator("[choragos] Merged " + role + "'s branch for task " + id + " (" + sha + ").")
@@ -260,6 +261,7 @@ func (s *session) resolveMerge(g pendingGate, accept bool) {
 		s.notifyOrchestrator("[choragos] The user declined merging " + g.to + "'s branch for task " + g.mergeID + "; the branch is kept as is.")
 		return
 	}
+	s.snapshotMerge(g.mergeID, g.to)
 	sha, fail := performMerge(g.to, g.mergeID)
 	if fail != "" {
 		s.log().Warn("merge failed", "role", g.to, "task", g.mergeID, "reason", fail)
