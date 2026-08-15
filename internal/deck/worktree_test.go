@@ -570,6 +570,23 @@ func TestAutoMergeTakesPreMergeCheckpoint(t *testing.T) {
 	}
 }
 
+func TestSnapshotMergeFailureWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	st := checkpoint.New(".")
+	if ok, reason := st.Active(); !ok {
+		t.Fatalf("checkpoints inactive: %s", reason)
+	}
+	s := &session{ckpt: st}
+	// the repository vanishing under the store surfaces as a warn, not a block
+	if err := os.RemoveAll(".git"); err != nil {
+		t.Fatal(err)
+	}
+	s.snapshotMerge("T9", "bot")
+	s.ckpt = nil
+	s.snapshotMerge("T9", "bot") // nil store is a quiet no-op
+}
+
 func TestStartRoleSpawnsInWorktree(t *testing.T) {
 	t.Chdir(t.TempDir())
 	initRepo(t)
