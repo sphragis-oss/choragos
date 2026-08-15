@@ -457,6 +457,88 @@ func TestQueueMergeModesAndGate(t *testing.T) {
 	}
 }
 
+func TestPlanMergeFailureBranches(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	s := &session{cfg: config.Config{Roles: []config.Role{{Name: "coder", Worktree: true}}}}
+	// put the branch one commit ahead of HEAD so the plan proceeds
+	gitT(t, "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "ahead")
+	gitT(t, "branch", WorktreeBranch("coder"))
+	gitT(t, "reset", "-q", "--hard", "HEAD~1")
+	// a plain file where contextDir should be blocks the diff write
+	if err := os.WriteFile(contextDir, []byte("in the way"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.planMerge("coder"); err == nil {
+		t.Fatal("blocked contextDir must surface")
+	}
+	if err := os.Remove(contextDir); err != nil {
+		t.Fatal(err)
+	}
+	// a directory where the diff file goes blocks the write
+	if err := os.MkdirAll(filepath.Join(contextDir, "merge-coder.diff"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.planMerge("coder"); err == nil {
+		t.Fatal("blocked diff path must surface")
+	}
+	// outside a repo, plan and perform surface git's errors
+	t.Chdir(t.TempDir())
+	if _, err := s.planMerge("coder"); err == nil {
+		t.Fatal("outside a repo the plan must error")
+	}
+	if _, reason := performMerge("coder", "T1"); reason == "" {
+		t.Fatal("outside a repo the merge must refuse")
+	}
+}
+
+func TestPerformMergeUnmergeableBranch(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	if _, reason := performMerge("ghost", "T1"); reason == "" || strings.Contains(reason, "conflicts") {
+		t.Fatalf("a missing branch must refuse without conflicts: %q", reason)
+	}
+}
+
+func TestQueueMergeEdges(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	drop := func([]byte) error { return nil }
+	bot := &entry{role: config.Role{Name: "bot", Worktree: true, Merge: "auto"}, pane: pane.Remote(80, 24, drop, func(int, int) {})}
+	rang := false
+	s := &session{cfg: config.Config{Roles: []config.Role{bot.role}}, panes: []*entry{bot}, bellFn: func() { rang = true }}
+	// a freshly created (already merged) branch skips
+	if _, err := ensureWorktree("bot"); err != nil {
+		t.Fatal(err)
+	}
+	s.queueMerge("bot", "T1")
+	if len(s.gates) != 0 {
+		t.Fatalf("merged branch must skip: %+v", s.gates)
+	}
+	// an auto merge refused by a dirty main tree falls closed to a gate and rings
+	if err := os.WriteFile(filepath.Join(WorktreePath("bot"), "auto.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := commitWorktree("bot", "T2", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("f.txt", []byte("dirty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.queueMerge("bot", "T2")
+	if len(s.gates) != 1 || !strings.Contains(s.gates[0].reason, "auto-merge refused") || !rang {
+		t.Fatalf("refused auto merge must gate and ring: %+v rang=%v", s.gates, rang)
+	}
+	gitT(t, "checkout", "--", "f.txt")
+	// a broken repo state surfaces as a plan warning, not a gate
+	s.gates = nil
+	t.Chdir(t.TempDir())
+	s.queueMerge("bot", "T3")
+	if len(s.gates) != 0 {
+		t.Fatalf("plan failure must not gate: %+v", s.gates)
+	}
+}
+
 func TestStartRoleSpawnsInWorktree(t *testing.T) {
 	t.Chdir(t.TempDir())
 	initRepo(t)

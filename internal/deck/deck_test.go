@@ -33,6 +33,16 @@ func newTestModel(panes []*entry) *Model {
 	return m
 }
 
+func TestRenderGateMergeVariant(t *testing.T) {
+	m := newTestModel(nil)
+	m.gates = []pendingGate{{to: "coder", at: time.Now(), mergeID: "T1",
+		reason: "merge choragos/coder: 1 file changed (task T1)", report: ".choragos/merge-coder.diff"}}
+	got := m.renderGate(80, 20)
+	if !strings.Contains(got, "[y] merge") || !strings.Contains(got, "[n] keep the branch") {
+		t.Fatalf("merge gate must show merge keys:\n%q", got)
+	}
+}
+
 func TestStartPanesSpawnsAllRoles(t *testing.T) {
 	t.Chdir(t.TempDir()) // isolate the per-role .choragos/logs
 	cfg := config.Config{Roles: []config.Role{
