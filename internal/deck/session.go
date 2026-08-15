@@ -334,6 +334,7 @@ func (s *session) dispatch(cmd ipc.Command) {
 	case "roster-add":
 		s.rosterAdd(cmd)
 	case "work-done":
+		s.maybeCommitWorktree(cmd) // judge revise rounds commit too, so this precedes the loop
 		if s.handleJudgedDone(cmd) {
 			return // a judge loop owns this id; the orchestrator hears only loop outcomes
 		}

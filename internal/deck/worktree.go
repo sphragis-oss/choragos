@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/sphragis-oss/choragos/internal/config"
+	"github.com/sphragis-oss/choragos/internal/ipc"
 )
 
 // WorktreePath is the role's checkout directory under contextDir.
@@ -86,6 +87,48 @@ func ensureWorktree(role string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// maybeCommitWorktree lands a worktree role's work-done as a branch commit; failure warns, never blocks.
+func (s *session) maybeCommitWorktree(cmd ipc.Command) {
+	role := s.delegateRole(cmd.ID)
+	if role == "" {
+		return
+	}
+	e, _ := s.findRole(role)
+	if e == nil || !e.role.Worktree {
+		return
+	}
+	sha, err := commitWorktree(role, cmd.ID, singleLine(cmd.Task))
+	switch {
+	case err != nil:
+		s.log().Warn("worktree commit failed", "task", cmd.ID, "role", role, "err", err)
+	case sha == "":
+		s.log().Info("worktree clean, nothing to commit", "task", cmd.ID, "role", role)
+	default:
+		s.log().Info("worktree commit", "task", cmd.ID, "role", role, "sha", sha)
+	}
+}
+
+// commitWorktree records the role's current work as one commit on its branch; "" when clean.
+func commitWorktree(role, id, label string) (string, error) {
+	dir := WorktreePath(role)
+	status, err := runGit(dir, "status", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	if status == "" {
+		return "", nil
+	}
+	if _, err := runGit(dir, "add", "-A"); err != nil {
+		return "", err
+	}
+	subject := strings.TrimSpace("choragos: " + id + " " + label)
+	if _, err := runGit(dir, "-c", "user.name=choragos", "-c", "user.email=choragos@localhost",
+		"-c", "commit.gpgsign=false", "commit", "-q", "-m", subject); err != nil {
+		return "", err
+	}
+	return runGit(dir, "rev-parse", "--short", "HEAD")
 }
 
 // ctxPath is the injected path for a context file; absolute for worktree roles, whose cwd differs.
