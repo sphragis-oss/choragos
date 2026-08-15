@@ -4,10 +4,44 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDoctorWorktreeChecks(t *testing.T) {
+	t.Chdir(t.TempDir())
+	f := "c.toml"
+	body := `[[roles]]
+name = "orchestrator"
+command = "cat"
+start = true
+
+[[roles]]
+name = "coder"
+command = "cat"
+worktree = true
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	runDoctor(&out, f)
+	if !strings.Contains(out.String(), "worktree:coder") || !strings.Contains(out.String(), "not a git repository") {
+		t.Fatalf("outside a repo the worktree check must FAIL:\n%s", out.String())
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"}, {"-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "one"}} {
+		if o, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, o)
+		}
+	}
+	out.Reset()
+	runDoctor(&out, f)
+	if !strings.Contains(out.String(), "worktree:coder") || !strings.Contains(out.String(), "will create") {
+		t.Fatalf("in a repo the worktree check must report the plan:\n%s", out.String())
+	}
+}
 
 func TestDoctorWarnsOnSameVendorJudge(t *testing.T) {
 	dir := t.TempDir()
