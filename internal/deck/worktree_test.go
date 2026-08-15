@@ -188,6 +188,62 @@ func TestDeliverDelegateWorktreeAbsolutePaths(t *testing.T) {
 	}
 }
 
+func TestCommitWorktree(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	if _, err := ensureWorktree("coder"); err != nil {
+		t.Fatal(err)
+	}
+	if sha, err := commitWorktree("coder", "T1", "noop"); err != nil || sha != "" {
+		t.Fatalf("clean tree: sha=%q err=%v", sha, err)
+	}
+	// new and modified files land as one commit with the task subject
+	if err := os.WriteFile(filepath.Join(WorktreePath("coder"), "new.txt"), []byte("n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(WorktreePath("coder"), "f.txt"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := commitWorktree("coder", "T1", "did stuff")
+	if err != nil || sha == "" {
+		t.Fatalf("commit: sha=%q err=%v", sha, err)
+	}
+	if subj := gitT(t, "log", "-1", "--format=%s", WorktreeBranch("coder")); subj != "choragos: T1 did stuff" {
+		t.Fatalf("subject = %q", subj)
+	}
+	if sha2, err := commitWorktree("coder", "T2", "noop"); err != nil || sha2 != "" {
+		t.Fatalf("after the commit the tree is clean again: %q %v", sha2, err)
+	}
+	if _, err := commitWorktree("ghost", "T3", ""); err == nil {
+		t.Fatal("missing worktree must error")
+	}
+}
+
+func TestWorkDoneCommitsWorktree(t *testing.T) {
+	t.Chdir(t.TempDir())
+	initRepo(t)
+	drop := func([]byte) error { return nil }
+	e := &entry{role: config.Role{Name: "coder", Worktree: true}, pane: pane.Remote(80, 24, drop, func(int, int) {})}
+	plain := &entry{role: config.Role{Name: "scribe"}, pane: pane.Remote(80, 24, drop, func(int, int) {})}
+	orc := remoteEntry("orc", true)
+	s := &session{cfg: config.Config{Roles: []config.Role{orc.role, e.role, plain.role}}, panes: []*entry{orc, e, plain}}
+	id := s.deliverDelegate(e, 1, ipc.Command{Task: "build it"})
+	if _, err := ensureWorktree("coder"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(WorktreePath("coder"), "out.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.maybeCommitWorktree(ipc.Command{ID: id, Task: "built"})
+	if subj := gitT(t, "log", "-1", "--format=%s", WorktreeBranch("coder")); subj != "choragos: "+id+" built" {
+		t.Fatalf("subject = %q", subj)
+	}
+	// unknown ids and non-worktree roles are no-ops
+	s.maybeCommitWorktree(ipc.Command{ID: "T99", Task: "x"})
+	pid := s.deliverDelegate(plain, 2, ipc.Command{Task: "note it"})
+	s.maybeCommitWorktree(ipc.Command{ID: pid, Task: "noted"})
+}
+
 func TestStartRoleSpawnsInWorktree(t *testing.T) {
 	t.Chdir(t.TempDir())
 	initRepo(t)

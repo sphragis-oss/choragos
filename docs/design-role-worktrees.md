@@ -3,9 +3,11 @@
 Covers issue [#189](https://github.com/sphragis-oss/choragos/issues/189)
 (per-role worktree isolation with a gated merge back).
 
-Status: stage 2 (worktree lifecycle) implemented; deck-authored
-commits and merge modes remain proposal. Delta from the proposal:
-`merge =` is not parsed yet, it arrives with the merge stage.
+Status: stages 2 (worktree lifecycle) and 3 (deck-authored commits)
+implemented; merge modes remain proposal. Deltas from the proposal:
+`merge =` is not parsed yet, it arrives with the merge stage, and the
+work-done commit subject carries the worker's summary rather than the
+delegation label.
 
 ## Problem
 
