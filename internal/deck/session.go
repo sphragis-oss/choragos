@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strconv"
@@ -146,6 +147,7 @@ type session struct {
 	handoffAt   time.Time         // when a handoff was requested; zero = none pending
 	handoffCfg  string            // config the next session should resume with; empty keeps the current
 	handoffDone bool              // handoff finished; the quit snapshot carries the flag
+	mode        string            // how the session runs: tui | server
 	events      *slog.Logger
 	eventsC     io.Closer
 	notify      func(any) // core -> UI message pump; nil-safe via send
@@ -232,6 +234,16 @@ func (s *session) log() *slog.Logger {
 	return s.events
 }
 
+// buildVersion is stamped into log headers; per process like the build itself.
+var buildVersion = "dev"
+
+// SetVersion records the ldflags build version for log headers; RunServer sets it too.
+func SetVersion(v string) {
+	if v != "" {
+		buildVersion = v
+	}
+}
+
 // start opens the control socket, spawns every role at cw x ch, and begins streaming them.
 func (s *session) start(cw, ch int) error {
 	if err := worktreePreflight(s.cfg.Roles); err != nil {
@@ -246,7 +258,8 @@ func (s *session) start(cw, ch int) error {
 	s.server = srv
 	ipc.WriteMeta(s.socket) // sidecar for `choragos ls`
 	wd, _ := os.Getwd()
-	s.log().Info("deck starting", "roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd, "pid", os.Getpid())
+	s.log().Info("deck starting", "version", buildVersion, "mode", cmp.Or(s.mode, "tui"), "os", runtime.GOOS+"/"+runtime.GOARCH, "go", runtime.Version(),
+		"roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd, "pid", os.Getpid())
 	for _, w := range s.cfg.Warnings {
 		s.log().Warn("config", "warning", w)
 	}
@@ -1381,7 +1394,7 @@ func openLog(role string) *os.File {
 		return nil
 	}
 	wd, _ := os.Getwd()
-	fmt.Fprintf(f, "--- choragos transcript · role=%s · dir=%s · started=%s ---\n", role, wd, time.Now().Format(time.RFC3339))
+	fmt.Fprintf(f, "--- choragos transcript · role=%s · version=%s · dir=%s · started=%s ---\n", role, buildVersion, wd, time.Now().Format(time.RFC3339))
 	return f
 }
 

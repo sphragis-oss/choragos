@@ -67,7 +67,7 @@ func TestConnRejectsBadFrames(t *testing.T) {
 }
 
 // fakeServer accepts one connection, answers the hello with the scripted events, and closes.
-func fakeServer(t *testing.T, script func(*Conn)) string {
+func fakeServer(t *testing.T, script func(*Conn, Event)) string {
 	t.Helper()
 	// SHORT socket path: macOS caps sun_path near 104 bytes
 	short, err := os.MkdirTemp("/tmp", "cgw")
@@ -87,27 +87,32 @@ func fakeServer(t *testing.T, script func(*Conn)) string {
 			return
 		}
 		sc := NewConn(conn)
-		if _, _, _, hello, err := sc.Read(); err != nil || hello.Kind != "hello" {
+		_, _, _, hello, err := sc.Read()
+		if err != nil || hello.Kind != "hello" {
 			_ = sc.Close()
 			return
 		}
-		script(sc)
+		script(sc, hello)
 		_ = sc.Close()
 	}()
 	return path
 }
 
 func TestDialReplayPump(t *testing.T) {
-	path := fakeServer(t, func(sc *Conn) {
-		_ = sc.WriteEvent(Event{Kind: "welcome", Version: "v1"})
+	path := fakeServer(t, func(sc *Conn, hello Event) {
+		// echo the client's app so the test can see what the hello carried
+		_ = sc.WriteEvent(Event{Kind: "welcome", Version: "v1", App: hello.App})
 		_ = sc.WriteOutput(0, []byte("ring"))
 		_ = sc.WriteEvent(Event{Kind: "ready"})
 		_ = sc.WriteOutput(1, []byte("live"))
 		_ = sc.WriteEvent(Event{Kind: "bell"})
 	})
-	c, welcome, err := Dial(path, "v1")
+	c, welcome, err := Dial(path, "v1", "cli")
 	if err != nil || welcome.Kind != "welcome" || welcome.Version != "v1" {
 		t.Fatalf("Dial = %+v err=%v", welcome, err)
+	}
+	if welcome.App != "cli" {
+		t.Fatalf("hello app = %q, want cli", welcome.App)
 	}
 	defer c.Close()
 	var replay []byte
@@ -131,25 +136,25 @@ func TestDialReplayPump(t *testing.T) {
 }
 
 func TestDialRefusals(t *testing.T) {
-	busyPath := fakeServer(t, func(sc *Conn) {
+	busyPath := fakeServer(t, func(sc *Conn, _ Event) {
 		_ = sc.WriteEvent(Event{Kind: "busy", PID: 42})
 	})
-	_, _, err := Dial(busyPath, "v1")
+	_, _, err := Dial(busyPath, "v1", "cli")
 	var be *BusyError
 	if !errors.As(err, &be) || be.PID != 42 {
 		t.Fatalf("busy err = %v", err)
 	}
 
-	skewPath := fakeServer(t, func(sc *Conn) {
+	skewPath := fakeServer(t, func(sc *Conn, _ Event) {
 		_ = sc.WriteEvent(Event{Kind: "mismatch", Version: "v2"})
 	})
-	_, _, err = Dial(skewPath, "v1")
+	_, _, err = Dial(skewPath, "v1", "cli")
 	var me *MismatchError
 	if !errors.As(err, &me) || me.Server != "v2" || me.Client != "v1" {
 		t.Fatalf("mismatch err = %v", err)
 	}
 
-	if _, _, err := Dial(filepath.Join(t.TempDir(), "missing.sock"), "v1"); err == nil {
+	if _, _, err := Dial(filepath.Join(t.TempDir(), "missing.sock"), "v1", "cli"); err == nil {
 		t.Fatal("Dial to a missing socket succeeded")
 	}
 }

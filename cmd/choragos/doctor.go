@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -76,14 +77,30 @@ func worktreeCheck(r config.Role) (level, msg string) {
 }
 
 func doctorCmd() *cobra.Command {
-	var cfgPath string
+	var cfgPath, bundle string
+	var transcripts bool
 	cmd := &cobra.Command{
 		Use:     "doctor",
 		Short:   "Check the environment for common problems before serving",
 		GroupID: groupDeck,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fails := runDoctor(cmd.OutOrStdout(), cfgPath)
+			out := cmd.OutOrStdout()
+			var buf bytes.Buffer
+			if bundle != "" {
+				out = io.MultiWriter(out, &buf)
+			}
+			fails := runDoctor(out, cfgPath)
+			if bundle != "" {
+				path := bundlePath(bundle)
+				if err := writeBundle(path, cfgPath, buf.Bytes(), transcripts); err != nil {
+					return err
+				}
+				cmd.Printf("debug bundle written to %s\n", path)
+				if !transcripts {
+					cmd.Println("role transcripts excluded; add --transcripts to include them (they can carry secrets agents echoed)")
+				}
+			}
 			if fails > 0 {
 				return fmt.Errorf("%d check(s) failed", fails)
 			}
@@ -91,6 +108,9 @@ func doctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&cfgPath, "config", "", "orchestration config path (default "+config.DefaultFile+", else built-in)")
+	cmd.Flags().StringVar(&bundle, "bundle", "", "write a debug bundle (tar.gz): doctor output, event and server logs, session state, config")
+	cmd.Flags().Lookup("bundle").NoOptDefVal = "auto"
+	cmd.Flags().BoolVar(&transcripts, "transcripts", false, "include per-role transcripts in the bundle (they can carry secrets agents echoed)")
 	return cmd
 }
 

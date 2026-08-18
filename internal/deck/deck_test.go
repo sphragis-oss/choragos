@@ -100,6 +100,13 @@ func TestLogsAreOwnerOnly(t *testing.T) {
 			t.Errorf("%s mode = %o, want 600", name, got)
 		}
 	}
+	data, err := os.ReadFile(filepath.Join(contextDir, "logs", "coder.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "· version=") {
+		t.Errorf("transcript header missing the build version:\n%s", data)
+	}
 }
 
 func TestEventLogAppendsAcrossRuns(t *testing.T) {

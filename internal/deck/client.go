@@ -27,7 +27,7 @@ type connLostMsg struct{ err error }
 
 // RunAttach connects the TUI client to the detached session for this working directory.
 func RunAttach(version string) error {
-	wc, welcome, err := wire.Dial(ipc.UISocketPath(), version)
+	wc, welcome, err := wire.Dial(ipc.UISocketPath(), version, "cli")
 	if err != nil {
 		// only true dial failures mean "no session"; handshake errors surface as-is
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
