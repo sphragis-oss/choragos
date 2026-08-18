@@ -7,18 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-18
+
+See what ran: version-stamped logs and a one-command debug bundle.
+
 ### Added
 - Debug-friendly logging: every run's `events.log` header now carries
   the build `version`, `mode=tui|server`, `os`, `go`, and pid; `client
   attached` lines name the frontend (`app=cli|desktop`) via a new
   optional `app` field in the attach hello; per-role transcript headers
   carry the version too. The desktop app writes its own log to
-  `~/Library/Logs/Choragos/desktop.log` (5 MB rotation).
+  `~/Library/Logs/Choragos/desktop.log` (5 MB rotation). (#205)
 - `choragos doctor --bundle [path]`: writes a debug bundle (tar.gz)
   with the doctor output, build metadata, config, session state, and
   the event, server, and crash logs, for attaching to bug reports.
   Role transcripts stay out unless `--transcripts` is given, since
-  agents can echo secrets into them.
+  agents can echo secrets into them. (#205)
 
 ## [0.18.1] - 2026-08-15
 
@@ -635,7 +639,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/sphragis-oss/choragos/compare/v0.16.0...v0.17.0
