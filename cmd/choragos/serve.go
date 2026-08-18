@@ -43,6 +43,7 @@ func serveCmd() *cobra.Command {
 			if cmd.Flags().Changed("sphragis") {
 				cfg.Sphragis.Enabled = &sphragis
 			}
+			deck.SetVersion(version) // stamped into the event log's run header
 			var snap *deck.Snapshot
 			if resume {
 				if snap, err = deck.LoadSnapshot(cfg); err != nil {

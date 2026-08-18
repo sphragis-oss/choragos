@@ -3,6 +3,7 @@
 package deck
 
 import (
+	"cmp"
 	"fmt"
 	"net"
 	"os"
@@ -51,7 +52,8 @@ type server struct {
 // RunServer runs the session core headless until shutdown; `choragos attach` brings the UI.
 // snap restores a previous session's deck state.
 func RunServer(cfg config.Config, version string, snap *Snapshot) error {
-	s := &session{cfg: cfg, resume: snap}
+	SetVersion(version)
+	s := &session{cfg: cfg, resume: snap, mode: "server"}
 	msgs := make(chan any, 1024)
 	s.notify = func(v any) { msgs <- v }
 	srv := &server{sess: s, msgs: msgs, version: version, wired: map[int]*pane.Pane{}}
@@ -293,7 +295,7 @@ func (srv *server) attach(wc *wire.Conn, hello wire.Event) {
 		return
 	}
 	srv.client, srv.snap = wc, snap
-	s.log().Info("client attached")
+	s.log().Info("client attached", "app", cmp.Or(hello.App, "unknown"), "version", hello.Version)
 	go func() {
 		for {
 			kind, _, _, ev, err := wc.Read()

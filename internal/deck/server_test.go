@@ -5,6 +5,8 @@ package deck
 import (
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +75,18 @@ approve = true
 	return done
 }
 
+func TestRunAttachNoServer(t *testing.T) {
+	short, err := os.MkdirTemp("/tmp", "cg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	t.Setenv("XDG_RUNTIME_DIR", short)
+	if err := RunAttach("v"); err == nil || !strings.Contains(err.Error(), "no session for this directory") {
+		t.Fatalf("attach without a server = %v", err)
+	}
+}
+
 // dialUI connects and completes the hello handshake, returning the first response event.
 func dialUI(t *testing.T, version string) (*wire.Conn, wire.Event) {
 	t.Helper()
@@ -81,7 +95,7 @@ func dialUI(t *testing.T, version string) (*wire.Conn, wire.Event) {
 		t.Fatal(err)
 	}
 	wc := wire.NewConn(conn)
-	if err := wc.WriteEvent(wire.Event{Kind: "hello", Proto: wire.Proto, Version: version}); err != nil {
+	if err := wc.WriteEvent(wire.Event{Kind: "hello", Proto: wire.Proto, Version: version, App: "cli"}); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _, ev, err := wc.Read()
@@ -152,6 +166,19 @@ func TestServerAttachLifecycle(t *testing.T) {
 	}
 	out := map[int][]byte{}
 	readUntil(t, wc, "ready", out)
+
+	// the event log names the build in its run header and the client that attached
+	eventLog := func() string {
+		data, _ := os.ReadFile(filepath.Join(contextDir, "logs", "events.log"))
+		return string(data)
+	}
+	if !waitFor(func() bool {
+		log := eventLog()
+		return strings.Contains(log, "version="+serverTestVersion) && strings.Contains(log, "mode=server") &&
+			strings.Contains(log, "os="+runtime.GOOS+"/"+runtime.GOARCH) && strings.Contains(log, `msg="client attached" app=cli version=`+serverTestVersion)
+	}) {
+		t.Fatalf("event log missing build header or attach line:\n%s", eventLog())
+	}
 
 	// a second client is refused while the first is attached
 	wc2, ev2 := dialUI(t, serverTestVersion)

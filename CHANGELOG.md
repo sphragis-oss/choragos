@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Debug-friendly logging: every run's `events.log` header now carries
+  the build `version`, `mode=tui|server`, `os`, `go`, and pid; `client
+  attached` lines name the frontend (`app=cli|desktop`) via a new
+  optional `app` field in the attach hello; per-role transcript headers
+  carry the version too. The desktop app writes its own log to
+  `~/Library/Logs/Choragos/desktop.log` (5 MB rotation).
+- `choragos doctor --bundle [path]`: writes a debug bundle (tar.gz)
+  with the doctor output, build metadata, config, session state, and
+  the event, server, and crash logs, for attaching to bug reports.
+  Role transcripts stay out unless `--transcripts` is given, since
+  agents can echo secrets into them.
+
 ## [0.18.1] - 2026-08-15
 
 ### Added

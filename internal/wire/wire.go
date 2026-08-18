@@ -35,6 +35,7 @@ type Event struct {
 	// hello (client -> server)
 	Proto   int    `json:"proto,omitempty"`
 	Version string `json:"version,omitempty"`
+	App     string `json:"app,omitempty"` // which client attaches: cli | desktop
 	// welcome (server -> client)
 	Cfg      *config.Config `json:"cfg,omitempty"`
 	Roster   []Role         `json:"roster,omitempty"`

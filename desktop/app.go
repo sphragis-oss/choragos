@@ -156,7 +156,7 @@ func uiSocket(dir string) string {
 // session:ready, then the live stream. Subscribe before calling.
 func (a *App) Attach(dir string) (*Roster, error) {
 	a.Detach() // one attach at a time; drop any previous one first
-	conn, welcome, err := wire.Dial(uiSocket(dir), a.version)
+	conn, welcome, err := wire.Dial(uiSocket(dir), a.version, "desktop")
 	if err != nil {
 		return nil, attachError(err, a.version)
 	}

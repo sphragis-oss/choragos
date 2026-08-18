@@ -4,6 +4,22 @@ Run `choragos doctor` first: it checks the config (including unknown-key
 typos), role binaries on PATH, the control socket, `TERM`, and the sphragis
 gateway, and prints one OK/WARN/FAIL line per check.
 
+## Reporting a bug: `choragos doctor --bundle`
+
+`choragos doctor --bundle` writes a timestamped `choragos-debug-*.tar.gz`
+next to you (or at the path you pass) with everything a maintainer needs:
+the doctor output, build metadata (`version`, os, go), the config,
+`.choragos/session.json`, and the event, server, and crash logs. Role
+transcripts are excluded by default because agents can echo secrets into
+them; add `--transcripts` after reviewing them if the problem needs the
+pane history. Attach the bundle to the issue.
+
+Every run's `events.log` starts with a `deck starting` line carrying the
+build version, `mode=tui|server`, os, and pid, and logs `app=cli|desktop`
+when a client attaches, so a bundle also answers "which build and which
+frontend was this?". The desktop app writes its own log to
+`~/Library/Logs/Choragos/desktop.log`.
+
 ## The deck starts but a role shows "exited" immediately
 
 The role's command failed to start or crashed. Check

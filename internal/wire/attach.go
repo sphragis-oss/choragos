@@ -27,13 +27,14 @@ func (e *MismatchError) Error() string {
 
 // Dial connects to a session's UI socket and completes the hello handshake,
 // returning the welcome event. Refusals surface as BusyError or MismatchError.
-func Dial(path, version string) (*Conn, Event, error) {
+// app names the client for the server's event log: cli | desktop.
+func Dial(path, version, app string) (*Conn, Event, error) {
 	nc, err := net.Dial("unix", path)
 	if err != nil {
 		return nil, Event{}, err
 	}
 	c := NewConn(nc)
-	if err := c.WriteEvent(Event{Kind: "hello", Proto: Proto, Version: version}); err != nil {
+	if err := c.WriteEvent(Event{Kind: "hello", Proto: Proto, Version: version, App: app}); err != nil {
 		_ = c.Close()
 		return nil, Event{}, err
 	}

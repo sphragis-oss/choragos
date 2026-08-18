@@ -159,8 +159,10 @@ itself and the orchestrator hears only outcomes:
   carry the priced `cost`, and a role crossing its `budget` logs one
   `budget exceeded` event with the cap and the action taken. The log
   persists across runs: each run begins at a `deck starting` marker
-  (with the pid), and a file over 5 MB rotates to `events.log.1` on
-  the next start.
+  carrying the build (`version`), how the session runs (`mode=tui|server`),
+  `os`, `go`, and the pid; a later `client attached` line names which
+  client took the session (`app=cli|desktop`). A file over 5 MB rotates
+  to `events.log.1` on the next start.
 - `choragos report`: aggregates that log (or a saved copy passed as an
   argument) into a per-role table of tasks, completions, busy and average
   task time, first and last activity, and token usage; the token column
