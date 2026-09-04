@@ -160,6 +160,14 @@ warns when they match). Every round is a full agent run and shows up
 in the per-role token and cost accounting; keep `judge_rounds` low and
 let the human gate absorb the hard cases.
 
+Put a `check` in front of the judge whenever an objective oracle
+exists: `check = "go test ./..."`, `helm unittest --failfast charts/x`,
+`terraform plan`. The command runs in the builder's worktree on every
+work-done; a non-zero exit sends the output back to the builder and
+burns a round, so the judge only ever sees work that already builds
+and passes. A check alone, with no judge, is the cheapest autonomous
+gate there is (see `docs/design-check-gate.md`).
+
 ## Write ownership: one role holds the pen
 
 Judges score a task; ownership guards shared state between tasks.

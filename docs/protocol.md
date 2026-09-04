@@ -125,11 +125,19 @@ Routes it to the `start` role: `A worker reports: <summary>` plus
 `Full report: read <report>` when a report path was sent. The `id` marks the
 matching delegation resolved on the task board (prefix key, then `t`).
 
-## The judge loop (roles with `judge` set)
+## The judge loop (roles with `check` or `judge` set)
 
-When the delegated role declares a `judge`, the deck runs the loop
-itself and the orchestrator hears only outcomes:
+When the delegated role declares a `check` or a `judge`, the deck runs
+the loop itself and the orchestrator hears only outcomes:
 
+0. With `check` set, the builder's `work-done` first runs the command
+   (`sh -c`, in the role's worktree, off the loop thread, bounded by
+   `check_timeout`). Exit 0 continues below; non-zero exit re-delegates
+   to the builder with the output tail in
+   `.choragos/check-<task>-r<n>.log` and burns a round; a check that
+   cannot run or times out gates a human. `check` lines in
+   `events.log` carry loop id, round, exit and verdict. Without a
+   `judge`, exit 0 accepts the work and the orchestrator is told.
 1. The builder's `work-done` does not reach the orchestrator; the deck
    delegates a judge round instead (`delegate` logged with
    `from=choragos` and the loop id) whose task file carries the

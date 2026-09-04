@@ -24,7 +24,7 @@ type judgeLoop struct {
 	builder string      // role whose work is judged
 	cmd     ipc.Command // original delegation (task text + brief path)
 	round   int         // 1-based
-	phase   string      // "build" | "judge"
+	phase   string      // "build" | "check" | "judge"
 	report  string      // latest report path: builder's in judge phase, judge's on fallback
 }
 
@@ -69,7 +69,7 @@ func parseVerdict(path string) (int, error) {
 
 // maybeStartLoop registers a judge loop for a just-delivered delegation when the role declares one.
 func (s *session) maybeStartLoop(id string, e *entry, cmd ipc.Command) {
-	if e.role.Judge == "" || id == "" {
+	if (e.role.Judge == "" && e.role.Check == "") || id == "" {
 		return
 	}
 	if s.loops == nil {
@@ -77,7 +77,7 @@ func (s *session) maybeStartLoop(id string, e *entry, cmd ipc.Command) {
 	}
 	s.loops[id] = &judgeLoop{origID: id, builder: e.role.Name, cmd: cmd, round: 1, phase: "build"}
 	s.annotateTask(id, 1, "")
-	s.log().Info("judge loop started", "loop", id, "builder", e.role.Name, "judge", e.role.Judge, "cap", e.role.JudgeCap(), "pass", e.role.JudgePassScore())
+	s.log().Info("judge loop started", "loop", id, "builder", e.role.Name, "check", e.role.Check, "judge", e.role.Judge, "cap", e.role.JudgeCap(), "pass", e.role.JudgePassScore())
 }
 
 // annotateTask stamps round and score onto the newest delegate row with this id.
@@ -113,6 +113,10 @@ func (s *session) handleJudgedDone(cmd ipc.Command) bool {
 	}
 	if loop.phase == "build" {
 		loop.report = cmd.Report
+		if builder, _ := s.findRole(loop.builder); builder != nil && builder.role.Check != "" {
+			s.startCheck(loop, builder, cmd.ID)
+			return true
+		}
 		s.deliverJudgeRound(loop)
 		return true
 	}
@@ -195,19 +199,19 @@ func (s *session) scoreVerdict(loop *judgeLoop, cmd ipc.Command) {
 	}
 	loop.round++
 	loop.phase = "build"
-	s.deliverRetryRound(loop, builder, scoreStr)
+	s.deliverRetryRound(loop, builder, fmt.Sprintf("Your previous attempt scored %s, below the passing score of %d. Read %s for the judge's critique, address every point, and redo the task.",
+		scoreStr, builder.role.JudgePassScore(), loop.report))
 }
 
-// deliverRetryRound re-delegates the original task to the builder with the judge's critique.
-func (s *session) deliverRetryRound(loop *judgeLoop, builder *entry, score string) {
+// deliverRetryRound re-delegates the original task to the builder; why leads with the critique to read.
+func (s *session) deliverRetryRound(loop *judgeLoop, builder *entry, why string) {
 	e, i := s.findRole(loop.builder)
 	if e == nil || e.exited || e.gone {
 		s.fallbackGate(loop, "builder unavailable for retry")
 		return
 	}
 	retry := ipc.Command{
-		Task: fmt.Sprintf("Your previous attempt scored %s, below the passing score of %d. Read %s for the judge's critique, address every point, and redo the task.\n\nOriginal task:\n%s",
-			score, builder.role.JudgePassScore(), loop.report, loop.cmd.Task),
+		Task:  why + "\n\nOriginal task:\n" + loop.cmd.Task,
 		Brief: loop.cmd.Brief,
 	}
 	id := s.deliverDelegate(e, i, retry)

@@ -187,6 +187,43 @@ timeout_action = "explode"
 	}
 }
 
+func TestCheckTimeoutValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "ok"
+command = "sh"
+start = true
+check = "go test ./..."
+check_timeout = "2m"
+
+[[roles]]
+name = "bad"
+command = "sh"
+check = "make test"
+check_timeout = "-3s"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Roles[0].Check != "go test ./..." {
+		t.Fatalf("check = %q", c.Roles[0].Check)
+	}
+	if d := c.Roles[0].CheckTimeoutDuration(); d != 2*time.Minute {
+		t.Fatalf("check_timeout = %v, want 2m", d)
+	}
+	if c.Roles[1].CheckTimeout != "" || c.Roles[1].CheckTimeoutDuration() != 10*time.Minute {
+		t.Fatalf("invalid check_timeout must reset to the default: %+v", c.Roles[1])
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("want 1 warning, got %v", c.Warnings)
+	}
+}
+
 func TestWorktreeValidation(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.toml")

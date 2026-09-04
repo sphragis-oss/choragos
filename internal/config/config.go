@@ -48,6 +48,9 @@ type Role struct {
 	RestartRetries int    `toml:"restart_retries"`
 	// human gate: delegations to this role pause in the deck until the user approves
 	Approve bool `toml:"approve"`
+	// deterministic gate: shell command run in the role's worktree on work-done; non-zero exit retries (see docs/design-check-gate.md)
+	Check        string `toml:"check"`
+	CheckTimeout string `toml:"check_timeout"`
 	// machine gate: delegations to this role are scored by the judge role and retried until judge_pass or judge_rounds
 	Judge       string `toml:"judge"`
 	JudgePass   int    `toml:"judge_pass"`
@@ -72,6 +75,14 @@ func (r Role) BudgetUSD() float64 {
 func (r Role) TimeoutDuration() time.Duration {
 	d, _ := time.ParseDuration(r.Timeout)
 	return d
+}
+
+// CheckTimeoutDuration bounds one run of the check command (default 10m). Load validated the format.
+func (r Role) CheckTimeoutDuration() time.Duration {
+	if d, err := time.ParseDuration(r.CheckTimeout); err == nil && d > 0 {
+		return d
+	}
+	return 10 * time.Minute
 }
 
 // RestartOnFailure reports whether the role respawns when its process exits non-zero.
@@ -450,6 +461,12 @@ func Load(path string) (Config, error) {
 			if d, err := time.ParseDuration(r.Timeout); err != nil || d <= 0 {
 				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: invalid timeout %q (use a positive Go duration like \"45m\"); timeouts disabled", path, r.Name, r.Timeout))
 				r.Timeout = ""
+			}
+		}
+		if r.CheckTimeout != "" {
+			if d, err := time.ParseDuration(r.CheckTimeout); err != nil || d <= 0 {
+				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: role %q: invalid check_timeout %q (use a positive Go duration like \"10m\"); using the default %s", path, r.Name, r.CheckTimeout, Role{}.CheckTimeoutDuration()))
+				r.CheckTimeout = ""
 			}
 		}
 		if a := r.TimeoutAction; a != "" && a != "notify" && a != "restart" {

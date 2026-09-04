@@ -127,6 +127,9 @@ func WorkerTask(role config.Role, task, id string, owned map[string]string) stri
 		b.WriteString("Task id: " + id + "\n\n")
 	}
 	b.WriteString(task)
+	if role.Check != "" {
+		b.WriteString("\n\nYour work must pass this command before it is accepted; run it yourself first:\n\n```bash\n" + role.Check + "\n```\n")
+	}
 	idFlag := ""
 	if id != "" {
 		idFlag = " --id " + id
