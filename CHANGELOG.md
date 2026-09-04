@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Ownership gates and judge fallback gates keep their identity across
+  `serve --resume`: `wire.Gate` gains additive `own` and `loop` fields,
+  so a resumed ownership gate resolves through the owner path instead
+  of the judge fallback wording, and a resumed judge or check gate
+  still names its task on accept. (#200)
+
 ## [0.20.0] - 2026-09-04
 
 Trust the exit code: a deterministic check gate in front of the judge, Terraform and Helm teams that use it, and a skill that composes the guardrail stack per task.

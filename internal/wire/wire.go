@@ -93,6 +93,9 @@ type Gate struct {
 	Report string      `json:"report,omitempty"` // last report attached to a fallback gate
 	// merge gates: the task id whose diff waits to land; additive under proto 1
 	MergeID string `json:"mid,omitempty"`
+	// ownership gates and judge fallback gates keep their identity across a resume; additive under proto 1
+	Ownership bool   `json:"own,omitempty"`
+	LoopID    string `json:"loop,omitempty"`
 }
 
 // Conn frames messages on the UI socket: [uint32 len][kind byte][payload].
