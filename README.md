@@ -59,6 +59,7 @@ Multi-agent teams fail in a predictable way: an agent gets tired of the task and
 | Guardrail | Config | What it stops |
 |-----------|--------|---------------|
 | Human gate | `approve = true` | a delegation running before a human has seen the plan |
+| Check gate | `check = "go test ./..."` | work that does not build or pass its tests reaching anyone; the command's exit code is the oracle, a failure comes back to the worker with the output, and the judge only sees work that already passes |
 | Judge loop | `judge = "reviewer"` | work accepted on the worker's own word; a second model scores it and retries with the critique |
 | Write ownership | `owns_files = ["defects.md"]` | a role editing coordination state it does not own, e.g. a coder closing its own bugs |
 | Worktrees + merge gate | `worktree = true`, `merge = "gate"` | agent changes landing on your branch before a human pages the diff; roles trampling each other's files |
@@ -73,7 +74,9 @@ choragos init --template defects-flow
 choragos init --template worktree-flow
 ```
 
-See [teams.md](docs/teams.md) for how each guardrail works, [design-write-ownership.md](docs/design-write-ownership.md) for the ownership contract, and [design-role-worktrees.md](docs/design-role-worktrees.md) for worktree isolation and the merge gate.
+See [teams.md](docs/teams.md) for how each guardrail works, [design-check-gate.md](docs/design-check-gate.md) for the check contract, [design-write-ownership.md](docs/design-write-ownership.md) for the ownership contract, and [design-role-worktrees.md](docs/design-role-worktrees.md) for worktree isolation and the merge gate.
+
+Picking the right stack for a task is its own judgment call: parallel writers need worktrees and ownership, a wide blast radius needs the merge gate and a human, a long unattended run needs budgets and timeouts. The repo ships a Claude Code project skill, [choragos-config](.claude/skills/choragos-config/SKILL.md), that walks those questions, starts from the nearest template, and lets `choragos doctor` decide when the config is right. It loads automatically when you open the repo in Claude Code; copy the directory into your own project to use it there.
 
 ## Architecture
 
@@ -139,8 +142,9 @@ make build
 # Or start from a team template: starter, claude-team, mixed-team, review, defects-flow, worktree-flow
 ./choragos init --template review
 
-# Or let it detect the project (go.mod, package.json, Cargo.toml, pyproject.toml)
-# and write a team with language-specific roles
+# Or let it detect the project (go.mod, package.json, Cargo.toml, pyproject.toml,
+# main.tf or terragrunt.hcl, Chart.yaml or charts/*/) and write a team with
+# language-specific roles; Terraform and Helm teams gate work on validate or helm unittest
 ./choragos init --auto
 
 # Start the TUI
