@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `init -backend=false` and `validate` (no credentials needed; a
   comment shows the `plan` variant), and `helm dependency update` plus
   `helm unittest --failfast` over every chart found.
+- `.claude/skills/choragos-config`: a Claude Code project skill that
+  composes a team for a task in three steps: the nearest `init`
+  template as the base, only the risk-driven overrides (worktree and
+  `owns_files`, `merge = "gate"` plus `approve`, a cross-vendor
+  `judge`, `budget` and `timeout`, a `check`), then `choragos doctor`
+  as the only judge of success.
 
 ## [0.19.0] - 2026-08-18
 

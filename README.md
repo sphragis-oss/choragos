@@ -161,6 +161,7 @@ Sessions detach like tmux does: `choragos serve --detach` runs the crew headless
 - [Keybindings](docs/keybindings.md) - the full keymap and window-manager modes
 - [Configuration reference](docs/configuration.md) - every `.choragos.toml` key, including per-role env isolation
 - [Building your own team](docs/teams.md) - roles, per-role models, briefs, and a worked pipeline example
+- [choragos-config skill](.claude/skills/choragos-config/SKILL.md) - a Claude Code skill that composes a team for a task from the nearest template and validates it with `choragos doctor`
 - [Control protocol](docs/protocol.md) - the delegate/work-done wire contract for integrators
 - [Troubleshooting](docs/troubleshooting.md) - and run `choragos doctor` for automated checks
 - [Long-running sessions](docs/long-running-sessions.md) - native detach/attach, resume after a quit, and session handoff
