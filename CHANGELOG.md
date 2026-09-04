@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out falls closed to a human gate. The worker prompt quotes the
   command so the builder runs it first. `docs/design-check-gate.md`
   has the state model.
+- `init --auto` detects Terraform (`main.tf`, `versions.tf`,
+  `terragrunt.hcl`, `.terraform.lock.hcl`) and Helm (`Chart.yaml` at
+  the root or under `charts/<name>/`) projects. Both teams put their
+  gate in the coder's `check` rather than in prose: `terraform fmt`,
+  `init -backend=false` and `validate` (no credentials needed; a
+  comment shows the `plan` variant), and `helm dependency update` plus
+  `helm unittest --failfast` over every chart found.
 
 ## [0.19.0] - 2026-08-18
 

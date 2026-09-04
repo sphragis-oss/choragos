@@ -1,0 +1,26 @@
+# Auto-detected Terraform team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Terraform project team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested change in Terraform: variables ordered description, type, default, validation; for_each over count; moved blocks for renames; never apply. Run terraform fmt, init -backend=false, and validate before reporting done; a failing validate is the bug to fix, not to skip."
+# deterministic gate, needs no credentials; with backend access in the deck's env, prefer: terraform plan -input=false -lock=false
+check = "terraform fmt -check -recursive && terraform init -backend=false -input=false >/dev/null && terraform validate"
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior platform engineer: drift risk, destructive plan actions (replace, destroy), state moves, provider version pins, tagging, and least-privilege IAM. Read the plan when one is attached. Report findings only; never modify code or state."

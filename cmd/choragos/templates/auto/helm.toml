@@ -1,0 +1,26 @@
+# Auto-detected Helm chart team. See docs/configuration.md for every key;
+# run `choragos init` (no --auto) for the fully commented starter.
+
+[[roles]]
+name = "orchestrator"
+command = "claude"
+model = "opus"
+start = true
+prompt_template = "You coordinate a Helm chart team. Plan and delegate only; never implement, review, or audit yourself."
+
+[[roles]]
+name = "coder"
+command = "claude"
+model = "opus"
+# workers skip your personal MCP servers (context hygiene); delete to inherit them
+args = ["--strict-mcp-config"]
+prompt_template = "Implement the requested chart change with helm unittest coverage for every template you add or change; a red test is the bug to fix, not to suppress. Run helm dependency update and helm unittest --failfast on the chart before reporting done."
+# deterministic gate over a root chart or a charts/<name> layout; narrow to one chart for a large monorepo
+check = 'for c in charts/*/ .; do [ -f "$c/Chart.yaml" ] || continue; helm dependency update "$c" && helm unittest --failfast "$c" || exit 1; done'
+
+[[roles]]
+name = "reviewer"
+command = "claude"
+model = "sonnet"
+args = ["--strict-mcp-config"]
+prompt_template = "Review the diff as a senior Kubernetes engineer: values hygiene, image references pinned by digest, resource requests and limits, probes, RBAC scope, and unit-test coverage. Report findings only; never modify code."
