@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-04
+
+Trust the exit code: a deterministic check gate in front of the judge, Terraform and Helm teams that use it, and a skill that composes the guardrail stack per task.
+
 ### Added
 - `check` role key: a deterministic gate in front of the judge. The
   command runs via `sh -c` in the role's worktree on every work-done,
@@ -16,20 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and burns one of `judge_rounds`; a check that cannot run or times
   out falls closed to a human gate. The worker prompt quotes the
   command so the builder runs it first. `docs/design-check-gate.md`
-  has the state model.
+  has the state model. (#209)
 - `init --auto` detects Terraform (`main.tf`, `versions.tf`,
   `terragrunt.hcl`, `.terraform.lock.hcl`) and Helm (`Chart.yaml` at
   the root or under `charts/<name>/`) projects. Both teams put their
   gate in the coder's `check` rather than in prose: `terraform fmt`,
   `init -backend=false` and `validate` (no credentials needed; a
   comment shows the `plan` variant), and `helm dependency update` plus
-  `helm unittest --failfast` over every chart found.
+  `helm unittest --failfast` over every chart found. (#210)
 - `.claude/skills/choragos-config`: a Claude Code project skill that
   composes a team for a task in three steps: the nearest `init`
   template as the base, only the risk-driven overrides (worktree and
   `owns_files`, `merge = "gate"` plus `approve`, a cross-vendor
   `judge`, `budget` and `timeout`, a `check`), then `choragos doctor`
-  as the only judge of success.
+  as the only judge of success. (#211, #212)
 
 ## [0.19.0] - 2026-08-18
 
@@ -663,7 +667,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/sphragis-oss/choragos/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/sphragis-oss/choragos/compare/v0.17.0...v0.18.0
