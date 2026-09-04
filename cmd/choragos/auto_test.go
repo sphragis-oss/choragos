@@ -4,10 +4,12 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/sphragis-oss/choragos/internal/config"
 )
 
@@ -48,6 +50,91 @@ func TestDetectProject(t *testing.T) {
 	touch(t, dir, "node_modules/dep/e.js", "node_modules/dep/f.js", "node_modules/dep/g.js", "node_modules/dep/h.js", "vendor/v.go")
 	if d, _ := detectProject(dir); d != "node" {
 		t.Fatalf("after skipped dirs = %q", d)
+	}
+}
+
+func TestDetectInfraProjects(t *testing.T) {
+	dir := t.TempDir()
+	// a charts/<name> monorepo has no root Chart.yaml; the glob manifest finds it
+	touch(t, dir, "charts/foo/Chart.yaml", "charts/foo/templates/deployment.yaml", "charts/foo/templates/_helpers.tpl")
+	if d, others := detectProject(dir); d != "helm" || len(others) != 0 {
+		t.Fatalf("charts layout = %q %v", d, others)
+	}
+	// terragrunt joins; helm stays dominant by source count
+	touch(t, dir, "terragrunt.hcl", "live/prod/terragrunt.hcl")
+	d, others := detectProject(dir)
+	if d != "helm" || len(others) != 1 || others[0] != "terraform" {
+		t.Fatalf("mixed = %q %v", d, others)
+	}
+	touch(t, dir, "modules/vpc/main.tf", "modules/vpc/variables.tf", "modules/vpc/outputs.tf", "live/prod/vpc.tfvars")
+	if d, _ := detectProject(dir); d != "terraform" {
+		t.Fatalf("terraform-heavy = %q", d)
+	}
+
+	root := t.TempDir()
+	touch(t, root, "Chart.yaml", "values.yaml", "templates/svc.yaml")
+	if d, _ := detectProject(root); d != "helm" {
+		t.Fatalf("root chart = %q", d)
+	}
+}
+
+func TestInfraTemplatesCarryCheck(t *testing.T) {
+	for name, want := range map[string]string{"terraform": "terraform validate", "helm": "helm unittest --failfast"} {
+		t.Chdir(t.TempDir())
+		body, err := templatesFS.ReadFile("templates/auto/" + name + ".toml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(config.DefaultFile, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := config.Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(c.Roles[1].Check, want) {
+			t.Errorf("%s coder check = %q, want it to contain %q", name, c.Roles[1].Check, want)
+		}
+	}
+}
+
+func TestHelmTemplateCheckHandlesBothLayouts(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	body, err := templatesFS.ReadFile("templates/auto/helm.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c config.Config
+	if _, err := toml.Decode(string(body), &c); err != nil {
+		t.Fatal(err)
+	}
+	// a fake helm on PATH records which chart dirs the check visited
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "helm"), []byte("#!/bin/sh\necho \"$@\" >> \"$HELM_LOG\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(root string) string {
+		log := filepath.Join(t.TempDir(), "log")
+		cmd := exec.Command("sh", "-c", c.Roles[1].Check)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "HELM_LOG="+log)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("check failed in %s: %v\n%s", root, err, out)
+		}
+		got, _ := os.ReadFile(log)
+		return string(got)
+	}
+	mono := t.TempDir()
+	touch(t, mono, "charts/a/Chart.yaml", "charts/b/Chart.yaml", "charts/README.md")
+	if got := run(mono); !strings.Contains(got, "unittest --failfast charts/a/") || !strings.Contains(got, "unittest --failfast charts/b/") || strings.Contains(got, " .\n") {
+		t.Fatalf("monorepo visits = %q", got)
+	}
+	root := t.TempDir()
+	touch(t, root, "Chart.yaml")
+	if got := run(root); !strings.Contains(got, "unittest --failfast .") {
+		t.Fatalf("root chart visits = %q", got)
 	}
 }
 

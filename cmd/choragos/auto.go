@@ -4,7 +4,6 @@ package main
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,7 +12,7 @@ import (
 // autoScanCap bounds the file walk so a huge repo cannot stall init --auto.
 const autoScanCap = 20000
 
-// language ties a project manifest to the source extensions that measure dominance.
+// language ties a project manifest (a path or glob) to the source extensions that measure dominance.
 type language struct {
 	name     string
 	manifest []string
@@ -26,6 +25,8 @@ var autoLanguages = []language{
 	{"node", []string{"package.json"}, []string{".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}},
 	{"python", []string{"pyproject.toml", "setup.py", "requirements.txt"}, []string{".py"}},
 	{"rust", []string{"Cargo.toml"}, []string{".rs"}},
+	{"terraform", []string{"main.tf", "versions.tf", "terragrunt.hcl", ".terraform.lock.hcl"}, []string{".tf", ".tfvars", ".hcl"}},
+	{"helm", []string{"Chart.yaml", "charts/*/Chart.yaml"}, []string{".tpl", ".yaml", ".yml"}},
 }
 
 // skippedDirs are trees that would skew the source count or take forever to walk.
@@ -39,7 +40,7 @@ func detectProject(dir string) (dominant string, others []string) {
 	found := map[string]bool{}
 	for _, l := range autoLanguages {
 		for _, m := range l.manifest {
-			if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+			if hits, _ := filepath.Glob(filepath.Join(dir, m)); len(hits) > 0 {
 				found[l.name] = true
 				break
 			}
