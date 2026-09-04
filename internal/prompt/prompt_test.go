@@ -70,6 +70,13 @@ func TestWorkerTask(t *testing.T) {
 			t.Errorf("worker task missing %q", want)
 		}
 	}
+	if strings.Contains(c, "must pass this command") {
+		t.Error("check clause present without a check")
+	}
+	role.Check = "go test ./..."
+	if c := prompt.WorkerTask(role, "task", "T8", nil); !strings.Contains(c, "must pass this command") || !strings.Contains(c, "```bash\ngo test ./...\n```") {
+		t.Errorf("worker task missing the check clause:\n%s", c)
+	}
 }
 
 func TestWorkerBriefIdle(t *testing.T) {

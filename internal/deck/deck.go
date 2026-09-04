@@ -265,6 +265,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usage = msg
 	case budgetMsg:
 		m.checkBudgets(msg)
+	case checkMsg:
+		m.finishCheck(msg)
 	case tickMsg:
 		if m.remote != nil {
 			// the server boots, probes, and rings; the client only refreshes usage

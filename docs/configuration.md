@@ -38,9 +38,11 @@ One table per agent seat. Roles are fixed for the lifetime of the deck.
 | `budget` | string | `""` | Session cost cap in USD (e.g. `"5.00"`); needs the gateway and a `[pricing]` table for a cost signal, inert without them. Fires once per session; a reload that raises the cap re-arms it |
 | `budget_action` | string | `"notify"` | What a breach does: `notify` (bell, `over budget` on the card, `on_budget` hook, a notice to the orchestrator) or `pause` (all of that plus SIGSTOP via the pause path; resume with `prefix+p`) |
 | `approve` | bool | `false` | Human gate: delegations to this role pause in the deck until the user approves (`y`) or rejects (`n`); `v` pages the attached brief in-app, `e` opens it in `$VISUAL`/`$EDITOR`, and a rejection is reported back to the orchestrator |
+| `check` | string | `""` | Deterministic gate: shell command (`sh -c`) run on every work-done in the role's worktree (or the workspace when `worktree = false`). Exit 0 passes the work on to `judge` or accepts it; non-zero exit re-delegates the task with the output tail as the critique, burning one of `judge_rounds`; a check that cannot run or times out falls closed to a human gate. The worker's task prompt quotes the command so it can run it first. Empty disables; see `docs/design-check-gate.md` |
+| `check_timeout` | string | `"10m"` | Wall-clock limit for one run of `check` (Go duration); the process group is killed and the task falls to a human gate |
 | `judge` | string | `""` | Machine gate: name of the role that scores this role's completed work. Each delegation loops builder -> judge -> builder until the judge's score reaches `judge_pass` or `judge_rounds` runs out; any ambiguity (unparseable verdict, judge timeout, judge exit, cap) falls closed to a human gate. Empty disables the loop entirely |
 | `judge_pass` | int | `7` | Minimum judge score (1-10) that passes |
-| `judge_rounds` | int | `3` | Maximum builder -> judge rounds before the loop stops and asks a human |
+| `judge_rounds` | int | `3` | Maximum builder rounds (check failures and judge failures both count) before the loop stops and asks a human |
 | `owns_files` | array | `[]` | This role is the sole writer of these workspace-relative files (e.g. `["defects.md"]`). Every role's prompts state the ownership map, and owned files are fingerprinted around each delegation: a change by a non-owner holds that work-done at a human gate (judged delegations fail their loop closed); a change while the owner also had a task in flight only logs and warns, since attribution is ambiguous. Detection, not prevention: an agent can still physically write the file (see `docs/sandboxing.md` for the OS-level wall). Paths must stay inside the workspace, `.choragos/` cannot be claimed, and a file has exactly one owner (load error otherwise) |
 
 Judge loop example: the coder's work is scored by the reviewer and
@@ -66,6 +68,23 @@ judge_pass = 8
 name = "reviewer"
 command = "agy"     # cross-vendor judging; choragos doctor warns on same-vendor pairs
 timeout = "20m"
+```
+
+Check gate example: the coder's work must pass the test suite before
+the judge spends any tokens on it. The check runs in the coder's
+worktree, a failing run comes back to the coder as
+`.choragos/check-<task>-r<n>.log`, and the same `judge_rounds` budget
+caps both kinds of retry. `check` works without `judge` too: exit 0
+accepts the work outright.
+
+```toml
+[[roles]]
+name = "coder"
+command = "claude"
+worktree = true
+check = "go build ./... && go test ./..."
+check_timeout = "5m"
+judge = "reviewer"
 ```
 
 Write-ownership example: QA is the sole writer of the defect ledger, so

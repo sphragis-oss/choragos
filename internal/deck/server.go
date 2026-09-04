@@ -157,6 +157,9 @@ func (srv *server) handle(v any) bool {
 	case budgetMsg:
 		s.checkBudgets(msg)
 		srv.syncClient()
+	case checkMsg:
+		s.finishCheck(msg)
+		srv.syncClient()
 	case gatewayReadyMsg:
 		if msg.err == nil {
 			s.gateway = msg.sup

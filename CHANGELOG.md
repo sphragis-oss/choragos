@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `check` role key: a deterministic gate in front of the judge. The
+  command runs via `sh -c` in the role's worktree on every work-done,
+  off the loop thread and bounded by `check_timeout` (default 10m).
+  Exit 0 hands the work to `judge` or accepts it; a non-zero exit
+  re-delegates with the output tail in `.choragos/check-<task>-r<n>.log`
+  and burns one of `judge_rounds`; a check that cannot run or times
+  out falls closed to a human gate. The worker prompt quotes the
+  command so the builder runs it first. `docs/design-check-gate.md`
+  has the state model.
+
 ## [0.19.0] - 2026-08-18
 
 See what ran: version-stamped logs and a one-command debug bundle.
