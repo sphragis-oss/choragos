@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A judge round with no check before it is unchanged.
 
 ### Fixed
+- Ownership gates and judge fallback gates keep their identity across
+  `serve --resume`: `wire.Gate` gains additive `own` and `loop` fields,
+  so a resumed ownership gate resolves through the owner path instead
+  of the judge fallback wording, and a resumed judge or check gate
+  still names its task on accept. (#200)
 - The check output path handed to a retrying builder (and now the
   judge) is absolute, so a worktree role whose cwd is not the
   workspace can read it; it was workspace-relative before.

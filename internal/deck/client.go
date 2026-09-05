@@ -183,7 +183,7 @@ func fromWireTasks(in []wire.Task) []taskEvent {
 func fromWireGates(in []wire.Gate) []pendingGate {
 	out := make([]pendingGate, 0, len(in))
 	for _, w := range in {
-		out = append(out, pendingGate{cmd: w.Cmd, to: w.To, at: time.Unix(0, w.At), reason: w.Reason, report: w.Report, mergeID: w.MergeID})
+		out = append(out, pendingGate{cmd: w.Cmd, to: w.To, at: time.Unix(0, w.At), reason: w.Reason, report: w.Report, mergeID: w.MergeID, ownership: w.Ownership, loopID: w.LoopID})
 	}
 	return out
 }

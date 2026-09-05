@@ -203,8 +203,27 @@ func TestJudgeWireRoundTrip(t *testing.T) {
 		t.Errorf("task round/score lost on the wire: %+v", tasks[0])
 	}
 	back := fromWireGates(toWireGates(gates))
-	if back[0].reason != "judge cap exhausted" || back[0].report != "/tmp/r.md" {
-		t.Errorf("gate reason/report lost on the wire: %+v", back[0])
+	if back[0].reason != "judge cap exhausted" || back[0].report != "/tmp/r.md" || back[0].loopID != "T1" {
+		t.Errorf("gate reason/report/loop lost on the wire: %+v", back[0])
+	}
+}
+
+// TestOwnershipGateSurvivesResume covers #200: the ownership flag must ride the snapshot or the gate resolves as a judge fallback.
+func TestOwnershipGateSurvivesResume(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg := config.Config{Roles: []config.Role{{Name: "coder", Command: "cat"}}}
+	s := &session{cfg: cfg, gates: []pendingGate{{cmd: ipc.Command{ID: "T3", Task: "wrote defects.md"}, to: "coder", at: time.Now(), reason: "changed defects.md owned by qa", ownership: true}}}
+	if err := os.MkdirAll(contextDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.saveSnapshot()
+	snap, err := LoadSnapshot(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := fromWireGates(snap.Gates)
+	if len(back) != 1 || !back[0].ownership || back[0].mergeID != "" || back[0].loopID != "" {
+		t.Fatalf("ownership gate lost its identity across the snapshot: %+v", back)
 	}
 }
 
