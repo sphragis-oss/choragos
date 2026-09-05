@@ -20,12 +20,13 @@ import (
 
 // judgeLoop tracks one delegation moving through builder -> judge rounds.
 type judgeLoop struct {
-	origID  string      // first delegation's task id, the loop's identity in logs
-	builder string      // role whose work is judged
-	cmd     ipc.Command // original delegation (task text + brief path)
-	round   int         // 1-based
-	phase   string      // "build" | "check" | "judge"
-	report  string      // latest report path: builder's in judge phase, judge's on fallback
+	origID   string      // first delegation's task id, the loop's identity in logs
+	builder  string      // role whose work is judged
+	cmd      ipc.Command // original delegation (task text + brief path)
+	round    int         // 1-based
+	phase    string      // "build" | "check" | "judge"
+	report   string      // latest report path: builder's in judge phase, judge's on fallback
+	checkLog string      // passing check's output path; empty when no check ran
 }
 
 // verdictCap bounds the judge report read; the VERDICT line must lead the file.
@@ -155,7 +156,7 @@ func (s *session) deliverJudgeRound(loop *judgeLoop) {
 		task = strings.TrimSpace("Read " + loop.cmd.Brief + " for the full brief.\n\n" + task)
 	}
 	file := "judge-task-" + sanitize(e.role.Name) + ".md"
-	line := writeContext(file, prompt.JudgeTask(e.role, task, loop.report, verdictFile, id, builder.role.JudgePassScore(), s.cfg.OwnedFiles()),
+	line := writeContext(file, prompt.JudgeTask(e.role, task, loop.report, loop.checkLog, verdictFile, id, builder.role.JudgePassScore(), s.cfg.OwnedFiles()),
 		"Read "+filepath.Join(contextDir, file)+" for your task.")
 	label := fmt.Sprintf("judge %s round %d", loop.origID, loop.round)
 	s.log().Info("delegate", "id", id, "from", "choragos", "to", e.role.Name, "task", label, "loop", loop.origID, "round", loop.round)

@@ -132,6 +132,9 @@ func TestCheckFailRetriesThenCapFailsClosed(t *testing.T) {
 	if err != nil || !strings.Contains(string(body), "failed the check command (exit 2)") || !strings.Contains(string(body), "check-T1-r1.log") || !strings.Contains(string(body), "CHECKED-2 harder") {
 		t.Fatalf("retry task lacks critique or original task: err=%v body=%q", err, body)
 	}
+	if abs, _ := filepath.Abs(filepath.Join(contextDir, "check-T1-r1.log")); !strings.Contains(string(body), abs) {
+		t.Fatalf("check log path must be absolute for worktree roles: %q", body)
+	}
 	if out, _ := os.ReadFile(filepath.Join(contextDir, "check-T1-r1.log")); !strings.Contains(string(out), "nope") {
 		t.Fatalf("stderr not captured: %q", out)
 	}
@@ -162,6 +165,10 @@ func TestCheckPassThenJudge(t *testing.T) {
 	}
 	if l := m.loops["T2"]; l == nil || l.phase != "judge" {
 		t.Fatalf("loop not in judge phase: %+v", m.loops)
+	}
+	body, err := os.ReadFile(filepath.Join(contextDir, "judge-task-reviewer.md"))
+	if err != nil || !strings.Contains(string(body), "The check command passed; its output: read ") || !strings.Contains(string(body), "check-T1-r1.log") {
+		t.Fatalf("judge task lacks the check output path: err=%v body=%q", err, body)
 	}
 	m.dispatch(ipc.Command{Cmd: "work-done", ID: "T2", Task: "judged", Report: verdictFile(t, "9/10")})
 	if !waitFor(func() bool { return strings.Contains(panes[0].pane.Render(), "passed judge review") }) {
