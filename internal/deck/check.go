@@ -101,6 +101,7 @@ func (s *session) finishCheck(msg checkMsg) {
 	s.log().Info("check", "loop", loop.origID, "round", loop.round, "exit", msg.exit, "verdict", map[bool]string{true: "pass", false: "fail"}[pass], "took", msg.took)
 	if pass {
 		s.annotateTask(msg.id, loop.round, "check ok")
+		loop.checkLog = msg.file
 		if builder.role.Judge != "" {
 			s.deliverJudgeRound(loop)
 			return

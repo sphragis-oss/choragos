@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The judge is handed the passing check's output: its task file gains
+  `The check command passed; its output: read <path>`, pointing at the
+  same `.choragos/check-<task>-r<n>.log` the builder gets on a failure.
+  A judge round with no check before it is unchanged.
+
 ## [0.20.0] - 2026-09-04
 
 Trust the exit code: a deterministic check gate in front of the judge, Terraform and Helm teams that use it, and a skill that composes the guardrail stack per task.

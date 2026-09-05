@@ -104,6 +104,11 @@ Original task:
 The worker's task prompt also quotes the command ("run it yourself
 first"), so a builder that can self-check rarely burns a round.
 
+A passing check's output goes to the judge too: the judge task gains
+the line `The check command passed; its output: read <path>`, pointing
+at the same log file. A judge round with no check before it (role has
+`judge` but no `check`) is byte-for-byte the prompt it was.
+
 The tail is kept rather than the head because that is where runners
 put the summary. Output is never injected into the pane; the file
 path is, matching the verdict contract's reason: the PTY is not a
@@ -163,7 +168,6 @@ everything.
   environment, as the `[ui]` hooks already do.
 - Streaming the check's output into a pane while it runs.
 - Retrying a check that could not start.
-- Feeding the check output to the judge in addition to the builder.
 
 ## Staging
 
