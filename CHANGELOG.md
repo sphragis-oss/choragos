@@ -7,25 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-05
+
+The first dogfood of the check gate, and what it taught: the judge sees the check's output, gates survive a resume, and a worktree role can read its own critique.
+
 ### Added
 - The judge is handed the passing check's output: its task file gains
   `The check command passed; its output: read <path>`, pointing at the
   same `.choragos/check-<task>-r<n>.log` the builder gets on a failure.
-  A judge round with no check before it is unchanged.
+  A judge round with no check before it is unchanged. (#216)
 
 ### Fixed
 - Ownership gates and judge fallback gates keep their identity across
   `serve --resume`: `wire.Gate` gains additive `own` and `loop` fields,
   so a resumed ownership gate resolves through the owner path instead
   of the judge fallback wording, and a resumed judge or check gate
-  still names its task on accept. (#200)
+  still names its task on accept. (#200, #214)
 - The check output path handed to a retrying builder (and now the
   judge) is absolute, so a worktree role whose cwd is not the
-  workspace can read it; it was workspace-relative before.
+  workspace can read it; it was workspace-relative before. (#216)
 - The deck's own test suite no longer binds an inherited
   `CHORAGOS_SOCK`: running `go test ./...` as a `check` inside a
   choragos worktree used to take over and delete the live deck's
   control socket (found on the first dogfood run of the check gate).
+  (#216)
 
 ## [0.20.0] - 2026-09-04
 
@@ -687,7 +692,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/sphragis-oss/choragos/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/sphragis-oss/choragos/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/sphragis-oss/choragos/compare/v0.18.0...v0.18.1
