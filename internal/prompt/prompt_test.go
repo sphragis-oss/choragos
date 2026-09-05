@@ -88,7 +88,7 @@ func TestWorkerBriefIdle(t *testing.T) {
 
 func TestJudgeTaskContract(t *testing.T) {
 	role := config.Role{Name: "reviewer", Prompt: "You review code."}
-	out := prompt.JudgeTask(role, "Build the widget", "/tmp/build-report.md", "/tmp/verdict.md", "T7", 8, nil)
+	out := prompt.JudgeTask(role, "Build the widget", "/tmp/build-report.md", "", "/tmp/verdict.md", "T7", 8, nil)
 	for _, want := range []string{
 		"VERDICT: <n>/10",
 		"8 or higher passes",
@@ -101,6 +101,13 @@ func TestJudgeTaskContract(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("JudgeTask missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "The check command passed") {
+		t.Errorf("JudgeTask mentions a check without one:\n%s", out)
+	}
+	withCheck := prompt.JudgeTask(role, "Build the widget", "/tmp/build-report.md", "/tmp/check-T1-r1.log", "/tmp/verdict.md", "T7", 8, nil)
+	if !strings.Contains(withCheck, "The check command passed; its output: read /tmp/check-T1-r1.log") {
+		t.Errorf("JudgeTask missing the check clause:\n%s", withCheck)
 	}
 }
 

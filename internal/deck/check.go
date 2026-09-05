@@ -36,6 +36,9 @@ func (s *session) startCheck(loop *judgeLoop, builder *entry, id string) {
 	loop.phase = "check"
 	s.loops[id] = loop
 	file := filepath.Join(contextDir, fmt.Sprintf("check-%s-r%d.log", loop.origID, loop.round))
+	if abs, err := filepath.Abs(file); err == nil {
+		file = abs // worktree roles read it from another cwd
+	}
 	cmd, timeout := builder.role.Check, builder.role.CheckTimeoutDuration()
 	s.log().Info("check start", "loop", loop.origID, "round", loop.round, "dir", dir, "command", cmd)
 	go func() { s.send(runCheck(id, cmd, dir, file, timeout)) }()
@@ -101,6 +104,7 @@ func (s *session) finishCheck(msg checkMsg) {
 	s.log().Info("check", "loop", loop.origID, "round", loop.round, "exit", msg.exit, "verdict", map[bool]string{true: "pass", false: "fail"}[pass], "took", msg.took)
 	if pass {
 		s.annotateTask(msg.id, loop.round, "check ok")
+		loop.checkLog = msg.file
 		if builder.role.Judge != "" {
 			s.deliverJudgeRound(loop)
 			return

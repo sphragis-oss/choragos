@@ -7,12 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The judge is handed the passing check's output: its task file gains
+  `The check command passed; its output: read <path>`, pointing at the
+  same `.choragos/check-<task>-r<n>.log` the builder gets on a failure.
+  A judge round with no check before it is unchanged.
+
 ### Fixed
 - Ownership gates and judge fallback gates keep their identity across
   `serve --resume`: `wire.Gate` gains additive `own` and `loop` fields,
   so a resumed ownership gate resolves through the owner path instead
   of the judge fallback wording, and a resumed judge or check gate
   still names its task on accept. (#200)
+- The check output path handed to a retrying builder (and now the
+  judge) is absolute, so a worktree role whose cwd is not the
+  workspace can read it; it was workspace-relative before.
+- The deck's own test suite no longer binds an inherited
+  `CHORAGOS_SOCK`: running `go test ./...` as a `check` inside a
+  choragos worktree used to take over and delete the live deck's
+  control socket (found on the first dogfood run of the check gate).
 
 ## [0.20.0] - 2026-09-04
 
