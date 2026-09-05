@@ -132,6 +132,9 @@ func TestCheckFailRetriesThenCapFailsClosed(t *testing.T) {
 	if err != nil || !strings.Contains(string(body), "failed the check command (exit 2)") || !strings.Contains(string(body), "check-T1-r1.log") || !strings.Contains(string(body), "CHECKED-2 harder") {
 		t.Fatalf("retry task lacks critique or original task: err=%v body=%q", err, body)
 	}
+	if abs, _ := filepath.Abs(filepath.Join(contextDir, "check-T1-r1.log")); !strings.Contains(string(body), abs) {
+		t.Fatalf("check log path must be absolute for worktree roles: %q", body)
+	}
 	if out, _ := os.ReadFile(filepath.Join(contextDir, "check-T1-r1.log")); !strings.Contains(string(out), "nope") {
 		t.Fatalf("stderr not captured: %q", out)
 	}

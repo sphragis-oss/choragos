@@ -36,6 +36,9 @@ func (s *session) startCheck(loop *judgeLoop, builder *entry, id string) {
 	loop.phase = "check"
 	s.loops[id] = loop
 	file := filepath.Join(contextDir, fmt.Sprintf("check-%s-r%d.log", loop.origID, loop.round))
+	if abs, err := filepath.Abs(file); err == nil {
+		file = abs // worktree roles read it from another cwd
+	}
 	cmd, timeout := builder.role.Check, builder.role.CheckTimeoutDuration()
 	s.log().Info("check start", "loop", loop.origID, "round", loop.round, "dir", dir, "command", cmd)
 	go func() { s.send(runCheck(id, cmd, dir, file, timeout)) }()
