@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-14
+
+See the run while it runs: a Prometheus endpoint on the live deck, so the numbers `report` prints afterwards are scrapeable during the session.
+
 ### Added
 - `[metrics] listen = "127.0.0.1:9464"`: the running deck serves a
   Prometheus text endpoint at `GET /metrics`, stdlib only. Role state
@@ -19,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without metrics; `doctor` tries the bind and warns on a
   non-loopback address; `reload` reopens a changed `listen`;
   `choragos ls` shows the bound address. `docs/design-metrics.md`
-  has the contract.
+  has the contract. (#221, #222)
 
 ## [0.21.0] - 2026-09-05
 
@@ -706,7 +710,8 @@ First-user UX batch, driven by live feedback from a team demo.
 - Sphragis gateway supervisor mapping LLM traffic implicitly into a local AI Act compliance layer.
 - `Orchestrator`, `Coder`, `Reviewer`, `Auditor`, and `Release` default crew setups via TOML config.
 
-[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/sphragis-oss/choragos/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/sphragis-oss/choragos/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/sphragis-oss/choragos/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/sphragis-oss/choragos/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/sphragis-oss/choragos/compare/v0.18.1...v0.19.0
