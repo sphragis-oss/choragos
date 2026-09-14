@@ -197,13 +197,13 @@ func TestSessionsLifecycle(t *testing.T) {
 
 	sock := ipc.SocketPath()
 	got := fakeDeck(t, sock)
-	ipc.WriteMeta(sock)
+	ipc.WriteMeta(sock, "127.0.0.1:9464")
 
 	out, err = runCLI(t, lsCmd(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "pid") || strings.Contains(out, "no running sessions") {
+	if !strings.Contains(out, "pid") || !strings.Contains(out, "metrics 127.0.0.1:9464") || strings.Contains(out, "no running sessions") {
 		t.Errorf("ls with a live session = %q", out)
 	}
 	<-got // the liveness ping
@@ -222,7 +222,7 @@ func TestSessionsStaleAndAbsent(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	// a meta whose socket is dead is pruned, not listed
-	ipc.WriteMeta(filepath.Join("/tmp", "chg-dead.sock"))
+	ipc.WriteMeta(filepath.Join("/tmp", "chg-dead.sock"), "")
 	out, err := runCLI(t, lsCmd(), nil)
 	if err != nil || !strings.Contains(out, "no running sessions") {
 		t.Fatalf("ls with a stale meta: %q err %v", out, err)

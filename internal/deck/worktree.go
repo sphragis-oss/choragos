@@ -233,6 +233,7 @@ func (s *session) queueMerge(role, id string) {
 	case e.role.MergeMode() == "auto":
 		s.snapshotMerge(id, role)
 		if sha, fail := performMerge(role, id); fail == "" {
+			bump(&s.metrics.merges, labelKey{role, "merged"})
 			s.log().Info("merged", "role", role, "task", id, "sha", sha)
 			s.notifyOrchestrator("[choragos] Merged " + role + "'s branch for task " + id + " (" + sha + ").")
 		} else {
@@ -258,16 +259,19 @@ func (s *session) gateMerge(role, id, reason, diff string) {
 func (s *session) resolveMerge(g pendingGate, accept bool) {
 	s.log().Info("merge gate resolved", "to", g.to, "task", g.mergeID, "accepted", accept)
 	if !accept {
+		bump(&s.metrics.merges, labelKey{g.to, "kept"})
 		s.notifyOrchestrator("[choragos] The user declined merging " + g.to + "'s branch for task " + g.mergeID + "; the branch is kept as is.")
 		return
 	}
 	s.snapshotMerge(g.mergeID, g.to)
 	sha, fail := performMerge(g.to, g.mergeID)
 	if fail != "" {
+		bump(&s.metrics.merges, labelKey{g.to, "failed"})
 		s.log().Warn("merge failed", "role", g.to, "task", g.mergeID, "reason", fail)
 		s.notifyOrchestrator("[choragos] Merging " + g.to + "'s branch for task " + g.mergeID + " failed: " + fail + ". The branch is kept; resolve it with git and merge by hand.")
 		return
 	}
+	bump(&s.metrics.merges, labelKey{g.to, "merged"})
 	s.log().Info("merged", "role", g.to, "task", g.mergeID, "sha", sha)
 	s.notifyOrchestrator("[choragos] Merged " + g.to + "'s branch for task " + g.mergeID + " (" + sha + ").")
 }

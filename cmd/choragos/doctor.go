@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,6 +205,20 @@ func runDoctor(out io.Writer, cfgPath string) int {
 		report("OK", "checkpoints", "git repository; delegations snapshot the workspace")
 	} else {
 		report("WARN", "checkpoints", reason+"; delegations will not be snapshotted")
+	}
+
+	if listen := cfg.Metrics.Listen; listen == "" {
+		report("OK", "metrics", "off (no [metrics] listen)")
+	} else {
+		if ln, err := net.Listen("tcp", listen); err != nil {
+			report("WARN", "metrics", fmt.Sprintf("cannot listen on %s (%v); serve will run without metrics", listen, err))
+		} else {
+			_ = ln.Close()
+			report("OK", "metrics", listen+" bindable")
+		}
+		if host, _, _ := net.SplitHostPort(listen); host != "localhost" && !net.ParseIP(host).IsLoopback() {
+			report("WARN", "metrics", "listen on a non-loopback address exposes the endpoint without auth")
+		}
 	}
 	return fails
 }

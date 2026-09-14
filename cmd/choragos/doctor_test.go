@@ -3,6 +3,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -242,5 +243,46 @@ func TestDoctorQuietOnDefectsFlowTemplate(t *testing.T) {
 	runDoctor(&out, f)
 	if strings.Contains(out.String(), "ownership:") {
 		t.Fatalf("shipped template trips its own ownership WARN:\n%s", out.String())
+	}
+}
+
+func TestDoctorMetricsLines(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	write := func(listen string) {
+		t.Helper()
+		body := "[[roles]]\nname = \"coder\"\ncommand = \"cat\"\nstart = true\n"
+		if listen != "" {
+			body += "\n[metrics]\nlisten = \"" + listen + "\"\n"
+		}
+		if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func() string {
+		var out strings.Builder
+		runDoctor(&out, f)
+		return out.String()
+	}
+	write("")
+	if out := run(); !strings.Contains(out, "OK    metrics        off") {
+		t.Fatalf("no [metrics] must report off:\n%s", out)
+	}
+	write("127.0.0.1:0")
+	if out := run(); !strings.Contains(out, "127.0.0.1:0 bindable") || strings.Contains(out, "non-loopback") {
+		t.Fatalf("loopback listen must be OK without the exposure WARN:\n%s", out)
+	}
+	write("0.0.0.0:0")
+	if out := run(); !strings.Contains(out, "non-loopback address exposes the endpoint") {
+		t.Fatalf("non-loopback listen must WARN:\n%s", out)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	write(ln.Addr().String())
+	if out := run(); !strings.Contains(out, "cannot listen on "+ln.Addr().String()) {
+		t.Fatalf("a taken port must WARN:\n%s", out)
 	}
 }

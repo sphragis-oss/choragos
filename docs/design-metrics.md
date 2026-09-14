@@ -9,7 +9,10 @@ is `choragos report --json` after the fact, from `events.log`. A
 Prometheus, Grafana Alloy, the OTel Collector, or the Datadog agent,
 with no new dependency and no change to any flow when unconfigured.
 
-Status: proposal. Nothing here is implemented.
+Status: implemented as designed (`internal/deck/metrics.go`), with one
+delta: in TUI mode the token series follow the sidebar's 1s usage
+fetch rather than the 30s snapshot, since the loop already holds that
+data; server mode is paced at 30s as written below.
 
 ## Why an endpoint, not a push
 
