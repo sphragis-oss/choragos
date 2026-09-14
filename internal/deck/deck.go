@@ -263,6 +263,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case usageMsg:
 		m.usage = msg
+		m.lastUsage = msg
 	case budgetMsg:
 		m.checkBudgets(msg)
 	case checkMsg:
@@ -279,6 +280,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.checkWaiting()
 		m.checkTimeouts()
 		m.maybeLogTokens()
+		m.publishMetrics()
 		if m.checkHandoff() {
 			m.closeAll()
 			return m, tea.Quit
@@ -1406,17 +1408,33 @@ type roleState struct {
 
 // computeStatus classifies a pane: exited, waiting for input, working, or idle.
 func computeStatus(e *entry, now time.Time, th deckTheme) roleState {
-	switch {
-	case e.exited:
+	switch paneState(e, now) {
+	case "exited":
 		return roleState{dot: "○", color: th.dim, label: "exited", exited: true}
-	case e.paused:
+	case "paused":
 		return roleState{dot: "❚❚", color: th.waiting, label: "paused"}
-	case needsInput(e):
+	case "waiting":
 		return roleState{dot: "◆", color: th.waiting, label: "waiting for input", waiting: true}
-	case now.Sub(e.lastActive) < workingWindow:
+	case "working":
 		return roleState{dot: "●", color: th.working, label: "working", working: true}
 	default:
 		return roleState{dot: "◦", color: th.idle, label: "idle " + humanizeSince(now.Sub(e.lastActive))}
+	}
+}
+
+// paneState names a pane's state: exited, paused, waiting, working, or idle; shared with /metrics.
+func paneState(e *entry, now time.Time) string {
+	switch {
+	case e.exited:
+		return "exited"
+	case e.paused:
+		return "paused"
+	case needsInput(e):
+		return "waiting"
+	case now.Sub(e.lastActive) < workingWindow:
+		return "working"
+	default:
+		return "idle"
 	}
 }
 

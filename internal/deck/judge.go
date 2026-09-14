@@ -179,6 +179,7 @@ func (s *session) scoreVerdict(loop *judgeLoop, cmd ipc.Command) {
 	score, err := parseVerdict(cmd.Report)
 	if err != nil {
 		loop.report = cmd.Report
+		bump(&s.metrics.judge, labelKey{loop.builder, "invalid"})
 		s.log().Warn("judge", "loop", loop.origID, "round", loop.round, "verdict", "invalid", "err", err)
 		s.fallbackGate(loop, "unparseable verdict: "+err.Error())
 		return
@@ -186,6 +187,7 @@ func (s *session) scoreVerdict(loop *judgeLoop, cmd ipc.Command) {
 	scoreStr := fmt.Sprintf("%d/10", score)
 	pass := score >= builder.role.JudgePassScore()
 	s.annotateTask(cmd.ID, loop.round, scoreStr)
+	s.metrics.setScore(loop.builder, score, pass)
 	s.log().Info("judge", "loop", loop.origID, "round", loop.round, "score", score, "verdict", map[bool]string{true: "pass", false: "fail"}[pass])
 	loop.report = cmd.Report
 	if pass {

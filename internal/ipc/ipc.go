@@ -95,6 +95,7 @@ type Meta struct {
 	Dir     string    `json:"dir"`
 	Started time.Time `json:"started"`
 	Socket  string    `json:"socket"`
+	Metrics string    `json:"metrics,omitempty"` // bound [metrics] listen address, when serving
 }
 
 // MetaPath is the sidecar metadata file for the current working directory's session.
@@ -103,9 +104,9 @@ func MetaPath() string {
 }
 
 // WriteMeta records the running session; best-effort.
-func WriteMeta(socket string) {
+func WriteMeta(socket, metrics string) {
 	wd, _ := os.Getwd()
-	b, _ := json.Marshal(Meta{PID: os.Getpid(), Dir: wd, Started: time.Now(), Socket: socket})
+	b, _ := json.Marshal(Meta{PID: os.Getpid(), Dir: wd, Started: time.Now(), Socket: socket, Metrics: metrics})
 	_ = os.WriteFile(MetaPath(), b, 0o600)
 }
 

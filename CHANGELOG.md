@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `[metrics] listen = "127.0.0.1:9464"`: the running deck serves a
+  Prometheus text endpoint at `GET /metrics`, stdlib only. Role state
+  (one-hot), tasks delegated, done and timed out, busy seconds,
+  restarts, judge and check outcomes, merge outcomes, last judge
+  score, open tasks, pending gates by kind, and, with the gateway in
+  the path, tokens by direction and cost per role. Names mirror
+  `report --json`; labels are role names and fixed enums only. Off
+  when the key is absent; a bind failure warns and the deck runs
+  without metrics; `doctor` tries the bind and warns on a
+  non-loopback address; `reload` reopens a changed `listen`;
+  `choragos ls` shows the bound address. `docs/design-metrics.md`
+  has the contract.
+
 ## [0.21.0] - 2026-09-05
 
 The first dogfood of the check gate, and what it taught: the judge sees the check's output, gates survive a resume, and a worktree role can read its own critique.

@@ -139,6 +139,9 @@ type session struct {
 	sphragisOn  bool              // gateway enforcement, toggled live with ctrl+g
 	gatewayUp   bool              // last known gateway health (refreshed off the UI thread)
 	lastTokens  time.Time         // last event-log token snapshot, paced by tokenSnapInterval
+	lastUsage   usageMsg          // latest per-role gateway usage seen by the loop, for /metrics
+	metrics     metricsCounters   // monotonic counts for /metrics, bumped beside the events.log lines
+	metricsSrv  *metricsServer    // [metrics] endpoint; nil when off or the bind failed
 	closed      bool              // closeAll ran; makes cleanup idempotent
 	ckpt        *checkpoint.Store // pre-task workspace snapshots; nil when disabled or not a git repo
 	bellFn      func()            // rings the terminal bell; nil disables ([ui] bell)
@@ -202,6 +205,9 @@ type taskEvent struct {
 const boardCap = 200
 
 func (s *session) recordTask(ev taskEvent) {
+	if ev.kind == "delegate" {
+		bump(&s.metrics.tasks, ev.to)
+	}
 	s.board = append(s.board, ev)
 	if len(s.board) > boardCap {
 		s.board = s.board[len(s.board)-boardCap:]
@@ -218,6 +224,8 @@ func (s *session) resolveTask(id string) {
 		ev := &s.board[i]
 		if ev.kind == "delegate" && ev.id == id && ev.doneAt.IsZero() {
 			ev.doneAt = time.Now()
+			bump(&s.metrics.done, ev.to)
+			s.metrics.addBusy(ev.to, ev.doneAt.Sub(ev.at))
 			s.saveSnapshot()
 			return
 		}
@@ -256,7 +264,8 @@ func (s *session) start(cw, ch int) error {
 		return fmt.Errorf("ipc serve: %w", err)
 	}
 	s.server = srv
-	ipc.WriteMeta(s.socket) // sidecar for `choragos ls`
+	s.startMetrics()
+	ipc.WriteMeta(s.socket, s.metricsAddr()) // sidecar for `choragos ls`
 	wd, _ := os.Getwd()
 	s.log().Info("deck starting", "version", buildVersion, "mode", cmp.Or(s.mode, "tui"), "os", runtime.GOOS+"/"+runtime.GOARCH, "go", runtime.Version(),
 		"roles", len(s.cfg.Roles), "sphragis", s.cfg.Sphragis.IsEnabled(), "dir", wd, "pid", os.Getpid())
@@ -763,6 +772,7 @@ func (s *session) checkTimeouts() {
 			continue
 		}
 		ev.timedOut = true
+		bump(&s.metrics.timedOut, ev.to)
 		if loop, ok := s.loops[ev.id]; ok && loop.phase == "judge" {
 			delete(s.loops, ev.id)
 			s.log().Warn("delegate timeout", "id", ev.id, "to", ev.to, "after", d.String(), "action", "judge-gate")
@@ -1005,6 +1015,7 @@ func promptInLines(lines []string, extra []string) bool {
 func (s *session) restart(e *entry, idx, cols, rows int) {
 	_ = e.pane.Close() // idempotent; unblocks the old stream so its exit is dropped by gen
 	e.restarts = 0
+	bump(&s.metrics.restarts, e.role.Name)
 	s.respawn(e, idx, cols, rows)
 }
 
@@ -1027,6 +1038,7 @@ func (s *session) autoRestart(e *entry, idx int) {
 		return
 	}
 	e.restarts++
+	bump(&s.metrics.restarts, e.role.Name)
 	s.log().Warn("auto-restart", "role", e.role.Name, "attempt", e.restarts, "exit", e.pane.ExitCode())
 	cw, ch := e.pane.Size() // respawn at the pane's current size; resizePanes syncs visible tiles anyway
 	s.respawn(e, idx, cw, ch)
@@ -1158,6 +1170,11 @@ func (s *session) reload(cw, ch int) (retired []int, changed bool) {
 		}
 	}
 	s.gates = kept
+	if cfg.Metrics != s.cfg.Metrics {
+		s.stopMetrics()
+		s.cfg.Metrics = cfg.Metrics
+		s.startMetrics()
+	}
 	s.cfg.Roles = cfg.Roles // future orchestrator boots see the new roster
 	s.saveSnapshot()        // roster order and tombstones changed
 	if len(added)+len(removed)+len(respawned) == 0 {
@@ -1258,6 +1275,7 @@ func (s *session) closeAll() {
 	}
 	s.closed = true
 	s.log().Info("deck stopping")
+	s.stopMetrics()
 	s.saveSnapshot() // final state for a later serve --resume
 	if s.server != nil {
 		_ = s.server.Close()

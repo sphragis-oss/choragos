@@ -833,3 +833,36 @@ func TestOwnedFilesEmptyByDefault(t *testing.T) {
 		t.Fatalf("default config owns files: %v", m)
 	}
 }
+
+func TestMetricsListenValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "c.toml")
+	body := `[[roles]]
+name = "ok"
+command = "sh"
+start = true
+
+[metrics]
+listen = "127.0.0.1:9464"
+`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Metrics.Listen != "127.0.0.1:9464" || len(c.Warnings) != 0 {
+		t.Fatalf("valid listen must load cleanly: %+v %v", c.Metrics, c.Warnings)
+	}
+	if err := os.WriteFile(f, []byte(strings.Replace(body, "127.0.0.1:9464", "nope", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err = config.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Metrics.Listen != "" || len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], "[metrics] listen") {
+		t.Fatalf("invalid listen must warn and turn metrics off: %+v %v", c.Metrics, c.Warnings)
+	}
+}

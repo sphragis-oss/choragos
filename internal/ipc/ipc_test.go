@@ -114,7 +114,7 @@ func TestMetaLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ipc.WriteMeta("/tmp/x.sock")
+	ipc.WriteMeta("/tmp/x.sock", "127.0.0.1:9464")
 	// junk sidecars must be skipped, not break the listing
 	for name, body := range map[string]string{"junk.json": "{not json", "nosocket.json": "{}", "readme.txt": "hi"} {
 		if err := os.WriteFile(filepath.Join(ipc.SessionDir(), name), []byte(body), 0o600); err != nil {
@@ -126,8 +126,8 @@ func TestMetaLifecycle(t *testing.T) {
 		t.Fatalf("ReadMetas = %+v, want exactly the one real session", metas)
 	}
 	m := metas[0]
-	if m.PID != os.Getpid() || m.Dir != wd || m.Socket != "/tmp/x.sock" {
-		t.Fatalf("meta = %+v, want pid %d dir %q socket /tmp/x.sock", m, os.Getpid(), wd)
+	if m.PID != os.Getpid() || m.Dir != wd || m.Socket != "/tmp/x.sock" || m.Metrics != "127.0.0.1:9464" {
+		t.Fatalf("meta = %+v, want pid %d dir %q socket /tmp/x.sock metrics 127.0.0.1:9464", m, os.Getpid(), wd)
 	}
 
 	ipc.RemoveMeta()

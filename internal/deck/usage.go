@@ -72,7 +72,8 @@ func (s *session) logTokens() {
 		return
 	}
 	costs := budgetMsg{}
-	for role, u := range parseUsage(string(body), s.cfg.Pricing) {
+	usage := parseUsage(string(body), s.cfg.Pricing)
+	for role, u := range usage {
 		if u.Cost > 0 {
 			s.log().Info("tokens", "role", role, "in", u.In, "out", u.Out,
 				"cache_creation", u.CacheCreation, "cache_read", u.CacheRead,
@@ -84,6 +85,7 @@ func (s *session) logTokens() {
 		costs[role] = u.Cost
 	}
 	if len(costs) > 0 {
+		s.send(usage) // the loop keeps it for /metrics
 		s.send(costs)
 	}
 }

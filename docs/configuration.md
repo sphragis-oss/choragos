@@ -312,6 +312,33 @@ built-in config (no file to extend). Add-only by design: removing a
 role stays a human decision (edit the file, reload). Every proposal,
 approval, rejection, and refusal lands in `events.log`.
 
+## `[metrics]`
+
+A Prometheus text endpoint served by the running deck (see
+[design-metrics.md](design-metrics.md)): role state, task and gate
+counters, judge and check outcomes, restarts, and, with the gateway in
+the path, token burn and cost per role. Names mirror `report --json`,
+so a dashboard on the live numbers reconciles with the post-run
+report. Labels are role names and fixed enums only; task text, ids
+and paths never leave the process.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `listen` | string | off | `host:port` for `GET /metrics`; port `0` picks a free one (the bound address shows in `choragos ls` and `events.log`) |
+
+```toml
+[metrics]
+listen = "127.0.0.1:9464"
+```
+
+There is no auth or TLS: bind to loopback and let a local Prometheus,
+Grafana Alloy, OTel Collector, or Datadog agent scrape it. A port that
+cannot be bound warns in `events.log` and the deck runs without
+metrics; `choragos doctor` tries the bind up front. Token and cost
+series are absent, never zero, when the gateway or the `[pricing]`
+table is off. Counters restart at zero on `serve --resume`; the report
+remains the cross-restart view.
+
 ## Reloading the config at runtime
 
 Edit the config file, then `choragos reload` (or `prefix+C` in the deck):
@@ -341,4 +368,5 @@ Guardrails, all reported in `events.log`:
 - Running on the built-in team (no config file) there is nothing to
   re-read, so reload is refused.
 - `[keys]`, `[ui]`, and `[sphragis]` changes need a deck restart; only
-  `[[roles]]` converges live.
+  `[[roles]]` and `[metrics]` converge live (a changed `listen` reopens
+  the endpoint, a removed table closes it).

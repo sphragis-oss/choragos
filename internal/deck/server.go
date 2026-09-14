@@ -64,7 +64,7 @@ func RunServer(cfg config.Config, version string, snap *Snapshot) error {
 	}
 	srv.layout = s.layout // restored layout reaches the next attach
 	defer s.closeAll()
-	ipc.WriteMeta(s.socket)
+	ipc.WriteMeta(s.socket, s.metricsAddr())
 	defer ipc.RemoveMeta()
 	srv.ensureTees()
 
@@ -101,6 +101,7 @@ func RunServer(cfg config.Config, version string, snap *Snapshot) error {
 			s.checkWaiting()
 			s.checkTimeouts()
 			s.maybeLogTokens()
+			s.publishMetrics()
 			if s.checkHandoff() {
 				srv.sayBye("handoff")
 				return nil
@@ -154,6 +155,8 @@ func (srv *server) handle(v any) bool {
 			s.dispatch(msg.cmd)
 		}
 		srv.syncClient()
+	case usageMsg:
+		s.lastUsage = msg
 	case budgetMsg:
 		s.checkBudgets(msg)
 		srv.syncClient()

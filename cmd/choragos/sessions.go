@@ -28,8 +28,12 @@ func lsCmd() *cobra.Command {
 					continue
 				}
 				alive++
-				cmd.Printf("%s  pid %-6d  up %-8s  %s\n",
-					ipc.SessionID(m.Dir), m.PID, time.Since(m.Started).Round(time.Second), m.Dir)
+				extra := ""
+				if m.Metrics != "" {
+					extra = "  metrics " + m.Metrics
+				}
+				cmd.Printf("%s  pid %-6d  up %-8s  %s%s\n",
+					ipc.SessionID(m.Dir), m.PID, time.Since(m.Started).Round(time.Second), m.Dir, extra)
 			}
 			if alive == 0 {
 				cmd.Println("no running sessions")

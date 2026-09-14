@@ -94,6 +94,7 @@ func (s *session) finishCheck(msg checkMsg) {
 		return
 	}
 	if msg.fail != "" {
+		bump(&s.metrics.check, labelKey{loop.builder, "unavailable"})
 		s.log().Warn("check", "loop", loop.origID, "round", loop.round, "verdict", "unavailable", "reason", msg.fail, "took", msg.took)
 		s.annotateTask(msg.id, loop.round, "check "+msg.fail)
 		loop.report = msg.file
@@ -101,6 +102,7 @@ func (s *session) finishCheck(msg checkMsg) {
 		return
 	}
 	pass := msg.exit == 0
+	bump(&s.metrics.check, labelKey{loop.builder, map[bool]string{true: "pass", false: "fail"}[pass]})
 	s.log().Info("check", "loop", loop.origID, "round", loop.round, "exit", msg.exit, "verdict", map[bool]string{true: "pass", false: "fail"}[pass], "took", msg.took)
 	if pass {
 		s.annotateTask(msg.id, loop.round, "check ok")

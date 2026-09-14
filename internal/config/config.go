@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,6 +159,7 @@ type Config struct {
 	UI          UI          `toml:"ui"`
 	Checkpoints Checkpoints `toml:"checkpoints"`
 	Roster      Roster      `toml:"roster"`
+	Metrics     Metrics     `toml:"metrics"`
 	// Pricing maps a model-name prefix to USD per million tokens, for the cost display.
 	Pricing map[string]Price `toml:"pricing"`
 	// Warnings collects non-fatal load diagnostics (unknown keys, likely typos).
@@ -303,6 +305,11 @@ func (r Roster) CanPropose() bool { return r.Propose == nil || *r.Propose }
 
 // NeedsApprove reports whether roster proposals pause at a human gate (default true).
 func (r Roster) NeedsApprove() bool { return r.Approve == nil || *r.Approve }
+
+// Metrics controls the Prometheus text endpoint (docs/design-metrics.md); empty Listen = off.
+type Metrics struct {
+	Listen string `toml:"listen"`
+}
 
 // KeepCount returns how many checkpoints to retain (default 20).
 func (c Checkpoints) KeepCount() int {
@@ -542,6 +549,12 @@ func Load(path string) (Config, error) {
 	if v := c.UI.Viewer; v != "" && v != "pager" && v != "editor" {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("%s: [ui] viewer: unknown value %q (pager or editor); using pager", path, v))
 		c.UI.Viewer = ""
+	}
+	if l := c.Metrics.Listen; l != "" {
+		if _, _, err := net.SplitHostPort(l); err != nil {
+			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: [metrics] listen: %v (want host:port); metrics off", path, err))
+			c.Metrics.Listen = ""
+		}
 	}
 	c.Path = path
 	c.Sphragis.applyDefaults()
